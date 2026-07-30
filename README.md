@@ -27,7 +27,13 @@
 
 ## 界面预览
 
-（后续添加软件截图）
+### 主界面
+
+![硬盘与电池健康查看器主界面](docs/screenshots/main-window-en.png)
+
+### 历史记录
+
+![历史记录界面](docs/screenshots/history-window-en.png)
 
 
 ## 主要功能
