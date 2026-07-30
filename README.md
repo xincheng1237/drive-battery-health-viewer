@@ -2,7 +2,7 @@
 
 **Drive & Battery Health Viewer**
 
-简体中文 | English
+简体中文 | [English](README_EN.md)
 
 一款用于查看 Windows 电脑硬盘状态、电池健康情况等设备信息的轻量级工具。
 
