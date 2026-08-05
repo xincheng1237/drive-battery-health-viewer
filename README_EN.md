@@ -4,110 +4,104 @@
 
 [简体中文](README.md) | English
 
-A lightweight utility for viewing drive status, battery health, and other device information on Windows PCs.
+An open-source hardware health viewer for Windows and macOS. It reads drive status, battery health, and device information without modifying hardware, and includes history, report export, serial-number privacy protection, and seven interface languages.
 
-It supports saving and browsing historical scan records, exporting reports, and reviewing changes in drive and battery health over time.
-
+The Windows edition is written in Go. The macOS edition uses native SwiftUI and ships as one Universal 2 application for both Apple silicon and Intel Macs.
 
 ## Download
 
-Visit the [Releases](../../releases/latest) page to download the latest version.
+Current version: **v1.0.4**. Visit [Releases](../../releases/latest), or download the file for your platform below.
 
-Current version:
+| Platform | Download | Architecture | Requirements |
+| --- | --- | --- | --- |
+| macOS | [`Drive-Battery-Health-Viewer-1.0.4-macOS-Universal.dmg`](../../releases/download/v1.0.4/Drive-Battery-Health-Viewer-1.0.4-macOS-Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
+| Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 or later |
 
-**v1.0.4**
+### Install on macOS
 
-Download files:
+1. Open the downloaded DMG.
+2. Drag **Drive & Battery Health Viewer** into **Applications**.
+3. Launch the app from the Applications folder.
 
-- `DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`
-- `DriveBatteryHealthViewer_v1.0.4_Windows_x64_SHA256.txt`
+The current public macOS build uses an ad-hoc signature and has not been notarized by Apple. If macOS blocks the first launch, Control-click the app and choose **Open**, or approve it in **System Settings → Privacy & Security**. The project never asks you to disable system security features.
 
-This is a standalone Windows x64 application. No installation is required—download the EXE file and run it directly.
+### Run on Windows
 
+The Windows x64 edition is a standalone executable. No installation is required. Administrator privileges may be needed for some hardware information.
 
 ## Screenshots
 
-### Main window
+### Native macOS interface
 
-![Drive & Battery Health Viewer main window](docs/screenshots/main-window-en.png)
+![Drive & Battery Health Viewer for macOS](docs/screenshots/macos-overview-en.png)
 
-### History
+### Windows main window
 
-![History window](docs/screenshots/history-window-en.png)
+![Drive & Battery Health Viewer for Windows](docs/screenshots/main-window-en.png)
 
+### Windows history
+
+![Windows history view](docs/screenshots/history-window-en.png)
 
 ## Features
 
-- View drive model, capacity, interface, firmware version, and health status
-- Read NVMe SMART health information
-- View drive temperature, power-on time, power cycles, total reads, and total writes
-- View battery design capacity, current full-charge capacity, health percentage, and cycle count
-- Automatically save and browse historical scan records
-- Export scan reports
-- Hide drive and battery serial numbers from the interface and reports
+- View drive model, capacity, connection, firmware, serial number, and system-provided S.M.A.R.T. status
+- Read temperature, power-on time, power cycles, total reads, and total writes when exposed by the hardware and operating system
+- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, cycle count, charge level, and power state
+- Save and browse health history, then copy or export UTF-8 reports
+- Hide drive and battery serial numbers from the interface, history, and exported reports
 - Support Simplified Chinese, English, Russian, French, German, Korean, and Japanese
-- Read device information only, without running benchmarks, writing data, performing repairs, or updating firmware
+- Read device information only: no benchmarks, writes, repairs, erases, or firmware updates
 
+## Platform notes
 
-## Usage
+### macOS
 
-1. Download the latest EXE file.
-2. Double-click the file to run the application.
-3. Click **Refresh** to scan the current drive and battery information.
-4. Click **Export report** to save the scan results.
-5. Before sharing a report, enable **Hide serial numbers** to protect device information.
+- Native SwiftUI interface with dark mode, system accent colors, keyboard support, and VoiceOver semantics
+- Live updates for battery level, charge/power state, and available drive and battery temperatures
+- Optional automatic history saving when other hardware data is manually refreshed
+- One Universal 2 package runs natively on Apple silicon and Intel Macs
+- See [`macos/README.md`](macos/README.md) for implementation details, build steps, and hardware-data limitations
 
+macOS does not expose every NVMe or USB S.M.A.R.T. field to ordinary third-party applications. Unavailable values are shown as not reported; the app does not replace them with `0`, guess a value, or interpret missing data as a hardware fault.
 
-## System Requirements
+### Windows
 
-- Windows 7 or later
-- 64-bit operating system
-- Administrator privileges may be required to read some hardware information
+- RAID mode and Intel VMD/RST may prevent complete S.M.A.R.T. access
+- USB adapters may not expose all drive information
+- Older Windows versions and vendor drivers may have interface limitations
 
-
-## Compatibility
-
-Due to differences in Windows system interfaces and hardware implementations:
-
-- RAID mode may prevent access to complete SMART information
-- Intel VMD/RST may affect drive information retrieval
-- USB adapters may not expose complete drive data
-- Some features may be limited on older versions of Windows
-
-These conditions are generally caused by system or driver limitations and do not necessarily indicate a drive failure.
-
+These conditions are normally caused by the operating system, driver, controller, or enclosure and do not necessarily indicate a hardware failure.
 
 ## Privacy
 
-Scan reports may contain drive and battery serial numbers.
-
-Before publishing, forwarding, or uploading a report, enable **Hide serial numbers** in the application or manually remove the relevant information.
-
+Health reports may contain drive and battery serial numbers. Enable **Hide serial numbers** before publishing, forwarding, or uploading a report. The macOS edition enables this protection by default.
 
 ## Building from Source
 
-This project is developed in Go.
+### Windows
 
-Requirements:
-
-- Go 1.20 or later
-
-Build and test:
+Requires Go 1.20 or later.
 
 ```bash
 go test ./...
 go build -o DriveBatteryHealthViewer.exe .
 ```
 
+### macOS
+
+Requires macOS 13 or later and Swift 5.10 or later.
+
+```bash
+cd macos
+swift test --disable-sandbox
+./scripts/build-universal.sh
+./scripts/build-dmg.sh
+```
 
 ## License
 
-This project is released under the GNU General Public License v3.0.
-
-You may freely use, study, modify, and distribute this project.
-
-When distributing a modified version, you must comply with GPL v3.0 and retain the original copyright and license notices.
-
+This project is released under the [GNU General Public License v3.0](LICENSE). You may use, study, modify, and distribute it. Modified distributions must comply with GPL v3.0 and retain the original copyright and license notices.
 
 ## Author
 
@@ -117,7 +111,6 @@ When distributing a modified version, you must comply with GPL v3.0 and retain t
 - Coolapk: [程心ChengXin](https://www.coolapk.com/u/3594167)
 - QQ group: 1040456137
 - Email: 2680149724@qq.com
-
 
 ## Copyright
 
