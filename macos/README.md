@@ -10,6 +10,7 @@
 - 电池电量、充电状态、电源连接状态以及硬盘与电池温度每 3 秒自动更新，其他硬件数据由手动刷新更新
 - 刷新、复制完整文本报告、导出 UTF-8 文本报告
 - 自动保存并浏览历史检测记录，可选择“每次刷新后”或“仅导出时”保存
+- 历史记录支持多选、全选、批量导出到新文件夹和批量删除
 - 在界面、历史记录、剪贴板和导出报告中隐藏序列号
 - 跟随系统或切换简体中文、英语、俄语、法语、德语、韩语、日语
 - 报告字号调整、历史目录选择、关于页、项目/反馈/许可证链接和更新日志
@@ -31,8 +32,8 @@ swift test --disable-sandbox
 
 构建脚本生成：
 
-- `Drive & Battery Health Viewer-1.0.4-macOS-Universal.zip`
-- `Drive & Battery Health Viewer-1.0.4-macOS-Universal.dmg`
+- `Drive & Battery Health Viewer-1.0.5-macOS-Universal.zip`
+- `Drive & Battery Health Viewer-1.0.5-macOS-Universal.dmg`
 
 发布文件位于 `macos/dist/`。文件名包含版本、系统和 Universal 标识，便于在 GitHub Releases 中管理；DMG 提供“拖入应用程序”安装界面，安装后的应用始终为简洁的 `Drive & Battery Health Viewer.app`。
 

@@ -10,11 +10,11 @@ The Windows edition is written in Go. The macOS edition uses native SwiftUI and 
 
 ## Download
 
-Current version: **v1.0.4**. Visit [Releases](../../releases/latest), or download the file for your platform below.
+Current macOS version: **v1.0.5**; Windows version: **v1.0.4**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
 
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
-| macOS | [`Drive-Battery-Health-Viewer-1.0.4-macOS-Universal.dmg`](../../releases/download/v1.0.4/Drive-Battery-Health-Viewer-1.0.4-macOS-Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
+| macOS | [`Drive-Battery-Health-Viewer-1.0.5-macOS-Universal.dmg`](../../releases/download/v1.0.5/Drive-Battery-Health-Viewer-1.0.5-macOS-Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 or later |
 
 ### Install on macOS

@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var currentSnapshot: HealthSnapshot?
     @Published private(set) var history: [HistoryRecord] = []
     @Published var selectedHistoryID: UUID?
+    @Published var selectedHistoryIDs: Set<UUID> = []
     @Published private(set) var isScanning = false
     @Published var alertMessage: String?
     @Published var transientMessage: String?
@@ -15,7 +16,6 @@ final class AppModel: ObservableObject {
     @Published var language: AppLanguage {
         didSet {
             defaults.set(language.rawValue, forKey: Keys.language)
-            MainMenuLocalizer.apply(language)
         }
     }
     @Published var hideSerials: Bool {
@@ -128,11 +128,72 @@ final class AppModel: ObservableObject {
     }
 
     func deleteSelectedHistory() {
-        guard let record = selectedHistory else { return }
+        guard let selectedHistoryID else { return }
+        deleteHistory(ids: [selectedHistoryID])
+    }
+
+    func toggleHistorySelection(_ id: UUID) {
+        if selectedHistoryIDs.contains(id) {
+            selectedHistoryIDs.remove(id)
+        } else {
+            selectedHistoryIDs.insert(id)
+        }
+    }
+
+    func selectAllHistory() {
+        selectedHistoryIDs = Set(history.map(\.id))
+    }
+
+    func clearHistorySelection() {
+        selectedHistoryIDs.removeAll()
+    }
+
+    func deleteSelectedHistory(ids: Set<UUID>) {
+        deleteHistory(ids: ids)
+    }
+
+    private func deleteHistory(ids: Set<UUID>) {
+        let records = history.filter { ids.contains($0.id) }
+        guard !records.isEmpty else { return }
         do {
-            try HistoryStore(directory: historyDirectory).delete(record)
-            history.removeAll { $0.id == record.id }
+            let store = HistoryStore(directory: historyDirectory)
+            for record in records { try store.delete(record) }
+            history.removeAll { ids.contains($0.id) }
+            selectedHistoryIDs.subtract(ids)
             selectedHistoryID = history.first?.id
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    /// Exports each selected history record as a UTF-8 text report into one
+    /// newly-created folder inside the user-selected destination directory.
+    func exportSelectedHistory(to destination: URL) {
+        let records = history.filter { selectedHistoryIDs.contains($0.id) }
+        guard !records.isEmpty else { return }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let folder = destination.appendingPathComponent(
+            "DriveBatteryHealthViewer-Reports-\(formatter.string(from: Date()))",
+            isDirectory: true
+        )
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let fileFormatter = DateFormatter()
+            fileFormatter.locale = Locale(identifier: "en_US_POSIX")
+            fileFormatter.dateFormat = "yyyyMMdd_HHmmss_SSS"
+            for record in records {
+                let filename = "HHV_\(fileFormatter.string(from: record.snapshot.generatedAt))_\(record.id.uuidString).txt"
+                let url = folder.appendingPathComponent(filename)
+                let text = ReportRenderer.render(
+                    snapshot: record.snapshot,
+                    language: language,
+                    hideSerials: hideSerials
+                )
+                try text.write(to: url, atomically: true, encoding: .utf8)
+            }
+            showTransient(t("batchExported"))
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -141,9 +202,11 @@ final class AppModel: ObservableObject {
     func loadHistory() {
         do {
             history = try HistoryStore(directory: historyDirectory).load()
+            selectedHistoryIDs = selectedHistoryIDs.intersection(Set(history.map(\.id)))
             if selectedHistoryID == nil { selectedHistoryID = history.first?.id }
         } catch {
             history = []
+            selectedHistoryIDs.removeAll()
             alertMessage = error.localizedDescription
         }
     }

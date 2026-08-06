@@ -173,12 +173,14 @@ struct CoreTests {
             #expect(L10n.text("batteryVoltage", language) != "Battery voltage")
             #expect(L10n.text("changelog", language) != "What’s New")
             #expect(L10n.text("license", language) != "GNU GPL v3 License")
+            #expect(L10n.text("selectAll", language) != "Select All")
+            #expect(L10n.text("exportSelected", language) != "Export Selected")
             for key in MainMenuLocalizer.menuKeys {
                 #expect(L10n.text(key, language) != key)
             }
 
             let report = ReportRenderer.render(snapshot: sampleSnapshot(), language: language, hideSerials: true)
-            #expect(report.contains("v1.0.4"))
+            #expect(report.contains("v1.0.5"))
             #expect(report.contains("mAh /"))
             #expect(report.contains("••••••••"))
         }
@@ -208,6 +210,109 @@ struct CoreTests {
         MainMenuLocalizer.apply(to: menu, language: .english)
         #expect(menu.items.map(\.title) == ["Drive & Battery Health Viewer", "Edit", "View", "Health Report", "Window", "Help"])
         #expect(menu.items[3].submenu?.items.map(\.title) == ["Refresh", "Copy Report"])
+    }
+
+    @Test @MainActor
+    func testMenuDefinitionsAreIdempotentAndOrdered() {
+        let expectedOrder = ["menuEdit", "menuView", "report", "menuWindow", "menuHelp"]
+        let first = MainMenuLocalizer.definitions(for: .simplifiedChinese)
+        #expect(first.map(\.key) == expectedOrder)
+        #expect(MainMenuLocalizer.menuOrder(for: .simplifiedChinese) == expectedOrder)
+        for _ in 0..<20 {
+            #expect(MainMenuLocalizer.definitions(for: .simplifiedChinese) == first)
+            #expect(MainMenuLocalizer.menuOrder(for: .english) == expectedOrder)
+        }
+    }
+
+    @Test @MainActor
+    func testMenuLanguageRoundTripDoesNotRetainOldTitles() {
+        let menu = NSMenu()
+        for definition in MainMenuLocalizer.definitions(for: .english) {
+            let item = NSMenuItem(title: definition.title, action: nil, keyEquivalent: "")
+            item.submenu = NSMenu(title: definition.title)
+            menu.addItem(item)
+        }
+
+        for language in [AppLanguage.simplifiedChinese, .japanese, .german, .english, .simplifiedChinese] {
+            MainMenuLocalizer.apply(to: menu, language: language)
+            #expect(menu.items.map(\.title) == MainMenuLocalizer.definitions(for: language).map(\.title))
+        }
+    }
+
+    @Test @MainActor
+    func testNoProductionMenuDefinitionCanExposeInternalMarker() {
+        for language in AppLanguage.allCases {
+            #expect(MainMenuLocalizer.definitions(for: language).allSatisfy {
+                !$0.title.hasPrefix("__DBHV_STANDARD_MENU_")
+            })
+        }
+        let menu = NSMenu(title: "Main")
+        for definition in MainMenuLocalizer.definitions(for: .english) {
+            menu.addItem(NSMenuItem(title: definition.title, action: nil, keyEquivalent: ""))
+        }
+        #expect(!MainMenuLocalizer.containsInternalMarker(in: menu))
+    }
+
+    @Test @MainActor
+    func testRepeatedMenuLocalizationPreservesSubmenusAndActions() {
+        let menu = NSMenu(title: "Main")
+        let help = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        let helpSubmenu = NSMenu(title: "Help")
+        let action = #selector(NSApplication.orderFrontStandardAboutPanel(_:))
+        let about = NSMenuItem(title: "About", action: action, keyEquivalent: "")
+        helpSubmenu.addItem(about)
+        help.submenu = helpSubmenu
+        menu.addItem(help)
+
+        for _ in 0..<20 { MainMenuLocalizer.apply(to: menu, language: .simplifiedChinese) }
+
+        #expect(menu.items.count == 1)
+        #expect(menu.items[0].submenu?.items.count == 1)
+        #expect(menu.items[0].submenu?.items[0].action == action)
+        #expect(menu.items[0].submenu?.items[0].title == "About")
+    }
+
+    @Test @MainActor
+    func testWindowAndHelpDefinitionsHaveUniqueStableEntries() {
+        let definitions = MainMenuLocalizer.definitions(for: .english)
+        #expect(Set(definitions.map(\.key)).count == definitions.count)
+        #expect(definitions.filter(\.isSystemOwned).map(\.key) == MainMenuLocalizer.standardMenuKeys)
+        #expect(definitions.filter { !$0.isSystemOwned }.map(\.key) == ["report"])
+    }
+
+    @Test @MainActor
+    func testBatchHistoryExportAndDeleteOperateOnSelectedRecords() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suiteName = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: destination)
+        }
+        defaults.set(root.path, forKey: "historyDirectory")
+        let store = HistoryStore(directory: root)
+        let first = try store.save(snapshot: sampleSnapshot(), source: .refresh, hideSerials: true)
+        var secondSnapshot = sampleSnapshot()
+        secondSnapshot.generatedAt.addTimeInterval(60)
+        _ = try store.save(snapshot: secondSnapshot, source: .refresh, hideSerials: true)
+
+        let model = AppModel(defaults: defaults)
+        #expect(model.history.count == 2)
+        model.selectAllHistory()
+        #expect(model.selectedHistoryIDs.count == 2)
+        model.exportSelectedHistory(to: destination)
+
+        let folders = try FileManager.default.contentsOfDirectory(at: destination, includingPropertiesForKeys: nil)
+        #expect(folders.count == 1)
+        let exported = try FileManager.default.contentsOfDirectory(at: folders[0], includingPropertiesForKeys: nil)
+        #expect(exported.filter { $0.pathExtension == "txt" }.count == 2)
+
+        model.deleteSelectedHistory(ids: model.selectedHistoryIDs)
+        #expect(model.history.isEmpty)
+        #expect(try store.load().isEmpty)
+        _ = first
     }
 
     @Test

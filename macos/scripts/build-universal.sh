@@ -6,7 +6,7 @@ project_dir="${script_dir:h}"
 repo_dir="${project_dir:h}"
 dist_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
-version="1.0.4"
+version="1.0.5"
 app_name="Drive & Battery Health Viewer"
 executable_name="DriveBatteryHealthViewer"
 

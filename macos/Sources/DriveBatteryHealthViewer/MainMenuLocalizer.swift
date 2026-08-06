@@ -1,177 +1,91 @@
 import AppKit
 
+/// Localized metadata for the menus that the application owns.
+///
+/// AppKit owns the standard Edit, View, Window and Help menus.  Earlier
+/// versions tried to discover those menus after SwiftUI had built them by
+/// inserting marker items and repeatedly moving their submenus around.  That
+/// is unsafe while AppKit is tracking a menu (and is the source of both the
+/// marker leak and the stuck/duplicated menu sessions).  This type therefore
+/// has no observers, delayed work, cached NSMenu instances or NSApp mutation.
 @MainActor
 enum MainMenuLocalizer {
     static let standardMenuKeys = ["menuEdit", "menuView", "menuWindow", "menuHelp"]
     static let menuKeys = ["menuEdit", "menuView", "report", "menuWindow", "menuHelp"]
     static let reportCommandKeys = ["refresh", "copyReport"]
-    private static var pendingUpdate: Task<Void, Never>?
-    private static var standardSubmenus: [String: NSMenu] = [:]
-    private static var standardMenuIndexes: [String: Int] = [:]
-    private static weak var observedMainMenu: NSMenu?
-    private static var menuObservers: [NSObjectProtocol] = []
-    private static var duplicateCleanupScheduled = false
-    private static var currentLanguage: AppLanguage = .system
 
-    static func marker(for key: String) -> String {
-        "__DBHV_STANDARD_MENU_\(key)__"
+    struct Definition: Equatable, Sendable {
+        let key: String
+        let title: String
+        let isSystemOwned: Bool
     }
 
+    private static var activeLanguage: AppLanguage = .system
+
+    /// Returns the stable menu order used by the app-owned command surface.
+    /// The standard menus are listed for diagnostics only; they are not
+    /// rebuilt or reattached at runtime.
+    static func definitions(for language: AppLanguage) -> [Definition] {
+        [
+            Definition(key: "menuEdit", title: L10n.text("menuEdit", language), isSystemOwned: true),
+            Definition(key: "menuView", title: L10n.text("menuView", language), isSystemOwned: true),
+            Definition(key: "report", title: L10n.text("report", language), isSystemOwned: false),
+            Definition(key: "menuWindow", title: L10n.text("menuWindow", language), isSystemOwned: true),
+            Definition(key: "menuHelp", title: L10n.text("menuHelp", language), isSystemOwned: true)
+        ]
+    }
+
+    /// Kept as a compatibility hook for callers from older builds.  It only
+    /// records state; it never touches the live AppKit menu hierarchy.
     static func apply(_ language: AppLanguage) {
-        pendingUpdate?.cancel()
-        applyNow(language)
-        pendingUpdate = Task { @MainActor in
-            for delay in [50_000_000, 250_000_000, 700_000_000] as [UInt64] {
-                do {
-                    try await Task.sleep(nanoseconds: delay)
-                } catch {
-                    return
-                }
-                applyNow(language)
-            }
-        }
+        activeLanguage = language
     }
 
-    private static func applyNow(_ language: AppLanguage) {
-        guard let mainMenu = NSApp.mainMenu else { return }
-        currentLanguage = language
-        observeMenuAdditions(in: mainMenu)
-        installStandardMenuShells(in: mainMenu, language: language)
-        apply(to: mainMenu, language: language)
-        NSApp.windowsMenu = standardSubmenus["menuWindow"]
-        NSApp.helpMenu = standardSubmenus["menuHelp"]
-        removeUnmanagedStandardMenus(from: mainMenu)
-    }
+    static var language: AppLanguage { activeLanguage }
 
+    /// Purely relocalizes a menu supplied by a caller.  It does not add,
+    /// remove, reorder, detach or reattach any item and is safe for tests and
+    /// for menus that are not being tracked.  The app no longer calls this on
+    /// NSApp.mainMenu; SwiftUI/AppKit own the live menu lifecycle.
     static func apply(to mainMenu: NSMenu, language: AppLanguage) {
-        for key in menuKeys {
-            let knownTitles = Set(AppLanguage.allCases.map { L10n.text(key, $0) })
-            guard let item = mainMenu.items.first(where: {
-                knownTitles.contains($0.title) || knownTitles.contains($0.submenu?.title ?? "")
-            }) else { continue }
+        let allTitles = Set(AppLanguage.allCases.flatMap { language in
+            menuKeys.map { L10n.text($0, language) } + reportCommandKeys.map { L10n.text($0, language) }
+        })
 
-            let title = L10n.text(key, language)
-            setTitle(title, on: item)
-        }
-
-        guard let reportMenu = mainMenu.items.first(where: {
-            $0.title == L10n.text("report", language)
-        })?.submenu else { return }
-
-        for key in reportCommandKeys {
-            let knownTitles = Set(AppLanguage.allCases.map { L10n.text(key, $0) })
-            guard let item = reportMenu.items.first(where: { knownTitles.contains($0.title) }) else { continue }
-            let title = L10n.text(key, language)
-            setTitle(title, on: item, includeSubmenu: false)
-        }
-    }
-
-    private static func installStandardMenuShells(in mainMenu: NSMenu, language: AppLanguage) {
-        for key in standardMenuKeys {
-            let itemIdentifier = identifier(for: key)
-            let markerTitle = marker(for: key)
-            let managedItems = mainMenu.items.filter { item in
-                item.identifier == itemIdentifier || item.submenu?.items.contains(where: { $0.title == markerTitle }) == true
-            }
-            guard let shell = managedItems.first(where: {
-                $0.submenu?.items.contains(where: { $0.title == markerTitle }) == true
-            }) ?? managedItems.first else { continue }
-
-            shell.identifier = itemIdentifier
-            shell.submenu?.items
-                .filter { $0.title == markerTitle }
-                .forEach { shell.submenu?.removeItem($0) }
-
-            let knownTitles = Set(AppLanguage.allCases.map { L10n.text(key, $0) })
-            if let systemItem = mainMenu.items.first(where: { item in
-                item !== shell && item.identifier != itemIdentifier &&
-                    (knownTitles.contains(item.title) || knownTitles.contains(item.submenu?.title ?? ""))
+        for item in mainMenu.items {
+            if let key = menuKeys.first(where: { key in
+                let known = Set(AppLanguage.allCases.map { L10n.text(key, $0) })
+                return known.contains(item.title) || known.contains(item.submenu?.title ?? "")
             }) {
-                if standardMenuIndexes[key] == nil {
-                    standardMenuIndexes[key] = mainMenu.index(of: systemItem)
+                setTitle(L10n.text(key, language), on: item)
+                if key == "report", let submenu = item.submenu {
+                    for command in submenu.items where allTitles.contains(command.title) {
+                        if let commandKey = reportCommandKeys.first(where: { key in
+                            AppLanguage.allCases.map { L10n.text(key, $0) }.contains(command.title)
+                        }) {
+                            setTitle(L10n.text(commandKey, language), on: command, includeSubmenu: false)
+                        }
+                    }
                 }
-                if standardSubmenus[key] == nil {
-                    standardSubmenus[key] = systemItem.submenu
-                }
-                systemItem.submenu = nil
-                mainMenu.removeItem(systemItem)
-            }
-
-            for obsolete in managedItems where obsolete !== shell {
-                if obsolete.submenu === standardSubmenus[key] {
-                    obsolete.submenu = nil
-                }
-                mainMenu.removeItem(obsolete)
-            }
-
-            if let submenu = standardSubmenus[key] {
-                shell.submenu = submenu
-            }
-
-            let title = L10n.text(key, language)
-            setTitle(title, on: shell)
-
-            if let destination = standardMenuIndexes[key], let current = mainMenu.items.firstIndex(where: { $0 === shell }), current != destination {
-                mainMenu.removeItem(at: current)
-                mainMenu.insertItem(shell, at: min(destination, mainMenu.items.count))
             }
         }
     }
 
-    private static func identifier(for key: String) -> NSUserInterfaceItemIdentifier {
-        NSUserInterfaceItemIdentifier("com.chengxin.drive-battery-health-viewer.\(key)")
-    }
-
-    private static func removeUnmanagedStandardMenus(from mainMenu: NSMenu) {
-        for key in standardMenuKeys {
-            let managedIdentifier = identifier(for: key)
-            let knownTitles = Set(AppLanguage.allCases.map { L10n.text(key, $0) })
-            for item in mainMenu.items where item.identifier != managedIdentifier &&
-                (knownTitles.contains(item.title) || knownTitles.contains(item.submenu?.title ?? "")) {
-                item.submenu = nil
-                mainMenu.removeItem(item)
-            }
+    /// Defensive diagnostic used by tests and debug tooling.  No production
+    /// menu item is ever created from this prefix.
+    static func containsInternalMarker(in menu: NSMenu) -> Bool {
+        menu.items.contains { item in
+            item.title.hasPrefix("__DBHV_STANDARD_MENU_") ||
+            item.submenu.map(containsInternalMarker(in:)) ?? false
         }
     }
 
-    private static func observeMenuAdditions(in mainMenu: NSMenu) {
-        guard observedMainMenu !== mainMenu else { return }
-        menuObservers.forEach(NotificationCenter.default.removeObserver)
-        menuObservers.removeAll()
-        observedMainMenu = mainMenu
-        for name in [NSMenu.didAddItemNotification, NSMenu.didChangeItemNotification] {
-            let observer = NotificationCenter.default.addObserver(
-                forName: name,
-                object: mainMenu,
-                queue: .main
-            ) { _ in
-                Task { @MainActor in
-                    scheduleDuplicateCleanup()
-                }
-            }
-            menuObservers.append(observer)
-        }
-    }
-
-    private static func scheduleDuplicateCleanup() {
-        guard !duplicateCleanupScheduled else { return }
-        duplicateCleanupScheduled = true
-        Task { @MainActor in
-            await Task.yield()
-            duplicateCleanupScheduled = false
-            guard let mainMenu = observedMainMenu else { return }
-            installStandardMenuShells(in: mainMenu, language: currentLanguage)
-            apply(to: mainMenu, language: currentLanguage)
-            NSApp.windowsMenu = standardSubmenus["menuWindow"]
-            NSApp.helpMenu = standardSubmenus["menuHelp"]
-            removeUnmanagedStandardMenus(from: mainMenu)
-        }
+    static func menuOrder(for language: AppLanguage) -> [String] {
+        definitions(for: language).map(\.key)
     }
 
     private static func setTitle(_ title: String, on item: NSMenuItem, includeSubmenu: Bool = true) {
-        if item.title != title {
-            item.title = title
-        }
+        if item.title != title { item.title = title }
         if item.attributedTitle?.string != title {
             item.attributedTitle = NSAttributedString(string: title)
         }

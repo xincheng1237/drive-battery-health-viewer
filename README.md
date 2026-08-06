@@ -10,11 +10,11 @@ Windows 版使用 Go 开发；macOS 版采用原生 SwiftUI，提供同时兼容
 
 ## 下载
 
-当前版本：**v1.0.4**。请前往 [Releases](../../releases/latest) 下载，或使用下方对应平台的文件。
+macOS 当前版本：**v1.0.5**；Windows 当前版本：**v1.0.4**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
-| macOS | [`Drive-Battery-Health-Viewer-1.0.4-macOS-Universal.dmg`](../../releases/download/v1.0.4/Drive-Battery-Health-Viewer-1.0.4-macOS-Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
+| macOS | [`Drive-Battery-Health-Viewer-1.0.5-macOS-Universal.dmg`](../../releases/download/v1.0.5/Drive-Battery-Health-Viewer-1.0.5-macOS-Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 或更高版本 |
 
 ### macOS 安装

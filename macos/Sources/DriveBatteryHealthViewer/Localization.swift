@@ -9,7 +9,7 @@ enum L10n {
 
     static func text(_ key: String, _ selected: AppLanguage) -> String {
         let language = effective(selected)
-        return tables[language]?[key] ?? tables[.english]?[key] ?? key
+        return tables[language]?[key] ?? historyActionTables[language]?[key] ?? tables[.english]?[key] ?? historyActionTables[.english]?[key] ?? key
     }
 
     static func format(_ key: String, _ selected: AppLanguage, _ arguments: CVarArg...) -> String {
@@ -23,7 +23,9 @@ enum L10n {
     static func missingTranslationKeys(for language: AppLanguage) -> [String] {
         let selected = effective(language)
         let reference = Set(tables[.english]?.keys.map { $0 } ?? [])
-        let translated = Set(tables[selected]?.keys.map { $0 } ?? [])
+        let tableKeys = tables[selected]?.keys.map { $0 } ?? [String]()
+        let actionKeys = historyActionTables[selected]?.keys.map { $0 } ?? [String]()
+        let translated = Set(tableKeys + actionKeys)
         return reference.subtracting(translated).sorted()
     }
 
@@ -108,7 +110,7 @@ enum L10n {
             "health": "Состояние", "good": "Хорошо", "warning": "Внимание", "critical": "Критично", "unknown": "Недоступно", "model": "Модель", "capacity": "Ёмкость", "protocol": "Подключение", "firmware": "Прошивка", "serialNumber": "Серийный номер", "smartStatus": "Статус S.M.A.R.T.", "lifeRemaining": "Оценка остаточного ресурса", "temperature": "Температура", "powerOnHours": "Время работы", "powerCycles": "Циклы питания", "totalRead": "Всего прочитано", "totalWritten": "Всего записано", "unsafeShutdowns": "Небезопасные выключения", "mediaErrors": "Ошибки носителя", "internal": "Внутренний", "solidState": "SSD",
             "manufacturer": "Производитель", "chemistry": "Тип батареи", "designCapacity": "Проектная ёмкость", "fullChargeCapacity": "Полная ёмкость", "currentCharge": "Текущий заряд", "cycleCount": "Число циклов", "batteryVoltage": "Напряжение батареи", "charging": "Заряжается", "connected": "Питание подключено", "yes": "Да", "no": "Нет", "unavailable": "Нет данных", "hours": "%llu ч", "mAh": "%d мА·ч", "percent": "%.0f%%",
             "report": "Отчёт о состоянии", "generated": "Создан", "computer": "Компьютер", "systemNotes": "Примечания системы", "privacyNotice": "При включении серийные номера скрываются в интерфейсе, истории и экспортируемых отчётах.", "systemLimitations": "macOS не предоставляет обычным приложениям все счётчики NVMe/USB S.M.A.R.T.; недоступные значения не оцениваются.",
-            "historyEmpty": "Нет сохранённых отчётов", "historyEmptyDetail": "Отчёты можно сохранять после обновления или только при экспорте.", "sourceRefresh": "Сохранено после обновления", "sourceExport": "Сохранено при экспорте", "delete": "Удалить", "deleteConfirm": "Удалить этот отчёт?", "deleteDetail": "Сохранённая запись будет удалена; экспортированный файл останется.", "showInFinder": "Показать в Finder", "chooseFolder": "Выбрать…", "openFolder": "Открыть папку", "historyLocation": "Папка истории", "saveMode": "Сохранение отчётов", "saveOnRefresh": "После каждого обновления", "saveOnExport": "Только при экспорте", "language": "Язык", "hideSerials": "Скрывать серийные номера", "reportTextSize": "Размер текста отчёта", "appearance": "Вид и конфиденциальность", "storage": "Хранилище истории", "dataAccess": "Доступ к данным оборудования",
+            "historyEmpty": "Нет сохранённых отчётов", "historyEmptyDetail": "Отчёты можно сохранять после обновления или только при экспорте.", "select": "Выбрать", "selectAll": "Выбрать все", "deselectAll": "Снять выбор", "exportSelected": "Экспортировать выбранные", "deleteSelected": "Удалить выбранные", "deleteSelectedConfirm": "Удалить выбранные отчёты?", "deleteSelectedDetail": "Выбранные отчёты будут удалены с этого Mac.", "batchExported": "Выбранные отчёты экспортированы", "sourceRefresh": "Сохранено после обновления", "sourceExport": "Сохранено при экспорте", "delete": "Удалить", "deleteConfirm": "Удалить этот отчёт?", "deleteDetail": "Сохранённая запись будет удалена; экспортированный файл останется.", "showInFinder": "Показать в Finder", "chooseFolder": "Выбрать…", "openFolder": "Открыть папку", "historyLocation": "Папка истории", "saveMode": "Сохранение отчётов", "saveOnRefresh": "После каждого обновления", "saveOnExport": "Только при экспорте", "language": "Язык", "hideSerials": "Скрывать серийные номера", "reportTextSize": "Размер текста отчёта", "appearance": "Вид и конфиденциальность", "storage": "Хранилище истории", "dataAccess": "Доступ к данным оборудования",
             "aboutSummary": "Лёгкая утилита только для чтения: состояние накопителей и батареи, история отчётов и изменения со временем.", "developer": "Разработчик", "author": "ChengXin", "projectHome": "Страница проекта", "issueFeedback": "Ошибки и предложения", "coolapk": "Coolapk · 程心ChengXin", "qq": "QQ-группа · 1040456137", "email": "Email · 2680149724@qq.com", "copyright": "© 2026 ChengXin. Все права защищены.", "version": "Версия %@", "changelog": "Журнал изменений", "license": "Лицензия GNU GPL v3", "readOnlyNote": "Приложение только читает данные и не выполняет тесты, запись, ремонт, стирание или обновление прошивки.", "permissionNote": "Некоторые внешние накопители и фирменные счётчики могут быть недоступны из-за macOS, контроллера или USB-корпуса.", "scanFailed": "Не удалось завершить сканирование: %@", "copied": "Отчёт скопирован", "exported": "Отчёт экспортирован", "done": "Готово", "cancel": "Отмена"
         ],
         .french: [
@@ -134,6 +136,32 @@ enum L10n {
             "appName": "ドライブとバッテリーの状態", "systemLanguage": "システム言語", "overview": "概要", "history": "履歴", "settings": "設定", "about": "このアプリについて", "menuEdit": "編集", "menuView": "表示", "menuWindow": "ウインドウ", "menuHelp": "ヘルプ", "refresh": "更新", "refreshing": "検査中…", "exportReport": "レポートを書き出す", "copyReport": "レポートをコピー", "lastUpdated": "%@ に更新", "noScan": "健康レポートはまだありません", "noScanDetail": "更新して、この Mac のドライブとバッテリー情報を読み取ります。", "drives": "ドライブ", "batteries": "バッテリー", "noDrives": "物理ドライブが報告されませんでした。", "noBattery": "この Mac にバッテリーはありません。",
             "health": "健康状態", "good": "良好", "warning": "注意", "critical": "重大", "unknown": "利用不可", "model": "モデル", "capacity": "容量", "protocol": "接続", "firmware": "ファームウェア", "serialNumber": "シリアル番号", "smartStatus": "S.M.A.R.T. 状態", "lifeRemaining": "推定残り寿命", "temperature": "温度", "powerOnHours": "使用時間", "powerCycles": "電源投入回数", "totalRead": "総読み込み量", "totalWritten": "総書き込み量", "unsafeShutdowns": "安全でないシャットダウン", "mediaErrors": "メディアエラー", "internal": "内蔵", "solidState": "SSD", "manufacturer": "製造元", "chemistry": "バッテリー種類", "designCapacity": "設計容量", "fullChargeCapacity": "満充電容量", "currentCharge": "現在の充電量", "cycleCount": "充放電回数", "batteryVoltage": "バッテリー電圧", "charging": "充電中", "connected": "電源接続", "yes": "はい", "no": "いいえ", "unavailable": "報告なし", "hours": "%llu 時間", "mAh": "%d mAh", "percent": "%.0f%%",
             "report": "健康レポート", "generated": "生成日時", "computer": "コンピュータ", "systemNotes": "システム情報", "privacyNotice": "有効にすると、画面、履歴、コピーおよび書き出したレポートでシリアル番号を隠します。", "systemLimitations": "macOS は一般アプリにすべての NVMe/USB S.M.A.R.T. 値を公開しません。取得できない値は推測しません。", "historyEmpty": "保存済みレポートはありません", "historyEmptyDetail": "更新のたび、または書き出し時のみ保存できます。", "sourceRefresh": "更新後に保存", "sourceExport": "書き出し時に保存", "delete": "削除", "deleteConfirm": "この履歴レポートを削除しますか？", "deleteDetail": "Mac 内の保存記録を削除します。書き出したテキストファイルは削除しません。", "showInFinder": "Finder に表示", "chooseFolder": "選択…", "openFolder": "フォルダを開く", "historyLocation": "履歴の保存先", "saveMode": "レポートを保存", "saveOnRefresh": "更新のたび", "saveOnExport": "書き出し時のみ", "language": "言語", "hideSerials": "シリアル番号を隠す", "reportTextSize": "レポート文字サイズ", "appearance": "外観とプライバシー", "storage": "履歴ストレージ", "dataAccess": "ハードウェアデータへのアクセス", "aboutSummary": "ドライブとバッテリーの状態を読み取り専用で確認し、履歴から変化を追える軽量ツールです。", "developer": "開発者", "author": "ChengXin", "projectHome": "プロジェクトページ", "issueFeedback": "問題と提案", "coolapk": "Coolapk · 程心ChengXin", "qq": "QQ グループ · 1040456137", "email": "メール · 2680149724@qq.com", "copyright": "© 2026 ChengXin. All rights reserved.", "version": "バージョン %@", "changelog": "更新履歴", "license": "GNU GPL v3 ライセンス", "readOnlyNote": "本アプリは情報を読むだけで、テスト、書き込み、修復、消去、ファームウェア更新は行いません。", "permissionNote": "外付けドライブやメーカー固有の値は macOS、コントローラ、USB ケースにより取得できない場合があります。", "scanFailed": "検査を完了できませんでした：%@", "copied": "レポートをコピーしました", "exported": "レポートを書き出しました", "done": "完了", "cancel": "キャンセル"
+        ]
+    ]
+
+    // Batch history actions are kept separately so the large legacy tables
+    // remain stable while every supported language still has complete copy.
+    private static let historyActionTables: [AppLanguage: [String: String]] = [
+        .english: [
+            "select": "Select", "selectAll": "Select All", "deselectAll": "Deselect All", "exportSelected": "Export Selected", "deleteSelected": "Delete Selected", "deleteSelectedConfirm": "Delete selected reports?", "deleteSelectedDetail": "The selected history reports will be removed from this Mac.", "batchExported": "Selected reports exported"
+        ],
+        .simplifiedChinese: [
+            "select": "选择", "selectAll": "全选", "deselectAll": "取消全选", "exportSelected": "导出所选记录", "deleteSelected": "删除所选记录", "deleteSelectedConfirm": "删除所选历史记录？", "deleteSelectedDetail": "所选历史记录将从这台 Mac 中删除。", "batchExported": "所选记录已导出"
+        ],
+        .russian: [
+            "select": "Выбрать", "selectAll": "Выбрать все", "deselectAll": "Снять выбор", "exportSelected": "Экспортировать выбранные", "deleteSelected": "Удалить выбранные", "deleteSelectedConfirm": "Удалить выбранные отчёты?", "deleteSelectedDetail": "Выбранные отчёты будут удалены с этого Mac.", "batchExported": "Выбранные отчёты экспортированы"
+        ],
+        .french: [
+            "select": "Sélectionner", "selectAll": "Tout sélectionner", "deselectAll": "Tout désélectionner", "exportSelected": "Exporter la sélection", "deleteSelected": "Supprimer la sélection", "deleteSelectedConfirm": "Supprimer les rapports sélectionnés ?", "deleteSelectedDetail": "Les rapports sélectionnés seront supprimés de ce Mac.", "batchExported": "Rapports sélectionnés exportés"
+        ],
+        .german: [
+            "select": "Auswählen", "selectAll": "Alle auswählen", "deselectAll": "Auswahl aufheben", "exportSelected": "Auswahl exportieren", "deleteSelected": "Auswahl löschen", "deleteSelectedConfirm": "Ausgewählte Berichte löschen?", "deleteSelectedDetail": "Die ausgewählten Berichte werden von diesem Mac entfernt.", "batchExported": "Ausgewählte Berichte exportiert"
+        ],
+        .korean: [
+            "select": "선택", "selectAll": "모두 선택", "deselectAll": "모두 선택 해제", "exportSelected": "선택 항목 내보내기", "deleteSelected": "선택 항목 삭제", "deleteSelectedConfirm": "선택한 기록을 삭제할까요?", "deleteSelectedDetail": "선택한 기록이 이 Mac에서 삭제됩니다.", "batchExported": "선택한 기록을 내보냈습니다"
+        ],
+        .japanese: [
+            "select": "選択", "selectAll": "すべて選択", "deselectAll": "選択を解除", "exportSelected": "選択項目を書き出す", "deleteSelected": "選択項目を削除", "deleteSelectedConfirm": "選択した履歴を削除しますか？", "deleteSelectedDetail": "選択した履歴をこの Mac から削除します。", "batchExported": "選択したレポートを書き出しました"
         ]
     ]
 }
