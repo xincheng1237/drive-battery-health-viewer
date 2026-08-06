@@ -46,11 +46,10 @@ struct RootView: View {
                     .environmentObject(model)
             }
         }
-        .task {
-            model.startLiveHardwareMonitoring()
-            if model.currentSnapshot == nil { model.refresh() }
+        .sheet(item: $model.availableUpdate) { update in
+            UpdateAvailableView(update: update)
+                .environmentObject(model)
         }
-        .onDisappear { model.stopLiveHardwareMonitoring() }
     }
 
     @ViewBuilder
@@ -74,7 +73,7 @@ struct RootView: View {
                 .help(model.t("refresh"))
                 .disabled(model.isScanning)
 
-                Button(action: exportReport) {
+                Button(action: model.presentExportCurrentReportPanel) {
                     Label(model.t("exportReport"), systemImage: "square.and.arrow.up")
                 }
                 .id("export.\(model.language.rawValue)")
@@ -105,18 +104,43 @@ struct RootView: View {
         }
     }
 
-    private func exportReport() {
-        guard let snapshot = model.currentSnapshot else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.canCreateDirectories = true
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        panel.nameFieldStringValue = "DriveBatteryHealth_\(formatter.string(from: snapshot.generatedAt)).txt"
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            model.exportCurrentReport(to: url)
+}
+
+private struct UpdateAvailableView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let update: AvailableAppUpdate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label {
+                Text(L10n.format("updateAvailableTitle", model.language, update.version))
+                    .font(.title2.weight(.semibold))
+            } icon: {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.format("currentVersionLabel", model.language, update.currentVersion))
+                Text(L10n.format("latestVersionLabel", model.language, update.version))
+                    .fontWeight(.medium)
+            }
+
+            HStack {
+                Spacer()
+                Button(model.t("later"), role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(model.t("downloadFromGitHub")) {
+                    NSWorkspace.shared.open(update.pageURL)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
         }
+        .padding(26)
+        .frame(width: 450)
     }
 }
 
@@ -158,6 +182,9 @@ struct OverviewView: View {
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             Text(model.t("overviewLimitations"))
+                            if !snapshot.drives.isEmpty {
+                                Text(model.t("driveWorkingTimeExplanation"))
+                            }
                             if !snapshot.batteries.isEmpty {
                                 Text(model.t("batteryHealthExplanation"))
                             }
@@ -538,8 +565,12 @@ struct HistoryView: View {
                 EmptyState(title: model.t("historyEmpty"), detail: model.t("historyEmptyDetail"), symbol: "clock.arrow.circlepath")
             } else {
                 HSplitView {
-                    historyList
-                    .frame(minWidth: 250, idealWidth: 300, maxWidth: 390)
+                    VStack(spacing: 0) {
+                        historySelectionBar
+                        Divider()
+                        historyList
+                    }
+                    .frame(minWidth: 220, idealWidth: 300, maxWidth: 420)
 
                     if let record = model.selectedHistory {
                         VStack(spacing: 0) {
@@ -549,8 +580,10 @@ struct HistoryView: View {
                                     Text(record.snapshot.generatedAt.formattedReportDate()).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Button(role: .destructive) { showsDeleteConfirmation = true } label: {
-                                    Label(model.t("delete"), systemImage: "trash")
+                                if !isSelecting {
+                                    Button(role: .destructive) { showsDeleteConfirmation = true } label: {
+                                        Label(model.t("delete"), systemImage: "trash")
+                                    }
                                 }
                             }
                             .padding(16)
@@ -563,13 +596,12 @@ struct HistoryView: View {
                                     .padding(18)
                             }
                         }
-                        .frame(minWidth: 440)
+                        .frame(minWidth: 280)
                     }
                 }
             }
         }
         .navigationTitle(model.t("history"))
-        .toolbar { historyToolbar }
         .confirmationDialog(
             isSelecting ? model.t("deleteSelectedConfirm") : model.t("deleteConfirm"),
             isPresented: $showsDeleteConfirmation
@@ -633,31 +665,74 @@ struct HistoryView: View {
         .contentShape(Rectangle())
     }
 
-    @ToolbarContentBuilder
-    private var historyToolbar: some ToolbarContent {
-        if !model.history.isEmpty {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(isSelecting ? model.t("done") : model.t("select")) {
-                    isSelecting.toggle()
-                    if !isSelecting { model.clearHistorySelection() }
+    private var historySelectionBar: some View {
+        ViewThatFits(in: .horizontal) {
+            historySelectionControls(compact: false)
+            historySelectionControls(compact: true)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+    }
+
+    private func historySelectionControls(compact: Bool) -> some View {
+        HStack(spacing: compact ? 6 : 8) {
+            if isSelecting {
+                let allSelected = model.selectedHistoryIDs.count == model.history.count
+                Button {
+                    if allSelected { model.clearHistorySelection() } else { model.selectAllHistory() }
+                } label: {
+                    if compact {
+                        Image(systemName: allSelected ? "checkmark.circle.fill" : "checkmark.circle")
+                    } else {
+                        Text(allSelected ? model.t("deselectAll") : model.t("selectAll"))
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .help(allSelected ? model.t("deselectAll") : model.t("selectAll"))
+
+                Spacer(minLength: compact ? 2 : 4)
+
+                Button(action: exportSelected) {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help(model.t("exportSelected"))
+                .disabled(model.selectedHistoryIDs.isEmpty)
+
+                Button(role: .destructive) {
+                    showsDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help(model.t("deleteSelected"))
+                .disabled(model.selectedHistoryIDs.isEmpty)
+
+                Button {
+                    isSelecting = false
+                    model.clearHistorySelection()
+                } label: {
+                    if compact {
+                        Image(systemName: "checkmark")
+                    } else {
+                        Text(model.t("done"))
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .help(model.t("done"))
+                .keyboardShortcut(.cancelAction)
+            } else {
+                Spacer()
+                Button {
+                    isSelecting = true
+                } label: {
+                    if compact {
+                        Image(systemName: "checkmark.circle")
+                    } else {
+                        Label(model.t("select"), systemImage: "checkmark.circle")
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
                 }
                 .help(model.t("select"))
-
-                if isSelecting {
-                    let allSelected = model.selectedHistoryIDs.count == model.history.count
-                    Button(allSelected ? model.t("deselectAll") : model.t("selectAll")) {
-                        if allSelected { model.clearHistorySelection() } else { model.selectAllHistory() }
-                    }
-                    .disabled(model.history.isEmpty)
-
-                    Button(model.t("exportSelected"), action: exportSelected)
-                        .disabled(model.selectedHistoryIDs.isEmpty)
-
-                    Button(model.t("deleteSelected"), role: .destructive) {
-                        showsDeleteConfirmation = true
-                    }
-                    .disabled(model.selectedHistoryIDs.isEmpty)
-                }
             }
         }
     }
@@ -741,7 +816,6 @@ struct PreferencesView: View {
 
 struct AboutView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var showsChangelog = false
     private let project = URL(string: "https://github.com/xincheng1237/drive-battery-health-viewer")!
 
     var body: some View {
@@ -763,7 +837,7 @@ struct AboutView: View {
                     Divider().padding(.leading, 46)
                     AboutLink(symbol: "ladybug", title: model.t("issueFeedback"), url: project.appendingPathComponent("issues"))
                     Divider().padding(.leading, 46)
-                    AboutButton(symbol: "sparkles", title: model.t("changelog")) { showsChangelog = true }
+                    AboutButton(symbol: "sparkles", title: model.t("changelog")) { model.showsChangelog = true }
                     Divider().padding(.leading, 46)
                     AboutLink(symbol: "doc.badge.gearshape", title: model.t("license"), url: project.appendingPathComponent("blob/main/LICENSE"))
                     Divider().padding(.leading, 46)
@@ -784,7 +858,7 @@ struct AboutView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle(model.t("about"))
-        .sheet(isPresented: $showsChangelog) {
+        .sheet(isPresented: $model.showsChangelog) {
             ChangelogView().environmentObject(model)
         }
     }
@@ -900,39 +974,55 @@ struct ChangelogView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(L10n.format("version", model.language, release.version))
                                 .font(.headline)
-                            ForEach(release.items, id: \.self) { item in
-                                Label(item, systemImage: "checkmark.circle.fill")
-                                    .foregroundStyle(.primary, .green)
-                                    .fixedSize(horizontal: false, vertical: true)
+                            ForEach(release.sections) { section in
+                                if release.sections.count > 1 {
+                                    Text(section.kind.title(for: model.language))
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.top, 2)
+                                }
+                                ForEach(section.items, id: \.self) { item in
+                                    Label(item, systemImage: section.kind.symbol)
+                                        .foregroundStyle(.primary, section.kind.color)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                         }
                         if release.id != releases.last?.id { Divider() }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
             }
         }
         .padding(28)
-        .frame(width: 620, height: 500)
+        .frame(width: 650, height: 560)
     }
 }
 
-private struct ChangelogRelease: Identifiable {
+struct ChangelogRelease: Identifiable {
     var id: String { version }
     let version: String
-    let items: [String]
+    let sections: [ChangelogSection]
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
         switch L10n.effective(language) {
         case .simplifiedChinese:
             return releases(
-                current: [
-                    "修复重复刷新后 NVMe S.M.A.R.T. 数据消失的问题，并保留上次成功读取的数据。",
+                features: [
+                    "新增历史记录多选、全选、批量导出和批量删除功能。",
+                    "新增对 macOS 26 及以上版本 Liquid Glass 界面效果的支持。",
+                    "新增检查更新功能。"
+                ],
+                fixes: [
+                    "修复了顶部系统菜单可能卡住、残留或重复显示窗口项目的问题。",
+                    "修复了切换应用语言后，顶部菜单及其子菜单语言未能同步更新的问题。"
+                ],
+                previous: [
+                    "修复重复刷新后 NVMe S.M.A.R.T. 数据消失的问题。",
                     "电量、充电状态、电源连接状态以及硬盘与电池温度改为自动实时更新。",
                     "统一硬盘与电池字段顺序，容量改用 mAh / Wh，并完善健康度说明。",
-                    "移除菜单占位标记，改用稳定的 SwiftUI/AppKit 原生菜单生命周期，修复菜单卡住、残留和 Window 项目重复。",
-                    "菜单本地化更新改为无副作用、可重复执行的方案，并为 macOS 26+ 增加轻量材质层；macOS 13–15 保持原有卡片视觉。",
-                    "历史记录支持多选、全选、批量导出到新文件夹和批量删除。"
+                    "调整应用图标安全边距。"
                 ],
                 initial: [
                     "推出原生 SwiftUI macOS 界面，支持深色模式与辅助功能。",
@@ -943,39 +1033,112 @@ private struct ChangelogRelease: Identifiable {
             )
         case .russian:
             return releases(
-                current: ["Исправлено исчезновение данных NVMe S.M.A.R.T. после повторного обновления.", "Заряд, состояние зарядки, питание и температуры диска и батареи обновляются автоматически.", "Убраны маркеры меню и небезопасное перестроение AppKit-меню; исправлены зависания и дубли Window.", "Локализация меню стала идемпотентной; добавлен аккуратный материал для macOS 26+, сохранив вид macOS 13–15.", "Историю можно выбирать, экспортировать в одну новую папку и удалять пакетно."],
+                features: ["Добавлены множественный выбор, выбор всех записей, пакетный экспорт и пакетное удаление истории.", "Добавлена поддержка интерфейсного эффекта Liquid Glass в macOS 26 и более новых версиях.", "Добавлена проверка обновлений."],
+                fixes: ["Исправлена проблема, из-за которой верхнее системное меню могло зависать, оставаться на экране или дублировать команды окна.", "Исправлена проблема, из-за которой верхнее меню и его подменю не меняли язык вместе с приложением."],
+                previous: ["Исправлено исчезновение данных NVMe S.M.A.R.T. после повторного обновления.", "Заряд, состояние зарядки, питание и температуры диска и батареи обновляются автоматически.", "Поля диска и батареи упорядочены; ёмкость показывается в mAh / Wh.", "Размер значка приведён к стандартам macOS."],
                 initial: ["Нативный интерфейс SwiftUI с тёмным режимом и функциями доступности.", "Диагностика диска и батареи только для чтения, история и экспорт отчётов.", "Поддержка Intel и Apple silicon в Universal 2.", "Семь языков, защита серийных номеров и настройка текста отчёта."]
             )
         case .french:
             return releases(
-                current: ["Correction de la disparition des données NVMe S.M.A.R.T. après plusieurs actualisations.", "Le niveau de batterie, la charge, l’alimentation et les températures du disque et de la batterie se mettent à jour automatiquement.", "Suppression des marqueurs et du remaniement dangereux des menus AppKit ; les blocages et doublons de Fenêtre sont corrigés.", "Localisation des menus idempotente et surface matérielle légère sur macOS 26+, avec l’apparence macOS 13–15 conservée.", "Sélection multiple de l’historique, export groupé dans un nouveau dossier et suppression groupée."],
+                features: ["Ajout de la sélection multiple, de Tout sélectionner, de l’export groupé et de la suppression groupée dans l’historique.", "Ajout de la prise en charge de l’effet d’interface Liquid Glass sous macOS 26 et versions ultérieures.", "Ajout de la recherche de mises à jour."],
+                fixes: ["Correction d’un problème pouvant bloquer ou laisser affiché le menu système supérieur, ou dupliquer les commandes de fenêtre.", "Correction d’un problème empêchant le menu supérieur et ses sous-menus de suivre la langue choisie dans l’app."],
+                previous: ["Correction de la disparition des données NVMe S.M.A.R.T. après plusieurs actualisations.", "Le niveau de batterie, la charge, l’alimentation et les températures du disque et de la batterie se mettent à jour automatiquement.", "Ordre des champs harmonisé et capacités affichées en mAh / Wh.", "Taille de l’icône alignée sur les conventions macOS."],
                 initial: ["Interface SwiftUI native avec mode sombre et accessibilité.", "Lecture seule des disques et de la batterie, historique et export des rapports.", "Compatibilité Intel et Apple silicon avec Universal 2.", "Sept langues, confidentialité des numéros de série et taille de rapport réglable."]
             )
         case .german:
             return releases(
-                current: ["Behoben: NVMe-S.M.A.R.T.-Daten verschwanden nach erneutem Aktualisieren.", "Akkustand, Ladezustand, Netzanschluss sowie Laufwerks- und Akkutemperatur werden automatisch aktualisiert.", "Menümarker und unsicheres AppKit-Menü-Reparenting entfernt; Hänger und doppelte Fensterbefehle behoben.", "Idempotente Menülokalisierung und dezentes Material unter macOS 26+, bei unverändertem macOS-13–15-Look.", "Verlaufseinträge können mehrfach ausgewählt, in einen neuen Ordner exportiert und gesammelt gelöscht werden."],
+                features: ["Mehrfachauswahl, Alle auswählen, Sammelexport und Sammellöschen für Verlaufseinträge hinzugefügt.", "Unterstützung für den Liquid-Glass-Oberflächeneffekt ab macOS 26 hinzugefügt.", "Eine Funktion zur Suche nach Updates wurde hinzugefügt."],
+                fixes: ["Ein Problem wurde behoben, durch das das obere Systemmenü hängen bleiben, sichtbar bleiben oder Fensterbefehle doppelt anzeigen konnte.", "Ein Problem wurde behoben, durch das das obere Menü und seine Untermenüs der in der App gewählten Sprache nicht folgten."],
+                previous: ["Behoben: NVMe-S.M.A.R.T.-Daten verschwanden nach erneutem Aktualisieren.", "Akkustand, Ladezustand, Netzanschluss sowie Laufwerks- und Akkutemperatur werden automatisch aktualisiert.", "Feldreihenfolge vereinheitlicht und Kapazitäten als mAh / Wh dargestellt.", "Symbolgröße an macOS-Konventionen angepasst."],
                 initial: ["Native SwiftUI-Oberfläche mit Dunkelmodus und Bedienungshilfen.", "Nur-Lese-Prüfung von Laufwerk und Akku, Verlauf und Berichtsexport.", "Universal-2-Unterstützung für Intel und Apple Chips.", "Sieben Sprachen, Schutz der Seriennummern und anpassbare Berichtsschrift."]
             )
         case .korean:
             return releases(
-                current: ["반복 새로 고침 후 NVMe S.M.A.R.T. 데이터가 사라지는 문제를 수정했습니다.", "배터리 잔량, 충전 상태, 전원 연결 상태와 드라이브·배터리 온도가 자동으로 갱신됩니다.", "메뉴 마커와 안전하지 않은 AppKit 메뉴 재구성을 제거해 멈춤과 Window 중복을 수정했습니다.", "메뉴 현지화를 멱등적으로 만들고 macOS 26+에 가벼운 머티리얼을 추가했으며 macOS 13–15 화면은 유지했습니다.", "기록을 여러 개 선택하고 새 폴더로 일괄 내보내거나 일괄 삭제할 수 있습니다."],
+                features: ["기록 다중 선택, 모두 선택, 일괄 내보내기 및 일괄 삭제 기능을 추가했습니다.", "macOS 26 이상에서 Liquid Glass 인터페이스 효과 지원을 추가했습니다.", "업데이트 확인 기능을 추가했습니다."],
+                fixes: ["상단 시스템 메뉴가 멈추거나 화면에 남거나 윈도우 항목을 중복 표시할 수 있는 문제를 수정했습니다.", "앱에서 선택한 언어에 맞춰 상단 메뉴와 하위 메뉴의 언어가 변경되지 않는 문제를 수정했습니다."],
+                previous: ["반복 새로 고침 후 NVMe S.M.A.R.T. 데이터가 사라지는 문제를 수정했습니다.", "배터리 잔량, 충전 상태, 전원 연결 상태와 드라이브·배터리 온도가 자동으로 갱신됩니다.", "드라이브와 배터리 필드 순서를 통일하고 용량을 mAh / Wh로 표시합니다.", "앱 아이콘 크기를 macOS 규칙에 맞췄습니다."],
                 initial: ["다크 모드와 손쉬운 사용을 지원하는 네이티브 SwiftUI 인터페이스.", "읽기 전용 드라이브·배터리 검사, 기록 및 보고서 내보내기.", "Intel 및 Apple 칩을 위한 Universal 2 지원.", "7개 언어, 일련번호 보호 및 보고서 글자 크기 조절."]
             )
         case .japanese:
             return releases(
-                current: ["再更新後に NVMe S.M.A.R.T. データが消える問題を修正しました。", "バッテリー残量、充電状態、電源接続状態、ドライブとバッテリーの温度を自動更新します。", "メニューマーカーと安全でない AppKit メニュー再構成を削除し、固まりや Window の重複を修正しました。", "メニューのローカライズを冪等化し、macOS 26+ に控えめなマテリアルを追加。macOS 13–15 の表示は維持します。", "履歴を複数選択し、新しいフォルダへまとめて書き出したり削除したりできます。"],
+                features: ["履歴の複数選択、すべて選択、一括書き出し、一括削除を追加しました。", "macOS 26 以降の Liquid Glass インターフェイス効果に対応しました。", "アップデート確認機能を追加しました。"],
+                fixes: ["上部のシステムメニューが固まる、残る、またはウインドウ項目が重複することがある問題を修正しました。", "アプリで選択した言語に上部メニューとサブメニューの言語が連動しない問題を修正しました。"],
+                previous: ["再更新後に NVMe S.M.A.R.T. データが消える問題を修正しました。", "バッテリー残量、充電状態、電源接続状態、ドライブとバッテリーの温度を自動更新します。", "ドライブとバッテリーの項目順を統一し、容量を mAh / Wh で表示します。", "アプリアイコンのサイズを macOS の慣例に合わせました。"],
                 initial: ["ダークモードとアクセシビリティに対応したネイティブ SwiftUI UI。", "読み取り専用のドライブ・バッテリー検査、履歴、レポート書き出し。", "Intel と Apple チップに対応する Universal 2。", "7 言語、シリアル番号保護、レポート文字サイズ調整に対応。"]
             )
         case .english, .system:
             return releases(
-                current: ["Fixed NVMe S.M.A.R.T. values disappearing after repeated refreshes.", "Battery level, charging state, power connection, and drive and battery temperatures now update automatically.", "Removed visible menu markers and unsafe AppKit menu rebuilding, fixing stuck menus and duplicate Window commands.", "Made menu localization idempotent and added a restrained material surface on macOS 26+, while preserving the macOS 13–15 appearance.", "History records can now be multi-selected, exported into one new folder, or deleted in bulk."],
+                features: ["Added multi-selection, Select All, batch export, and batch deletion for history records.", "Added support for Liquid Glass interface effects on macOS 26 and later.", "Added update checking."],
+                fixes: ["Fixed an issue where the top system menu could become stuck, remain visible, or duplicate Window commands.", "Fixed an issue where the top menu and its submenus did not follow the language selected in the app."],
+                previous: ["Fixed NVMe S.M.A.R.T. values disappearing after repeated refreshes.", "Battery level, charging state, power connection, and drive and battery temperatures now update automatically.", "Aligned drive and battery field order and display capacities as mAh / Wh.", "Adjusted the app icon safe area."],
                 initial: ["Native SwiftUI interface with Dark Mode and accessibility support.", "Read-only drive and battery scans, history, report copy, and export.", "Universal 2 support for Intel and Apple silicon Macs.", "Seven languages, serial-number privacy, and adjustable report text."]
             )
         }
     }
 
-    private static func releases(current: [String], initial: [String]) -> [ChangelogRelease] {
-        [ChangelogRelease(version: "1.0.5", items: current), ChangelogRelease(version: "1.0.0", items: initial)]
+    private static func releases(features: [String], fixes: [String], previous: [String], initial: [String]) -> [ChangelogRelease] {
+        let previousFeatures = previous.indices.contains(2) ? [previous[1], previous[2]] : []
+        let previousFixes = previous.indices.contains(3) ? [previous[0], previous[3]] : previous
+        return [
+            ChangelogRelease(version: "1.0.5", sections: [
+                ChangelogSection(kind: .feature, items: features),
+                ChangelogSection(kind: .fix, items: fixes)
+            ]),
+            ChangelogRelease(version: "1.0.4", sections: [
+                ChangelogSection(kind: .feature, items: previousFeatures),
+                ChangelogSection(kind: .fix, items: previousFixes)
+            ]),
+            ChangelogRelease(version: "1.0.0", sections: [ChangelogSection(kind: .historical, items: initial)])
+        ]
+    }
+}
+
+struct ChangelogSection: Identifiable {
+    var id: ChangelogItemKind { kind }
+    let kind: ChangelogItemKind
+    let items: [String]
+}
+
+enum ChangelogItemKind: String, Identifiable {
+    var id: String { rawValue }
+    case feature
+    case fix
+    case historical
+
+    var symbol: String {
+        switch self {
+        case .feature: return "checkmark.circle.fill"
+        case .fix: return "wrench.and.screwdriver.fill"
+        case .historical: return "checkmark.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .feature: return .green
+        case .fix: return .orange
+        case .historical: return .green
+        }
+    }
+
+    func title(for language: AppLanguage) -> String {
+        switch (self, L10n.effective(language)) {
+        case (.feature, .simplifiedChinese): return "新增功能"
+        case (.fix, .simplifiedChinese): return "问题修复"
+        case (.feature, .russian): return "Новые функции"
+        case (.fix, .russian): return "Исправления"
+        case (.feature, .french): return "Nouveautés"
+        case (.fix, .french): return "Correctifs"
+        case (.feature, .german): return "Neue Funktionen"
+        case (.fix, .german): return "Fehlerbehebungen"
+        case (.feature, .korean): return "새로운 기능"
+        case (.fix, .korean): return "문제 수정"
+        case (.feature, .japanese): return "新機能"
+        case (.fix, .japanese): return "修正"
+        case (.feature, .english), (.feature, .system): return "New Features"
+        case (.fix, .english), (.fix, .system): return "Fixes"
+        case (.historical, _): return ""
+        }
     }
 }
 

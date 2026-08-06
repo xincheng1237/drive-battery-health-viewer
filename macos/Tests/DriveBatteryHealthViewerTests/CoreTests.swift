@@ -184,6 +184,8 @@ struct CoreTests {
             #expect(report.contains("mAh /"))
             #expect(report.contains("••••••••"))
         }
+        #expect(L10n.text("powerOnHours", .simplifiedChinese) == "工作时间")
+        #expect(L10n.text("driveWorkingTimeExplanation", .simplifiedChinese) == "硬盘工作时间由硬盘固件统计，可能不包含控制器处于低功耗状态的时间，不等同于电脑开机或实际使用时长。")
         #expect(L10n.text("batteryHealthExplanation", .simplifiedChinese) == "电池健康度以 macOS 校准后的最大容量为准，受温度、充电管理、系统校准和取整影响，它与“满充容量÷设计容量”的直接计算结果可能存在细微差异。")
         #expect(L10n.text("powerConnectedNotCharging", .simplifiedChinese) == "已连接电源；当前电池已充满，或 macOS 根据当前状态暂时采用直接供电。")
     }
@@ -191,7 +193,7 @@ struct CoreTests {
     @Test @MainActor
     func testMainMenuTitlesRelocalizeImmediately() {
         let menu = NSMenu()
-        for title in ["Drive & Battery Health Viewer", "Edit", "View", "Health Report", "Window", "Help"] {
+        for title in ["Drive & Battery Health Viewer", "File", "View", "Health Report", "Window", "Help"] {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             item.attributedTitle = NSAttributedString(string: title)
             item.submenu = NSMenu(title: title)
@@ -203,18 +205,18 @@ struct CoreTests {
         }
 
         MainMenuLocalizer.apply(to: menu, language: .simplifiedChinese)
-        #expect(menu.items.map(\.title) == ["Drive & Battery Health Viewer", "编辑", "显示", "健康检测报告", "窗口", "帮助"])
-        #expect(menu.items.map { $0.attributedTitle?.string ?? $0.title } == ["Drive & Battery Health Viewer", "编辑", "显示", "健康检测报告", "窗口", "帮助"])
+        #expect(menu.items.map(\.title) == ["硬盘与电池健康查看器", "文件", "显示", "健康检测报告", "窗口", "帮助"])
+        #expect(menu.items.map { $0.attributedTitle?.string ?? $0.title } == ["硬盘与电池健康查看器", "文件", "显示", "健康检测报告", "窗口", "帮助"])
         #expect(menu.items[3].submenu?.items.map(\.title) == ["刷新", "复制报告"])
 
         MainMenuLocalizer.apply(to: menu, language: .english)
-        #expect(menu.items.map(\.title) == ["Drive & Battery Health Viewer", "Edit", "View", "Health Report", "Window", "Help"])
+        #expect(menu.items.map(\.title) == ["Drive & Battery Health Viewer", "File", "View", "Health Report", "Window", "Help"])
         #expect(menu.items[3].submenu?.items.map(\.title) == ["Refresh", "Copy Report"])
     }
 
     @Test @MainActor
     func testMenuDefinitionsAreIdempotentAndOrdered() {
-        let expectedOrder = ["menuEdit", "menuView", "report", "menuWindow", "menuHelp"]
+        let expectedOrder = ["menuFile", "menuView", "report", "menuWindow", "menuHelp"]
         let first = MainMenuLocalizer.definitions(for: .simplifiedChinese)
         #expect(first.map(\.key) == expectedOrder)
         #expect(MainMenuLocalizer.menuOrder(for: .simplifiedChinese) == expectedOrder)
@@ -227,6 +229,9 @@ struct CoreTests {
     @Test @MainActor
     func testMenuLanguageRoundTripDoesNotRetainOldTitles() {
         let menu = NSMenu()
+        let appItem = NSMenuItem(title: L10n.text("appName", .english), action: nil, keyEquivalent: "")
+        appItem.submenu = NSMenu(title: appItem.title)
+        menu.addItem(appItem)
         for definition in MainMenuLocalizer.definitions(for: .english) {
             let item = NSMenuItem(title: definition.title, action: nil, keyEquivalent: "")
             item.submenu = NSMenu(title: definition.title)
@@ -235,7 +240,7 @@ struct CoreTests {
 
         for language in [AppLanguage.simplifiedChinese, .japanese, .german, .english, .simplifiedChinese] {
             MainMenuLocalizer.apply(to: menu, language: language)
-            #expect(menu.items.map(\.title) == MainMenuLocalizer.definitions(for: language).map(\.title))
+            #expect(menu.items.map(\.title) == [L10n.text("appName", language)] + MainMenuLocalizer.definitions(for: language).map(\.title))
         }
     }
 
@@ -269,7 +274,117 @@ struct CoreTests {
         #expect(menu.items.count == 1)
         #expect(menu.items[0].submenu?.items.count == 1)
         #expect(menu.items[0].submenu?.items[0].action == action)
-        #expect(menu.items[0].submenu?.items[0].title == "About")
+        #expect(menu.items[0].submenu?.items[0].title == "关于“硬盘与电池健康查看器”")
+    }
+
+    @Test @MainActor
+    func testCompleteStandardMenuRoundTripPreservesIdentityAndStructure() {
+        let menu = representativeMainMenu()
+        let itemIdentities = menuTreeItems(menu).map(ObjectIdentifier.init)
+        let submenuIdentities = menuTreeSubmenus(menu).map(ObjectIdentifier.init)
+        let actionSelectors = menuTreeItems(menu).map { $0.action.map(NSStringFromSelector) }
+        let itemCounts = menuTreeSubmenus(menu).map { $0.items.count }
+
+        let languages: [AppLanguage] = [.simplifiedChinese, .russian, .french, .german, .korean, .japanese, .english]
+        for language in languages {
+            for _ in 0..<20 { MainMenuLocalizer.apply(to: menu, language: language) }
+            #expect(menuTreeItems(menu).map(ObjectIdentifier.init) == itemIdentities)
+            #expect(menuTreeSubmenus(menu).map(ObjectIdentifier.init) == submenuIdentities)
+            #expect(menuTreeItems(menu).map { $0.action.map(NSStringFromSelector) } == actionSelectors)
+            #expect(menuTreeSubmenus(menu).map { $0.items.count } == itemCounts)
+            #expect(!MainMenuLocalizer.containsInternalMarker(in: menu))
+            #expect(menu.items.count == 6)
+            #expect(menu.items[4].submenu?.items.count == 8)
+            let windowTitles = menu.items[4].submenu?.items.filter { !$0.isSeparatorItem }.map(\.title) ?? []
+            #expect(Set(windowTitles).count == windowTitles.count)
+        }
+
+        MainMenuLocalizer.apply(to: menu, language: .russian)
+        #expect(menu.items.map(\.title) == ["Состояние накопителей и батареи", "Файл", "Вид", "Отчёт о состоянии", "Окно", "Справка"])
+        #expect(menu.items[1].submenu?.items[0].title == "Экспортировать текущий отчёт")
+        #expect(menu.items[2].submenu?.items[0].title == "Показать боковую панель")
+        #expect(menu.items[4].submenu?.items[0].title == "Свернуть")
+        #expect(menu.items[4].submenu?.items[4].title == "Перемещение и изменение размера")
+        #expect(menu.items[5].submenu?.items[0].title == "Страница проекта")
+    }
+
+    @Test @MainActor
+    func testProductionMenuTreeIsStableLocalizedAndFreeOfInjectedDuplicates() {
+        let menu = MainMenuLocalizer.makeMenuForTesting(language: .english)
+        let itemIdentities = menuTreeItems(menu).map(ObjectIdentifier.init)
+        let submenuIdentities = menuTreeSubmenus(menu).map(ObjectIdentifier.init)
+        let itemCounts = menuTreeSubmenus(menu).map { $0.items.count }
+        let actionSelectors = menuTreeItems(menu).map { $0.action.map(NSStringFromSelector) }
+
+        #expect(menu.items.map(\.title) == [
+            "Drive & Battery Health Viewer", "File", "View",
+            "Health Report", "Window", "Help"
+        ])
+        #expect(menu.items[4].submenu?.items.filter { !$0.isSeparatorItem }.map(\.title) == [
+            "Minimize", "Zoom", "Enter/Exit Full Screen", "Bring All to Front"
+        ])
+
+        for language in [AppLanguage.simplifiedChinese, .english, .russian, .japanese, .german, .simplifiedChinese] {
+            for _ in 0..<20 { MainMenuLocalizer.apply(to: menu, language: language) }
+            #expect(menuTreeItems(menu).map(ObjectIdentifier.init) == itemIdentities)
+            #expect(menuTreeSubmenus(menu).map(ObjectIdentifier.init) == submenuIdentities)
+            #expect(menuTreeSubmenus(menu).map { $0.items.count } == itemCounts)
+            #expect(menuTreeItems(menu).map { $0.action.map(NSStringFromSelector) } == actionSelectors)
+            #expect(!MainMenuLocalizer.containsInternalMarker(in: menu))
+            let windowTitles = menu.items[4].submenu?.items.filter { !$0.isSeparatorItem }.map(\.title) ?? []
+            #expect(windowTitles.count == Set(windowTitles).count)
+        }
+
+        #expect(menu.items.map(\.title) == [
+            "硬盘与电池健康查看器", "文件", "显示",
+            "健康检测报告", "窗口", "帮助"
+        ])
+        #expect(menu.items[1].submenu?.items.filter { !$0.isSeparatorItem }.map(\.title) == ["导出当前报告", "打开报告文件夹", "关闭窗口"])
+        #expect(menu.items[5].submenu?.items.map(\.title) == ["项目主页", "反馈问题", "查看更新日志"])
+    }
+
+    @Test @MainActor
+    func testChangelogKeeps104AndSeparates105FeaturesFromFixes() {
+        for language in AppLanguage.allCases {
+            let releases = ChangelogRelease.localized(for: language)
+            #expect(releases.map(\.version) == ["1.0.5", "1.0.4", "1.0.0"])
+            #expect(releases[0].sections.map(\.kind) == [.feature, .fix])
+            #expect(releases[0].sections[0].kind.symbol == "checkmark.circle.fill")
+            #expect(releases[0].sections[1].kind.symbol == "wrench.and.screwdriver.fill")
+            #expect(releases[0].sections.flatMap(\.items).allSatisfy { !$0.isEmpty })
+            #expect(releases[1].sections.map(\.kind) == [.feature, .fix])
+            #expect(releases[1].sections[0].items.count == 2)
+            #expect(releases[1].sections[1].items.count == 2)
+        }
+        let chinese = ChangelogRelease.localized(for: .simplifiedChinese)
+        #expect(chinese[0].sections[0].items.contains("新增对 macOS 26 及以上版本 Liquid Glass 界面效果的支持。"))
+        #expect(chinese[0].sections[0].items.contains("新增检查更新功能。"))
+        #expect(chinese[0].sections[1].items.allSatisfy { $0.hasPrefix("修复了") && $0.hasSuffix("的问题。") })
+        #expect(chinese[1].sections[0].items == [
+            "电量、充电状态、电源连接状态以及硬盘与电池温度改为自动实时更新。",
+            "统一硬盘与电池字段顺序，容量改用 mAh / Wh，并完善健康度说明。"
+        ])
+        #expect(chinese[1].sections[1].items == [
+            "修复重复刷新后 NVMe S.M.A.R.T. 数据消失的问题。",
+            "调整应用图标安全边距。"
+        ])
+    }
+
+    @Test
+    func testReportsAndLiveUpdatesSupportDesktopMacWithoutBattery() {
+        var desktop = sampleSnapshot()
+        desktop.batteries = []
+        for language in AppLanguage.allCases {
+            let report = ReportRenderer.render(snapshot: desktop, language: language, hideSerials: true)
+            #expect(report.contains("v1.0.5"))
+            #expect(report.contains(desktop.computerName))
+        }
+        let updated = desktop.updatingLiveHardwareState(LiveHardwareState(
+            battery: nil,
+            driveTemperatures: ["disk0": 41]
+        ))
+        #expect(updated.batteries.isEmpty)
+        #expect(updated.drives[0].temperatureCelsius == 41)
     }
 
     @Test @MainActor
@@ -278,6 +393,91 @@ struct CoreTests {
         #expect(Set(definitions.map(\.key)).count == definitions.count)
         #expect(definitions.filter(\.isSystemOwned).map(\.key) == MainMenuLocalizer.standardMenuKeys)
         #expect(definitions.filter { !$0.isSystemOwned }.map(\.key) == ["report"])
+    }
+
+    @Test @MainActor
+    func testRequestedMenuCommandsAreLocalizedBoundAndEditableMenuIsAbsent() {
+        let menu = MainMenuLocalizer.makeMenuForTesting(language: .simplifiedChinese)
+        #expect(menu.items.map(\.title) == ["硬盘与电池健康查看器", "文件", "显示", "健康检测报告", "窗口", "帮助"])
+        #expect(!menu.items.map(\.title).contains("编辑"))
+
+        let fileItems = menu.items[1].submenu?.items.filter { !$0.isSeparatorItem } ?? []
+        #expect(fileItems.map(\.title) == ["导出当前报告", "打开报告文件夹", "关闭窗口"])
+        #expect(fileItems[0].action.map(NSStringFromSelector) == "exportCurrentReport:")
+        #expect(fileItems[1].action.map(NSStringFromSelector) == "openReportFolder:")
+
+        let viewItems = menu.items[2].submenu?.items.filter { !$0.isSeparatorItem } ?? []
+        #expect(viewItems.map(\.title).contains("增大报告文字"))
+        #expect(viewItems.map(\.title).contains("减小报告文字"))
+        #expect(viewItems.map(\.title).contains("恢复默认文字大小"))
+
+        let helpItems = menu.items[5].submenu?.items.filter { !$0.isSeparatorItem } ?? []
+        #expect(helpItems.map(\.title) == ["项目主页", "反馈问题", "查看更新日志"])
+        #expect(helpItems.map { $0.action.map(NSStringFromSelector) } == ["openProjectHome:", "openIssueFeedback:", "showChangelog:"])
+
+        let appItems = menu.items[0].submenu?.items.filter { !$0.isSeparatorItem } ?? []
+        #expect(appItems.map(\.title).contains("检查更新…"))
+        #expect(appItems.first(where: { $0.title == "检查更新…" })?.action.map(NSStringFromSelector) == "checkForUpdates:")
+    }
+
+    @Test
+    func testUpdateVersionComparisonAndStableReleaseDecoding() throws {
+        #expect(AppVersion("v1.0.6")! > AppVersion("1.0.5")!)
+        #expect(AppVersion("1.0.10")! > AppVersion("1.0.9")!)
+        #expect(AppVersion("1.0.5")! == AppVersion("1.0.5.0")!)
+        #expect(AppVersion("1.0.5-beta")! == AppVersion("1.0.5")!)
+
+        let data = Data(#"{"tag_name":"v1.0.6","html_url":"https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6","draft":false,"prerelease":false}"#.utf8)
+        let release = try GitHubReleaseChecker.decodeRelease(from: data)
+        #expect(release.version == "1.0.6")
+        #expect(release.pageURL.absoluteString.hasSuffix("/releases/tag/v1.0.6"))
+    }
+
+    @Test @MainActor
+    func testUpdateCheckPresentsNewReleaseAndRecognizesCurrentVersion() async {
+        let suiteName = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(AppLanguage.english.rawValue, forKey: "language")
+        let release = AppReleaseInfo(
+            version: "1.0.6",
+            pageURL: URL(string: "https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6")!
+        )
+
+        let updateModel = AppModel(
+            defaults: defaults,
+            releaseChecker: StubReleaseChecker(release: release),
+            currentAppVersion: "1.0.5"
+        )
+        await updateModel.checkForUpdatesNow()
+        #expect(updateModel.availableUpdate?.version == "1.0.6")
+        #expect(updateModel.availableUpdate?.currentVersion == "1.0.5")
+        #expect(updateModel.alertMessage == nil)
+
+        let currentModel = AppModel(
+            defaults: defaults,
+            releaseChecker: StubReleaseChecker(release: release),
+            currentAppVersion: "1.0.6"
+        )
+        await currentModel.checkForUpdatesNow()
+        #expect(currentModel.availableUpdate == nil)
+        #expect(currentModel.alertMessage == "You’re using the latest version (v1.0.6).")
+    }
+
+    @Test @MainActor
+    func testReportTextMenuAdjustmentsClampAndReset() {
+        let suiteName = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(defaults: defaults)
+        model.reportTextSize = 22
+        model.increaseReportTextSize()
+        #expect(model.reportTextSize == 22)
+        model.reportTextSize = 11
+        model.decreaseReportTextSize()
+        #expect(model.reportTextSize == 11)
+        model.resetReportTextSize()
+        #expect(model.reportTextSize == 13)
     }
 
     @Test @MainActor
@@ -339,6 +539,7 @@ struct CoreTests {
         #expect(NSImage(systemSymbolName: "battery.75", accessibilityDescription: nil) != nil)
         #expect(NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil) != nil)
         #expect(NSImage(systemSymbolName: "powerplug.fill", accessibilityDescription: nil) != nil)
+        #expect(NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil) != nil)
     }
 
     private func sampleSnapshot() -> HealthSnapshot {
@@ -361,6 +562,63 @@ struct CoreTests {
             )]
         )
     }
+
+    @MainActor
+    private func representativeMainMenu() -> NSMenu {
+        func top(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+            let submenu = NSMenu(title: title)
+            items.forEach(submenu.addItem)
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            return item
+        }
+
+        func command(_ title: String, _ action: Selector? = nil, key: String = "") -> NSMenuItem {
+            NSMenuItem(title: title, action: action, keyEquivalent: key)
+        }
+
+        let move = command("Move & Resize")
+        move.submenu = NSMenu(title: "Move & Resize")
+        ["Left", "Right", "Top", "Bottom", "Top Left", "Top Right", "Bottom Left", "Bottom Right", "Return to Previous Size"]
+            .map { command($0) }
+            .forEach(move.submenu!.addItem)
+
+        let main = NSMenu(title: "Main")
+        main.addItem(top("Drive & Battery Health Viewer", [
+            command("About Drive & Battery Health Viewer", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            command("Settings…"), command("Services"), command("Hide Drive & Battery Health Viewer"),
+            command("Hide Others"), command("Show All"), command("Quit Drive & Battery Health Viewer")
+        ]))
+        main.addItem(top("File", [command("Export Current Report"), command("Open Reports Folder"), command("Close Window", #selector(NSWindow.performClose(_:)), key: "w")]))
+        main.addItem(top("View", [
+            command("Show Sidebar"), command("Show Toolbar"), command("Customize Toolbar…"),
+            command("Increase Report Text Size"), command("Decrease Report Text Size"), command("Reset Report Text Size"),
+            command("Enter Full Screen")
+        ]))
+        main.addItem(top("Health Report", [command("Refresh", key: "r"), command("Copy Report", key: "c")]))
+        main.addItem(top("Window", [
+            command("Minimize"), command("Zoom"), command("Fill"), command("Center"), move,
+            command("Full Screen Tile"), command("Remove Window from Set"), command("Bring All to Front")
+        ]))
+        main.addItem(top("Help", [command("Project Homepage"), command("Report an Issue"), command("View Release Notes")]))
+        return main
+    }
+
+    @MainActor
+    private func menuTreeItems(_ menu: NSMenu) -> [NSMenuItem] {
+        menu.items.flatMap { item in [item] + (item.submenu.map(menuTreeItems) ?? []) }
+    }
+
+    @MainActor
+    private func menuTreeSubmenus(_ menu: NSMenu) -> [NSMenu] {
+        [menu] + menu.items.compactMap(\.submenu).flatMap(menuTreeSubmenus)
+    }
+}
+
+private struct StubReleaseChecker: AppReleaseChecking {
+    let release: AppReleaseInfo
+
+    func latestStableRelease() async throws -> AppReleaseInfo { release }
 }
 
 private struct FixtureRunner: CommandRunning {

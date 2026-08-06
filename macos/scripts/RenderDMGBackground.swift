@@ -84,16 +84,25 @@ func render(scale: Int, to destination: URL) throws {
         color: color(30, 38, 50)
     )
     centeredText(
-        "将应用拖到“应用程序”文件夹  ·  Drag the app to Applications",
-        rect: NSRect(x: 70, y: 341, width: 580, height: 24),
+        "拖入“应用程序”以完成安装。",
+        rect: NSRect(x: 70, y: 344, width: 580, height: 22),
         font: .systemFont(ofSize: 13.5, weight: .medium),
+        color: color(91, 103, 121)
+    )
+    centeredText(
+        "安装后，请从“应用程序”文件夹或 Spotlight 中打开。",
+        rect: NSRect(x: 70, y: 320, width: 580, height: 22),
+        font: .systemFont(ofSize: 13, weight: .regular),
         color: color(91, 103, 121)
     )
 
     let tileFill = color(255, 255, 255, alpha: 0.72)
     let tileStroke = color(47, 143, 247, alpha: 0.12)
-    drawRoundedRect(NSRect(x: 102, y: 128, width: 176, height: 182), radius: 30, fill: tileFill, stroke: tileStroke)
-    drawRoundedRect(NSRect(x: 442, y: 128, width: 176, height: 182), radius: 30, fill: tileFill, stroke: tileStroke)
+    // Finder draws item labels itself. The app name wraps to two lines, so the
+    // matching tiles extend far enough below both icon slots to contain either
+    // a one-line or two-line label without changing their shared baseline.
+    drawRoundedRect(NSRect(x: 102, y: 108, width: 176, height: 202), radius: 30, fill: tileFill, stroke: tileStroke)
+    drawRoundedRect(NSRect(x: 442, y: 108, width: 176, height: 202), radius: 30, fill: tileFill, stroke: tileStroke)
 
     drawRoundedRect(
         NSRect(x: 305, y: 199, width: 110, height: 48),

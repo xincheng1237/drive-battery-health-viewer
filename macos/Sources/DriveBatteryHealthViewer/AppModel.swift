@@ -12,10 +12,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var isScanning = false
     @Published var alertMessage: String?
     @Published var transientMessage: String?
+    @Published var showsChangelog = false
+    @Published var availableUpdate: AvailableAppUpdate?
+    @Published private(set) var isCheckingForUpdates = false
 
     @Published var language: AppLanguage {
         didSet {
             defaults.set(language.rawValue, forKey: Keys.language)
+            MainMenuLocalizer.apply(language)
         }
     }
     @Published var hideSerials: Bool {
@@ -36,11 +40,22 @@ final class AppModel: ObservableObject {
 
     private let defaults: UserDefaults
     private let scanner: HardwareScanner
+    private let releaseChecker: any AppReleaseChecking
+    private let currentAppVersion: String
     private var liveHardwareTask: Task<Void, Never>?
 
-    init(defaults: UserDefaults = .standard, scanner: HardwareScanner = HardwareScanner()) {
+    init(
+        defaults: UserDefaults = .standard,
+        scanner: HardwareScanner = HardwareScanner(),
+        releaseChecker: any AppReleaseChecking = GitHubReleaseChecker(),
+        currentAppVersion: String? = nil
+    ) {
         self.defaults = defaults
         self.scanner = scanner
+        self.releaseChecker = releaseChecker
+        self.currentAppVersion = currentAppVersion
+            ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+            ?? applicationVersion
         language = AppLanguage(rawValue: defaults.string(forKey: Keys.language) ?? "") ?? .system
         hideSerials = defaults.object(forKey: Keys.hideSerials) as? Bool ?? true
         historySaveMode = HistorySaveMode(rawValue: defaults.string(forKey: Keys.historySaveMode) ?? "") ?? .refresh
@@ -124,6 +139,70 @@ final class AppModel: ObservableObject {
             showTransient(t("exported"))
         } catch {
             alertMessage = error.localizedDescription
+        }
+    }
+
+    func presentExportCurrentReportPanel() {
+        guard let snapshot = currentSnapshot else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        panel.nameFieldStringValue = "DriveBatteryHealth_\(formatter.string(from: snapshot.generatedAt)).txt"
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.exportCurrentReport(to: url)
+        }
+    }
+
+    func openReportFolder() {
+        try? FileManager.default.createDirectory(at: historyDirectory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(historyDirectory)
+    }
+
+    func increaseReportTextSize() {
+        reportTextSize = min(22, reportTextSize + 1)
+    }
+
+    func decreaseReportTextSize() {
+        reportTextSize = max(11, reportTextSize - 1)
+    }
+
+    func resetReportTextSize() {
+        reportTextSize = 13
+    }
+
+    func checkForUpdates() {
+        guard !isCheckingForUpdates else { return }
+        Task { await checkForUpdatesNow() }
+    }
+
+    func checkForUpdatesNow() async {
+        guard !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
+        availableUpdate = nil
+        defer { isCheckingForUpdates = false }
+
+        do {
+            let release = try await releaseChecker.latestStableRelease()
+            guard let normalizedCurrentVersion = AppVersion.normalized(currentAppVersion),
+                  let current = AppVersion(normalizedCurrentVersion),
+                  let latest = AppVersion(release.version) else {
+                throw UpdateCheckError.invalidRelease
+            }
+            if current < latest {
+                availableUpdate = AvailableAppUpdate(
+                    currentVersion: normalizedCurrentVersion,
+                    version: release.version,
+                    pageURL: release.pageURL
+                )
+            } else {
+                alertMessage = L10n.format("alreadyLatestVersion", language, normalizedCurrentVersion)
+            }
+        } catch {
+            alertMessage = t("updateCheckFailed")
         }
     }
 

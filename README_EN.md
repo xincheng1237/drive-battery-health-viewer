@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | English
 
-An open-source hardware health viewer for Windows and macOS. It reads drive status, battery health, and device information without modifying hardware, and includes history, report export, serial-number privacy protection, and seven interface languages.
+An open-source hardware health viewer for Windows and macOS. It reads drive status, battery health, and device information without modifying hardware, and includes history and batch management, report export, update checking, serial-number privacy protection, and seven interface languages.
 
 The Windows edition is written in Go. The macOS edition uses native SwiftUI and ships as one Universal 2 application for both Apple silicon and Intel Macs.
 
@@ -46,9 +46,10 @@ The Windows x64 edition is a standalone executable. No installation is required.
 ## Features
 
 - View drive model, capacity, connection, firmware, serial number, and system-provided S.M.A.R.T. status
-- Read temperature, power-on time, power cycles, total reads, and total writes when exposed by the hardware and operating system
+- Read temperature, operating time, power cycles, total reads, and total writes when exposed by the hardware and operating system
 - View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, cycle count, charge level, and power state
-- Save and browse health history, then copy or export UTF-8 reports
+- Save and browse health history with multi-select, Select All, batch export, and batch deletion
+- Copy or export UTF-8 reports and check GitHub for the latest stable release from the application menu
 - Hide drive and battery serial numbers from the interface, history, and exported reports
 - Support Simplified Chinese, English, Russian, French, German, Korean, and Japanese
 - Read device information only: no benchmarks, writes, repairs, erases, or firmware updates
@@ -58,12 +59,15 @@ The Windows x64 edition is a standalone executable. No installation is required.
 ### macOS
 
 - Native SwiftUI interface with dark mode, system accent colors, keyboard support, and VoiceOver semantics
+- Liquid Glass interface treatment on macOS 26 and later, with the native card design retained on macOS 13–15
 - Live updates for battery level, charge/power state, and available drive and battery temperatures
 - Optional automatic history saving when other hardware data is manually refreshed
 - One Universal 2 package runs natively on Apple silicon and Intel Macs
 - See [`macos/README.md`](macos/README.md) for implementation details, build steps, and hardware-data limitations
 
 macOS does not expose every NVMe or USB S.M.A.R.T. field to ordinary third-party applications. Unavailable values are shown as not reported; the app does not replace them with `0`, guess a value, or interpret missing data as a hardware fault.
+
+Drive operating time is reported by the drive firmware and may exclude periods when the controller is in a low-power state. It is not the same as the computer's power-on or actual usage time.
 
 ### Windows
 
