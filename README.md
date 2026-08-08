@@ -33,7 +33,7 @@ Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行
 
 ### macOS 原生界面
 
-![macOS 版硬盘与电池健康查看器](docs/screenshots/macos-overview-en.png)
+<img width="3024" height="1858" alt="7243944a-34be-42f5-b69c-daf12e96db4a" src="https://github.com/user-attachments/assets/625fab37-61f6-4f62-b803-3cf84559d10e" />
 
 ### Windows 主界面
 
