@@ -42,7 +42,10 @@ final class AppModel: ObservableObject {
     private let scanner: HardwareScanner
     private let releaseChecker: any AppReleaseChecking
     private let currentAppVersion: String
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration: UInt = 0
     private var liveHardwareTask: Task<Void, Never>?
+    private var liveHardwareGeneration: UInt = 0
 
     init(
         defaults: UserDefaults = .standard,
@@ -83,26 +86,36 @@ final class AppModel: ObservableObject {
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
-        Task {
-            let snapshot = await scanner.scan()
-            let merged = snapshot.preservingUnavailableValues(from: currentSnapshot)
-            currentSnapshot = merged
-            isScanning = false
-            if historySaveMode == .refresh {
-                saveHistory(snapshot: merged, source: .refresh)
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            let snapshot = await self.scanner.scan()
+            guard !Task.isCancelled, self.refreshGeneration == generation else { return }
+            let merged = snapshot.preservingUnavailableValues(from: self.currentSnapshot)
+            self.currentSnapshot = merged
+            self.isScanning = false
+            self.refreshTask = nil
+            if self.historySaveMode == .refresh {
+                self.saveHistory(snapshot: merged, source: .refresh)
             }
         }
     }
 
     func startLiveHardwareMonitoring() {
         guard liveHardwareTask == nil else { return }
+        liveHardwareGeneration &+= 1
+        let generation = liveHardwareGeneration
         liveHardwareTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 if let snapshot = self.currentSnapshot {
                     let state = await self.scanner.readLiveHardwareState(
-                        driveIdentifiers: snapshot.drives.map(\.deviceIdentifier)
+                        driveIdentifiers: snapshot.drives
+                            .filter(\.supportsNativeNVMeLiveReading)
+                            .map(\.deviceIdentifier)
                     )
+                    guard !Task.isCancelled, self.liveHardwareGeneration == generation else { return }
                     if let latestSnapshot = self.currentSnapshot {
                         self.currentSnapshot = latestSnapshot.updatingLiveHardwareState(state)
                     }
@@ -117,6 +130,11 @@ final class AppModel: ObservableObject {
     }
 
     func stopLiveHardwareMonitoring() {
+        refreshGeneration &+= 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        isScanning = false
+        liveHardwareGeneration &+= 1
         liveHardwareTask?.cancel()
         liveHardwareTask = nil
     }

@@ -18,6 +18,7 @@
 - 更新日志文字支持选择与复制
 - macOS 26 及以上版本适配 Liquid Glass 界面效果，macOS 13–15 保持原有原生卡片视觉
 - 输出同时支持 Apple Silicon 与 Intel 的 Universal 2 应用
+- 内置 Universal 2 版只读 `smartctl` 7.5；当 macOS 或已安装的兼容驱动公开底层设备时补充读取详细信息，许可证和完整对应源代码随应用分发
 
 ## 系统要求
 
@@ -35,8 +36,8 @@ swift test --disable-sandbox
 
 构建脚本生成：
 
-- `Drive & Battery Health Viewer-1.0.5-macOS-Universal.zip`
-- `Drive & Battery Health Viewer-1.0.5-macOS-Universal.dmg`
+- `Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.zip`
+- `Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg`
 
 发布文件位于 `macos/dist/`。文件名包含版本、系统和 Universal 标识，便于在 GitHub Releases 中管理；DMG 提供“拖入应用程序”安装界面，安装后的应用始终为简洁的 `Drive & Battery Health Viewer.app`。
 
@@ -52,7 +53,9 @@ swift test --disable-sandbox
 
 ## macOS 数据限制
 
-本应用通过 macOS 自带的 `diskutil`、`system_profiler` 和 I/O Registry 进行只读查询，不进行测速、写入、修复、擦除或固件更新。
+本应用通过 macOS 自带的 `diskutil`、`system_profiler`、I/O Registry 以及随包提供的只读 `smartctl` 进行查询，不进行测速、写入、修复、擦除或固件更新。`smartctl` 的许可证、声明和完整对应源代码位于应用资源中的 `ThirdParty/smartmontools/`。
+
+macOS 原生不提供通用的 USB/SCSI S.M.A.R.T. 透传。应用不会安装内核扩展，也不会尝试 Darwin 后端不支持的 SAT/SNT 桥接模式；USB 设备只有在系统或用户另行安装的兼容驱动已公开底层数据时，才能补充读取对应 S.M.A.R.T. 项目。
 
 macOS 不会向普通第三方应用开放所有硬件底层数据，因此以下项目可能显示“系统未报告”：
 

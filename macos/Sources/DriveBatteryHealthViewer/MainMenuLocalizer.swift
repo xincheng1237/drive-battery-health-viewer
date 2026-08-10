@@ -67,6 +67,9 @@ enum MainMenuLocalizer {
             }
         })
         reconcileNowIfSafe()
+        // One coalesced next-run-loop pass covers AppKit's final launch-time
+        // title normalization without timers or structural menu mutations.
+        scheduleUpdate()
     }
 
     static func apply(_ language: AppLanguage) {

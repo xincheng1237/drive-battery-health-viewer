@@ -10,11 +10,11 @@ The Windows edition is written in Go. The macOS edition uses native SwiftUI and 
 
 ## Download
 
-Current macOS version: **v1.0.5**; Windows version: **v1.0.4**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
+Current macOS version: **v1.0.6**; Windows version: **v1.0.4**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
 
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
-| macOS | [`Drive-Battery-Health-Viewer-1.0.5-macOS-Universal.dmg`](../../releases/download/v1.0.5/Drive-Battery-Health-Viewer-1.0.5-macOS-Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
+| macOS | [`Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg`](../../releases/download/v1.0.6/Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 or later |
 
 ### Install on macOS
@@ -63,9 +63,10 @@ The Windows x64 edition is a standalone executable. No installation is required.
 - Live updates for battery level, charge/power state, and available drive and battery temperatures
 - Optional automatic history saving when other hardware data is manually refreshed
 - One Universal 2 package runs natively on Apple silicon and Intel Macs
+- Bundled Universal 2 read-only `smartctl` can add drive details when macOS or an installed compatible driver exposes the low-level data
 - See [`macos/README.md`](macos/README.md) for implementation details, build steps, and hardware-data limitations
 
-macOS does not expose every NVMe or USB S.M.A.R.T. field to ordinary third-party applications. Unavailable values are shown as not reported; the app does not replace them with `0`, guess a value, or interpret missing data as a hardware fault.
+macOS does not natively provide generic USB/SCSI S.M.A.R.T. passthrough. The bundled reader installs no driver and does not probe bridge modes unsupported by the system; it adds details only when macOS, a Thunderbolt connection, or an installed compatible driver exposes the low-level device. Data may still be unavailable when an enclosure blocks passthrough, RAID exposes only a logical device, or macOS denies the interface. Unavailable values are shown as not reported; the app does not replace them with `0`, guess a value, or interpret missing data as a hardware fault.
 
 Drive operating time is reported by the drive firmware and may exclude periods when the controller is in a low-power state. It is not the same as the computer's power-on or actual usage time.
 

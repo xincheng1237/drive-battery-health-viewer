@@ -19,6 +19,10 @@ typedef struct DBHVNVMeSMARTData {
 /// Returns 1 on success and 0 when the device or SMART interface is unavailable.
 int32_t DBHVReadNVMeSMART(const char *bsdName, DBHVNVMeSMARTData *result);
 
+/// Releases cached NVMe user clients before sleep or application shutdown.
+/// The next read will create interfaces for the current controller lifecycle.
+void DBHVResetNVMeSMARTInterfaces(void);
+
 typedef struct DBHVBatteryLiveStatus {
     int32_t chargePercent;
     int32_t isCharging;

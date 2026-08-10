@@ -4,6 +4,16 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>zh-Hans</string>
+        <string>ru</string>
+        <string>fr</string>
+        <string>de</string>
+        <string>ko</string>
+        <string>ja</string>
+    </array>
     <key>CFBundleDisplayName</key>
     <string>Drive &amp; Battery Health Viewer</string>
     <key>CFBundleExecutable</key>
@@ -19,9 +29,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-	<string>1.0.5</string>
+	<string>1.0.6</string>
     <key>CFBundleVersion</key>
-	<string>5</string>
+	<string>7</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>

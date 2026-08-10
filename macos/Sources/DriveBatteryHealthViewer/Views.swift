@@ -1009,6 +1009,21 @@ struct ChangelogRelease: Identifiable {
         switch L10n.effective(language) {
         case .simplifiedChinese:
             return releases(
+                latestFeatures: [
+                    "增强外接存储设备的信息识别与只读检测兼容性。"
+                ],
+                latestFixes: [
+                    "修复了外接硬盘热插拔、设备身份或 S.M.A.R.T. 字段匹配异常时，可能显示错误或旧数据的问题。",
+                    "修复了硬件查询无响应、读取被取消或重复刷新时，界面可能停滞、更新旧结果或丢失 NVMe 数据的问题。"
+                ],
+                patchFeatures: [
+                    "增强外接 USB、Thunderbolt 以及支持 SAT 透传的硬盘详细信息读取能力。"
+                ],
+                patchFixes: [
+                    "修复了关闭主窗口后从程序坞重新打开应用时可能意外退出的问题。",
+                    "修复了睡眠唤醒或存储控制器重置后，NVMe 实时读取可能继续使用失效接口的问题。",
+                    "修复了首次启动并跟随系统语言时，顶部应用菜单名称可能显示为英文的问题。"
+                ],
                 features: [
                     "新增历史记录多选、全选、批量导出和批量删除功能。",
                     "新增对 macOS 26 及以上版本 Liquid Glass 界面效果的支持。",
@@ -1033,6 +1048,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .russian:
             return releases(
+                latestFeatures: ["Улучшены распознавание информации и совместимость диагностики внешних накопителей в режиме только для чтения."],
+                latestFixes: ["Исправлена проблема, из-за которой при горячем подключении, ошибках идентификации устройства или сопоставления полей S.M.A.R.T. могли отображаться неверные либо устаревшие данные.", "Исправлена проблема, из-за которой при отсутствии ответа оборудования, отмене чтения или повторном обновлении интерфейс мог зависнуть, применить устаревший результат либо потерять данные NVMe."],
+                patchFeatures: ["Расширено чтение подробных данных внешних дисков USB, Thunderbolt и устройств с поддержкой SAT passthrough."],
+                patchFixes: ["Исправлена проблема, из-за которой приложение могло аварийно завершиться при повторном открытии из Dock после закрытия главного окна.", "Исправлена проблема, из-за которой после сна, пробуждения или сброса контроллера чтение NVMe могло использовать недействительный интерфейс.", "Исправлена проблема, из-за которой при первом запуске с системным языком название меню приложения могло отображаться на английском."],
                 features: ["Добавлены множественный выбор, выбор всех записей, пакетный экспорт и пакетное удаление истории.", "Добавлена поддержка интерфейсного эффекта Liquid Glass в macOS 26 и более новых версиях.", "Добавлена проверка обновлений."],
                 fixes: ["Исправлена проблема, из-за которой верхнее системное меню могло зависать, оставаться на экране или дублировать команды окна.", "Исправлена проблема, из-за которой верхнее меню и его подменю не меняли язык вместе с приложением."],
                 previous: ["Исправлено исчезновение данных NVMe S.M.A.R.T. после повторного обновления.", "Заряд, состояние зарядки, питание и температуры диска и батареи обновляются автоматически.", "Поля диска и батареи упорядочены; ёмкость показывается в mAh / Wh.", "Размер значка приведён к стандартам macOS."],
@@ -1040,6 +1059,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .french:
             return releases(
+                latestFeatures: ["Amélioration de l’identification des informations et de la compatibilité du diagnostic en lecture seule des stockages externes."],
+                latestFixes: ["Correction d’un problème pouvant afficher des données erronées ou obsolètes après un branchement à chaud, une erreur d’identification du périphérique ou d’association des champs S.M.A.R.T.", "Correction d’un problème où une requête matérielle sans réponse, une lecture annulée ou des actualisations répétées pouvaient bloquer l’interface, appliquer un ancien résultat ou faire disparaître les données NVMe."],
+                patchFeatures: ["Amélioration de la lecture des informations détaillées des disques externes USB, Thunderbolt et compatibles avec le relais SAT."],
+                patchFixes: ["Correction d’un problème pouvant fermer inopinément l’app lors de sa réouverture depuis le Dock après la fermeture de la fenêtre principale.", "Correction d’un problème pouvant réutiliser une interface NVMe devenue invalide après la veille, le réveil ou la réinitialisation du contrôleur.", "Correction d’un problème pouvant afficher en anglais le nom du menu de l’app au premier lancement avec la langue système."],
                 features: ["Ajout de la sélection multiple, de Tout sélectionner, de l’export groupé et de la suppression groupée dans l’historique.", "Ajout de la prise en charge de l’effet d’interface Liquid Glass sous macOS 26 et versions ultérieures.", "Ajout de la recherche de mises à jour."],
                 fixes: ["Correction d’un problème pouvant bloquer ou laisser affiché le menu système supérieur, ou dupliquer les commandes de fenêtre.", "Correction d’un problème empêchant le menu supérieur et ses sous-menus de suivre la langue choisie dans l’app."],
                 previous: ["Correction de la disparition des données NVMe S.M.A.R.T. après plusieurs actualisations.", "Le niveau de batterie, la charge, l’alimentation et les températures du disque et de la batterie se mettent à jour automatiquement.", "Ordre des champs harmonisé et capacités affichées en mAh / Wh.", "Taille de l’icône alignée sur les conventions macOS."],
@@ -1047,6 +1070,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .german:
             return releases(
+                latestFeatures: ["Die Informationserkennung und die Kompatibilität der schreibgeschützten Prüfung externer Speicher wurden verbessert."],
+                latestFixes: ["Ein Problem wurde behoben, durch das bei Hot-Plug-Vorgängen sowie Fehlern bei Geräteidentität oder S.M.A.R.T.-Feldzuordnung falsche oder veraltete Daten angezeigt werden konnten.", "Ein Problem wurde behoben, durch das nicht antwortende Hardwareabfragen, abgebrochene Lesevorgänge oder wiederholte Aktualisierungen die Oberfläche blockieren, alte Ergebnisse anwenden oder NVMe-Daten ausblenden konnten."],
+                patchFeatures: ["Das Auslesen detaillierter Informationen externer USB-, Thunderbolt- und SAT-Passthrough-Laufwerke wurde erweitert."],
+                patchFixes: ["Ein Problem wurde behoben, durch das die App beim erneuten Öffnen aus dem Dock nach dem Schließen des Hauptfensters unerwartet beendet werden konnte.", "Ein Problem wurde behoben, durch das die NVMe-Abfrage nach Ruhezustand, Aufwachen oder Controller-Reset eine ungültige Schnittstelle weiterverwenden konnte.", "Ein Problem wurde behoben, durch das der Name des App-Menüs beim ersten Start mit Systemsprache auf Englisch erscheinen konnte."],
                 features: ["Mehrfachauswahl, Alle auswählen, Sammelexport und Sammellöschen für Verlaufseinträge hinzugefügt.", "Unterstützung für den Liquid-Glass-Oberflächeneffekt ab macOS 26 hinzugefügt.", "Eine Funktion zur Suche nach Updates wurde hinzugefügt."],
                 fixes: ["Ein Problem wurde behoben, durch das das obere Systemmenü hängen bleiben, sichtbar bleiben oder Fensterbefehle doppelt anzeigen konnte.", "Ein Problem wurde behoben, durch das das obere Menü und seine Untermenüs der in der App gewählten Sprache nicht folgten."],
                 previous: ["Behoben: NVMe-S.M.A.R.T.-Daten verschwanden nach erneutem Aktualisieren.", "Akkustand, Ladezustand, Netzanschluss sowie Laufwerks- und Akkutemperatur werden automatisch aktualisiert.", "Feldreihenfolge vereinheitlicht und Kapazitäten als mAh / Wh dargestellt.", "Symbolgröße an macOS-Konventionen angepasst."],
@@ -1054,6 +1081,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .korean:
             return releases(
+                latestFeatures: ["외장 저장 장치의 정보 식별과 읽기 전용 검사 호환성을 개선했습니다."],
+                latestFixes: ["핫 플러그, 장치 식별 또는 S.M.A.R.T. 필드 연결 오류로 잘못되거나 오래된 데이터가 표시될 수 있는 문제를 수정했습니다.", "하드웨어 조회 무응답, 읽기 취소 또는 반복 새로 고침 시 화면이 멈추거나 이전 결과가 반영되거나 NVMe 데이터가 사라질 수 있는 문제를 수정했습니다."],
+                patchFeatures: ["외장 USB·Thunderbolt 드라이브와 SAT 패스스루 지원 드라이브의 상세 정보 읽기 기능을 강화했습니다."],
+                patchFixes: ["기본 창을 닫은 뒤 Dock에서 앱을 다시 열 때 예기치 않게 종료될 수 있는 문제를 수정했습니다.", "잠자기·깨우기 또는 저장 장치 컨트롤러 재설정 후 NVMe 실시간 읽기가 무효화된 인터페이스를 계속 사용할 수 있는 문제를 수정했습니다.", "시스템 언어를 따르는 첫 실행에서 앱 메뉴 이름이 영어로 표시될 수 있는 문제를 수정했습니다."],
                 features: ["기록 다중 선택, 모두 선택, 일괄 내보내기 및 일괄 삭제 기능을 추가했습니다.", "macOS 26 이상에서 Liquid Glass 인터페이스 효과 지원을 추가했습니다.", "업데이트 확인 기능을 추가했습니다."],
                 fixes: ["상단 시스템 메뉴가 멈추거나 화면에 남거나 윈도우 항목을 중복 표시할 수 있는 문제를 수정했습니다.", "앱에서 선택한 언어에 맞춰 상단 메뉴와 하위 메뉴의 언어가 변경되지 않는 문제를 수정했습니다."],
                 previous: ["반복 새로 고침 후 NVMe S.M.A.R.T. 데이터가 사라지는 문제를 수정했습니다.", "배터리 잔량, 충전 상태, 전원 연결 상태와 드라이브·배터리 온도가 자동으로 갱신됩니다.", "드라이브와 배터리 필드 순서를 통일하고 용량을 mAh / Wh로 표시합니다.", "앱 아이콘 크기를 macOS 규칙에 맞췄습니다."],
@@ -1061,6 +1092,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .japanese:
             return releases(
+                latestFeatures: ["外付けストレージの情報識別と読み取り専用検査の互換性を改善しました。"],
+                latestFixes: ["ホットプラグ、デバイス識別、または S.M.A.R.T. フィールドの対応に問題がある場合、誤ったデータや古いデータが表示されることがある問題を修正しました。", "ハードウェア照会の無応答、読み取りのキャンセル、または再更新時に、画面が停止する、古い結果が反映される、または NVMe データが消えることがある問題を修正しました。"],
+                patchFeatures: ["外付け USB・Thunderbolt ドライブおよび SAT パススルー対応ドライブの詳細情報取得を強化しました。"],
+                patchFixes: ["メインウインドウを閉じた後、Dock からアプリを再度開くと予期せず終了することがある問題を修正しました。", "スリープ、復帰、またはストレージコントローラのリセット後に、NVMe のリアルタイム読み取りが無効なインターフェイスを再利用することがある問題を修正しました。", "初回起動時にシステム言語を使用すると、アプリメニュー名が英語で表示されることがある問題を修正しました。"],
                 features: ["履歴の複数選択、すべて選択、一括書き出し、一括削除を追加しました。", "macOS 26 以降の Liquid Glass インターフェイス効果に対応しました。", "アップデート確認機能を追加しました。"],
                 fixes: ["上部のシステムメニューが固まる、残る、またはウインドウ項目が重複することがある問題を修正しました。", "アプリで選択した言語に上部メニューとサブメニューの言語が連動しない問題を修正しました。"],
                 previous: ["再更新後に NVMe S.M.A.R.T. データが消える問題を修正しました。", "バッテリー残量、充電状態、電源接続状態、ドライブとバッテリーの温度を自動更新します。", "ドライブとバッテリーの項目順を統一し、容量を mAh / Wh で表示します。", "アプリアイコンのサイズを macOS の慣例に合わせました。"],
@@ -1068,6 +1103,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .english, .system:
             return releases(
+                latestFeatures: ["Improved information identification and read-only diagnostic compatibility for external storage."],
+                latestFixes: ["Fixed an issue where hot-plugging or mismatched device identity or S.M.A.R.T. fields could display incorrect or stale data.", "Fixed an issue where unresponsive hardware queries, canceled reads, or repeated refreshes could stall the interface, apply stale results, or hide NVMe data."],
+                patchFeatures: ["Expanded detailed information reading for external USB and Thunderbolt drives and drives with SAT pass-through support."],
+                patchFixes: ["Fixed an issue where the app could quit unexpectedly when reopened from the Dock after closing the main window.", "Fixed an issue where NVMe live reading could reuse an invalid interface after sleep, wake, or a storage-controller reset.", "Fixed an issue where the application menu name could appear in English on first launch while following the system language."],
                 features: ["Added multi-selection, Select All, batch export, and batch deletion for history records.", "Added support for Liquid Glass interface effects on macOS 26 and later.", "Added update checking."],
                 fixes: ["Fixed an issue where the top system menu could become stuck, remain visible, or duplicate Window commands.", "Fixed an issue where the top menu and its submenus did not follow the language selected in the app."],
                 previous: ["Fixed NVMe S.M.A.R.T. values disappearing after repeated refreshes.", "Battery level, charging state, power connection, and drive and battery temperatures now update automatically.", "Aligned drive and battery field order and display capacities as mAh / Wh.", "Adjusted the app icon safe area."],
@@ -1076,10 +1115,23 @@ struct ChangelogRelease: Identifiable {
         }
     }
 
-    private static func releases(features: [String], fixes: [String], previous: [String], initial: [String]) -> [ChangelogRelease] {
+    private static func releases(
+        latestFeatures: [String],
+        latestFixes: [String],
+        patchFeatures: [String],
+        patchFixes: [String],
+        features: [String],
+        fixes: [String],
+        previous: [String],
+        initial: [String]
+    ) -> [ChangelogRelease] {
         let previousFeatures = previous.indices.contains(2) ? [previous[1], previous[2]] : []
         let previousFixes = previous.indices.contains(3) ? [previous[0], previous[3]] : previous
         return [
+            ChangelogRelease(version: "1.0.6", sections: [
+                ChangelogSection(kind: .feature, items: patchFeatures + latestFeatures),
+                ChangelogSection(kind: .fix, items: patchFixes + latestFixes)
+            ]),
             ChangelogRelease(version: "1.0.5", sections: [
                 ChangelogSection(kind: .feature, items: features),
                 ChangelogSection(kind: .fix, items: fixes)

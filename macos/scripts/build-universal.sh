@@ -6,9 +6,16 @@ project_dir="${script_dir:h}"
 repo_dir="${project_dir:h}"
 dist_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
-version="1.0.5"
+version="1.0.6"
 app_name="Drive & Battery Health Viewer"
+artifact_name="Drive-Battery-Health-Viewer"
 executable_name="DriveBatteryHealthViewer"
+bundle_build="7"
+bundle_identifier="com.chengxin.drive-battery-health-viewer"
+minimum_system="13.0"
+smartctl_sha256="5d8a03980cba1799a94f7f9740827a6d058062aa78805c8c29c22918b34257a8"
+smartctl_source_sha256="690b83ca331378da9ea0d9d61008c4b22dde391387b9bbad7f29387f2595f76e"
+smartctl_copying_sha256="8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
 
 cleanup() {
     rm -rf "${staging_dir}"
@@ -63,18 +70,61 @@ make_icon() {
 make_app_bundle() {
     local bundle_path="$1"
     local binary_file="$2"
-    mkdir -p "${bundle_path}/Contents/MacOS" "${bundle_path}/Contents/Resources"
+    mkdir -p \
+        "${bundle_path}/Contents/MacOS" \
+        "${bundle_path}/Contents/Helpers" \
+        "${bundle_path}/Contents/Resources/ThirdParty"
     cp "${project_dir}/Info.plist" "${bundle_path}/Contents/Info.plist"
     cp "${binary_file}" "${bundle_path}/Contents/MacOS/${executable_name}"
+    cp "${project_dir}/Resources/Tools/smartctl" "${bundle_path}/Contents/Helpers/smartctl"
+    cp -R "${project_dir}/Resources/ThirdParty/smartmontools" "${bundle_path}/Contents/Resources/ThirdParty/"
     cp "${staging_dir}/AppIcon.icns" "${bundle_path}/Contents/Resources/AppIcon.icns"
-    chmod 755 "${bundle_path}/Contents/MacOS/${executable_name}"
+    local localization_dir
+    for localization_dir in "${project_dir}"/Resources/*.lproj; do
+        cp -R "${localization_dir}" "${bundle_path}/Contents/Resources/"
+    done
+    chmod 755 \
+        "${bundle_path}/Contents/MacOS/${executable_name}" \
+        "${bundle_path}/Contents/Helpers/smartctl"
     xattr -cr "${bundle_path}"
     xattr -d com.apple.FinderInfo "${bundle_path}" 2>/dev/null || true
     xattr -d 'com.apple.fileprovider.fpfs#P' "${bundle_path}" 2>/dev/null || true
-    codesign --force --deep --sign - "${bundle_path}"
+    codesign --force --sign - "${bundle_path}/Contents/Helpers/smartctl"
+    codesign --force --sign - "${bundle_path}"
+}
+
+verify_sha256() {
+    local expected="$1"
+    local file="$2"
+    local actual
+    actual="$(/usr/bin/shasum -a 256 "${file}" | awk '{print $1}')"
+    if [[ "${actual}" != "${expected}" ]]; then
+        print -u2 "SHA-256 mismatch for ${file}: ${actual}"
+        exit 1
+    fi
+}
+
+verify_minimum_system() {
+    local binary="$1"
+    local architecture="$2"
+    local expected="$3"
+    local actual
+    actual="$(xcrun vtool -arch "${architecture}" -show-build "${binary}" | awk '$1 == "minos" { print $2; exit }')"
+    if [[ "${actual}" != "${expected}" ]]; then
+        print -u2 "Unexpected minimum macOS version for ${architecture}: ${actual:-missing} (${binary})"
+        exit 1
+    fi
 }
 
 mkdir -p "${dist_dir}"
+verify_sha256 "${smartctl_sha256}" "${project_dir}/Resources/Tools/smartctl"
+verify_sha256 "${smartctl_source_sha256}" "${project_dir}/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz"
+verify_sha256 "${smartctl_copying_sha256}" "${project_dir}/Resources/ThirdParty/smartmontools/COPYING"
+smartctl_version="$("${project_dir}/Resources/Tools/smartctl" --version | head -1)"
+if [[ "${smartctl_version}" != *"smartctl 7.5"* || "${smartctl_version}" != *"r5714"* ]]; then
+    print -u2 "Unexpected bundled smartctl version: ${smartctl_version}"
+    exit 1
+fi
 build_architecture arm64
 build_architecture x86_64
 make_icon
@@ -93,8 +143,36 @@ lipo -create "${arm_binary}" "${intel_binary}" -output "${universal_binary}"
 make_app_bundle "${universal_app}" "${universal_binary}"
 
 codesign --verify --deep --strict "${universal_app}"
-archive="${dist_dir}/${app_name}-${version}-macOS-Universal.zip"
+for binary in \
+    "${universal_app}/Contents/MacOS/${executable_name}" \
+    "${universal_app}/Contents/Helpers/smartctl"; do
+    architectures="$(lipo -archs "${binary}")"
+    if [[ " ${architectures} " != *" arm64 "* || " ${architectures} " != *" x86_64 "* ]]; then
+        print -u2 "Expected a Universal 2 binary, found: ${architectures} (${binary})"
+        exit 1
+    fi
+done
+verify_minimum_system "${universal_app}/Contents/MacOS/${executable_name}" arm64 "${minimum_system}"
+verify_minimum_system "${universal_app}/Contents/MacOS/${executable_name}" x86_64 "${minimum_system}"
+
+bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${universal_app}/Contents/Info.plist")"
+if [[ "${bundle_version}" != "${version}" ]]; then
+    print -u2 "Bundle version ${bundle_version} does not match release version ${version}."
+    exit 1
+fi
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${universal_app}/Contents/Info.plist")" != "${bundle_build}" ||
+      "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${universal_app}/Contents/Info.plist")" != "${bundle_identifier}" ||
+      "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "${universal_app}/Contents/Info.plist")" != "${minimum_system}" ]]; then
+    print -u2 "Bundle metadata does not match the 1.0.6 release manifest."
+    exit 1
+fi
+
+archive="${dist_dir}/${artifact_name}-${version}-macOS-Universal.zip"
 ditto -c -k --sequesterRsrc --keepParent "${universal_app}" "${archive}"
+(
+    cd "${dist_dir}"
+    /usr/bin/shasum -a 256 "${archive:t}" > "${archive:t}.sha256"
+)
 
 lipo -info "${universal_app}/Contents/MacOS/${executable_name}"
 plutil -lint "${universal_app}/Contents/Info.plist"

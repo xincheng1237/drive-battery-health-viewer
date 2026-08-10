@@ -4,18 +4,45 @@ set -euo pipefail
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 dist_dir="${project_dir}/dist"
-version="1.0.5"
+version="1.0.6"
 app_name="Drive & Battery Health Viewer"
+artifact_name="Drive-Battery-Health-Viewer"
 volume_name="Drive & Battery Health Viewer ${version}"
-archive="${dist_dir}/${app_name}-${version}-macOS-Universal.zip"
-output="${dist_dir}/${app_name}-${version}-macOS-Universal.dmg"
+archive="${dist_dir}/${artifact_name}-${version}-macOS-Universal.zip"
+output="${dist_dir}/${artifact_name}-${version}-macOS-Universal.dmg"
+bundle_build="7"
+bundle_identifier="com.chengxin.drive-battery-health-viewer"
+minimum_system="13.0"
+smartctl_source_sha256="690b83ca331378da9ea0d9d61008c4b22dde391387b9bbad7f29387f2595f76e"
+smartctl_copying_sha256="8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
 workspace="$(mktemp -d)"
 staging_dir="${workspace}/staging"
+verify_mount="${workspace}/verify"
+is_mounted=0
 
 cleanup() {
+    if (( is_mounted )); then
+        hdiutil detach "${verify_mount}" >/dev/null 2>&1 || true
+    fi
     rm -rf "${workspace}"
 }
 trap cleanup EXIT
+
+verify_minimum_system() {
+    local binary="$1"
+    local architecture="$2"
+    local expected="$3"
+    local actual
+    actual="$(xcrun vtool -arch "${architecture}" -show-build "${binary}" | awk '$1 == "minos" { print $2; exit }')"
+    if [[ "${actual}" != "${expected}" ]]; then
+        print -u2 "Unexpected minimum macOS version for ${architecture}: ${actual:-missing} (${binary})"
+        exit 1
+    fi
+}
+
+if [[ "${DBHV_USE_EXISTING_ARCHIVE:-0}" != "1" ]]; then
+    "${script_dir}/build-universal.sh"
+fi
 
 if [[ ! -f "${archive}" ]]; then
     print -u2 "Missing Universal archive: ${archive}"
@@ -63,4 +90,53 @@ create-dmg \
     "${staging_dir}"
 
 hdiutil verify "${output}" >/dev/null
+mkdir -p "${verify_mount}"
+hdiutil attach -readonly -nobrowse -mountpoint "${verify_mount}" "${output}" >/dev/null
+is_mounted=1
+
+verified_app="${verify_mount}/${app_name}.app"
+codesign --verify --deep --strict "${verified_app}"
+verified_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${verified_app}/Contents/Info.plist")"
+if [[ "${verified_version}" != "${version}" ]]; then
+    print -u2 "DMG contains version ${verified_version}; expected ${version}."
+    exit 1
+fi
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${verified_app}/Contents/Info.plist")" != "${bundle_build}" ||
+      "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${verified_app}/Contents/Info.plist")" != "${bundle_identifier}" ||
+      "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "${verified_app}/Contents/Info.plist")" != "${minimum_system}" ]]; then
+    print -u2 "DMG bundle metadata does not match the release manifest."
+    exit 1
+fi
+for binary in \
+    "${verified_app}/Contents/MacOS/DriveBatteryHealthViewer" \
+    "${verified_app}/Contents/Helpers/smartctl"; do
+    architectures="$(lipo -archs "${binary}")"
+    if [[ " ${architectures} " != *" arm64 "* || " ${architectures} " != *" x86_64 "* ]]; then
+        print -u2 "DMG contains a non-Universal binary: ${architectures} (${binary})"
+        exit 1
+    fi
+done
+verify_minimum_system "${verified_app}/Contents/MacOS/DriveBatteryHealthViewer" arm64 "${minimum_system}"
+verify_minimum_system "${verified_app}/Contents/MacOS/DriveBatteryHealthViewer" x86_64 "${minimum_system}"
+test -f "${verified_app}/Contents/Resources/ThirdParty/smartmontools/COPYING"
+test -f "${verified_app}/Contents/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz"
+test -s "${verified_app}/Contents/Resources/ThirdParty/smartmontools/NOTICE.md"
+gzip -t "${verified_app}/Contents/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz"
+if [[ "$(/usr/bin/shasum -a 256 "${verified_app}/Contents/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz" | awk '{print $1}')" != "${smartctl_source_sha256}" ||
+      "$(/usr/bin/shasum -a 256 "${verified_app}/Contents/Resources/ThirdParty/smartmontools/COPYING" | awk '{print $1}')" != "${smartctl_copying_sha256}" ]]; then
+    print -u2 "DMG contains an unexpected smartmontools source or license payload."
+    exit 1
+fi
+verified_smartctl_version="$("${verified_app}/Contents/Helpers/smartctl" --version | head -1)"
+if [[ "${verified_smartctl_version}" != *"smartctl 7.5"* || "${verified_smartctl_version}" != *"r5714"* ]]; then
+    print -u2 "DMG contains an unexpected smartctl helper: ${verified_smartctl_version}"
+    exit 1
+fi
+hdiutil detach "${verify_mount}" >/dev/null
+is_mounted=0
+
+(
+    cd "${dist_dir}"
+    /usr/bin/shasum -a 256 "${output:t}" > "${output:t}.sha256"
+)
 print "Built ${output}"

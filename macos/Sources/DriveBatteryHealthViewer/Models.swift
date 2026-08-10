@@ -1,6 +1,6 @@
 import Foundation
 
-let applicationVersion = "1.0.5"
+let applicationVersion = "1.0.6"
 
 enum HealthState: String, Codable, Sendable {
     case good
@@ -30,6 +30,14 @@ struct DriveInfo: Codable, Identifiable, Hashable, Sendable {
     var isSolidState: Bool?
     var isInternal: Bool?
     var notes: [String]
+
+    var supportsNativeNVMeLiveReading: Bool {
+        let transport = protocolName?.lowercased() ?? ""
+        if transport.contains("nvme") || transport.contains("pci") || transport.contains("apple fabric") {
+            return true
+        }
+        return isSolidState == true && transport.contains("thunderbolt")
+    }
 }
 
 struct BatteryInfo: Codable, Identifiable, Hashable, Sendable {
@@ -111,29 +119,49 @@ extension HealthSnapshot {
     func preservingUnavailableValues(from previous: HealthSnapshot?) -> HealthSnapshot {
         guard let previous else { return self }
         var merged = self
-        merged.drives = drives.map { fresh in
-            guard let old = previous.drives.first(where: { $0.deviceIdentifier == fresh.deviceIdentifier }) else {
-                return fresh
+
+        // An empty result caused by a failed root command is different from a
+        // successful scan that found no devices (for example, a desktop Mac
+        // without a battery). Keep the last successful domain only for the
+        // former case.
+        if warnings.contains(where: { $0.hasPrefix("Drive information:") }) {
+            merged.drives = previous.drives
+        } else {
+            merged.drives = drives.map { fresh in
+                guard let old = previous.drives.first(where: {
+                    $0.deviceIdentifier == fresh.deviceIdentifier && samePhysicalDrive(fresh, $0)
+                }) else {
+                    return fresh
+                }
+                var value = fresh
+                if value.model.isEmpty || value.model == value.deviceIdentifier { value.model = old.model }
+                value.serialNumber = value.serialNumber ?? old.serialNumber
+                value.firmware = value.firmware ?? old.firmware
+                value.protocolName = value.protocolName ?? old.protocolName
+                if value.capacityBytes == 0 { value.capacityBytes = old.capacityBytes }
+                // SMART status and its derived health badge are one logical value.
+                // Never combine a new, unsupported status with a stale green badge.
+                if value.smartStatus == nil {
+                    value.smartStatus = old.smartStatus
+                    if value.healthState == .unknown { value.healthState = old.healthState }
+                }
+                value.lifeRemainingPercent = value.lifeRemainingPercent ?? old.lifeRemainingPercent
+                value.temperatureCelsius = value.temperatureCelsius ?? old.temperatureCelsius
+                value.powerOnHours = value.powerOnHours ?? old.powerOnHours
+                value.powerCycles = value.powerCycles ?? old.powerCycles
+                value.bytesRead = value.bytesRead ?? old.bytesRead
+                value.bytesWritten = value.bytesWritten ?? old.bytesWritten
+                value.unsafeShutdowns = value.unsafeShutdowns ?? old.unsafeShutdowns
+                value.mediaErrors = value.mediaErrors ?? old.mediaErrors
+                value.isSolidState = value.isSolidState ?? old.isSolidState
+                value.isInternal = value.isInternal ?? old.isInternal
+                return value
             }
-            var value = fresh
-            if value.model.isEmpty || value.model == value.deviceIdentifier { value.model = old.model }
-            value.serialNumber = value.serialNumber ?? old.serialNumber
-            value.firmware = value.firmware ?? old.firmware
-            value.protocolName = value.protocolName ?? old.protocolName
-            if value.capacityBytes == 0 { value.capacityBytes = old.capacityBytes }
-            value.smartStatus = value.smartStatus ?? old.smartStatus
-            if value.healthState == .unknown { value.healthState = old.healthState }
-            value.lifeRemainingPercent = value.lifeRemainingPercent ?? old.lifeRemainingPercent
-            value.temperatureCelsius = value.temperatureCelsius ?? old.temperatureCelsius
-            value.powerOnHours = value.powerOnHours ?? old.powerOnHours
-            value.powerCycles = value.powerCycles ?? old.powerCycles
-            value.bytesRead = value.bytesRead ?? old.bytesRead
-            value.bytesWritten = value.bytesWritten ?? old.bytesWritten
-            value.unsafeShutdowns = value.unsafeShutdowns ?? old.unsafeShutdowns
-            value.mediaErrors = value.mediaErrors ?? old.mediaErrors
-            value.isSolidState = value.isSolidState ?? old.isSolidState
-            value.isInternal = value.isInternal ?? old.isInternal
-            return value
+        }
+
+        if warnings.contains(where: { $0.hasPrefix("Battery information:") }) {
+            merged.batteries = previous.batteries
+            return merged
         }
         merged.batteries = batteries.map { fresh in
             guard let old = previous.batteries.first(where: {
@@ -182,6 +210,46 @@ extension HealthSnapshot {
     }
 }
 
+/// BSD names such as `disk2` are reusable after hot-plug. Preserve unavailable
+/// values only when the stable identity that is available in both scans still
+/// describes the same physical device.
+private func samePhysicalDrive(_ fresh: DriveInfo, _ old: DriveInfo) -> Bool {
+    let freshSerial = normalizedIdentity(fresh.serialNumber)
+    let oldSerial = normalizedIdentity(old.serialNumber)
+    let isExternal = fresh.isInternal == false || old.isInternal == false
+    if let freshSerial, let oldSerial {
+        guard freshSerial == oldSerial else { return false }
+        // On an internal drive, a matching media serial is conclusive even if
+        // one scanner refines the model label. USB serials may identify only
+        // the enclosure, so external drives still require the full tuple.
+        if !isExternal { return true }
+    } else if isExternal {
+        // diskN is reusable and identical enclosures are common. Without a
+        // serial on both external-drive snapshots, retaining telemetry risks
+        // showing values from a device that has just been unplugged.
+        return false
+    }
+
+    let freshModel = normalizedIdentity(fresh.model == fresh.deviceIdentifier ? nil : fresh.model)
+    let oldModel = normalizedIdentity(old.model == old.deviceIdentifier ? nil : old.model)
+    let freshProtocol = normalizedIdentity(fresh.protocolName)
+    let oldProtocol = normalizedIdentity(old.protocolName)
+    return freshModel != nil && freshModel == oldModel
+        && fresh.capacityBytes > 0 && fresh.capacityBytes == old.capacityBytes
+        && freshProtocol != nil && freshProtocol == oldProtocol
+        && fresh.isInternal != nil && fresh.isInternal == old.isInternal
+}
+
+private func normalizedIdentity(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !normalized.isEmpty,
+          !["unknown", "not available", "n/a", "••••••••"].contains(normalized) else {
+        return nil
+    }
+    return normalized
+}
+
 enum HistorySource: String, Codable, Sendable {
     case refresh
     case export
@@ -226,8 +294,8 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var id: String { rawValue }
 
-    static func detected() -> AppLanguage {
-        let identifier = Locale.preferredLanguages.first?.lowercased() ?? "en"
+    static func detected(preferredLanguages: [String] = Locale.preferredLanguages) -> AppLanguage {
+        let identifier = preferredLanguages.first?.lowercased() ?? "en"
         if identifier.hasPrefix("zh") { return .simplifiedChinese }
         if identifier.hasPrefix("ru") { return .russian }
         if identifier.hasPrefix("fr") { return .french }

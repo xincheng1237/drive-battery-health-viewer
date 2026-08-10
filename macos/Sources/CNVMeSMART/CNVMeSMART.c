@@ -17,6 +17,7 @@ enum { kDBHVMaximumCachedNVMeDevices = 8 };
 
 typedef struct DBHVNVMeInterfaceCache {
     char bsdName[64];
+    uint64_t registryEntryID;
     IONVMeSMARTInterface **interface;
 } DBHVNVMeInterfaceCache;
 
@@ -49,7 +50,30 @@ static bool DBHVServiceMatchesBSDName(io_service_t service, const char *bsdName)
     return matches;
 }
 
-static IONVMeSMARTInterface **DBHVCreateInterface(const char *bsdName) {
+static uint64_t DBHVCurrentRegistryEntryID(const char *bsdName) {
+    CFMutableDictionaryRef matching = IOServiceMatching("IONVMeBlockStorageDevice");
+    if (matching == NULL) { return 0; }
+
+    io_iterator_t iterator = IO_OBJECT_NULL;
+    kern_return_t status = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator);
+    if (status != KERN_SUCCESS) { return 0; }
+
+    uint64_t result = 0;
+    io_service_t service = IO_OBJECT_NULL;
+    while ((service = IOIteratorNext(iterator)) != IO_OBJECT_NULL) {
+        if (DBHVServiceMatchesBSDName(service, bsdName)) {
+            IORegistryEntryGetRegistryEntryID(service, &result);
+            IOObjectRelease(service);
+            break;
+        }
+        IOObjectRelease(service);
+    }
+    IOObjectRelease(iterator);
+    return result;
+}
+
+static IONVMeSMARTInterface **DBHVCreateInterface(const char *bsdName, uint64_t *registryEntryID) {
+    if (registryEntryID != NULL) { *registryEntryID = 0; }
 
     CFMutableDictionaryRef matching = IOServiceMatching("IONVMeBlockStorageDevice");
     if (matching == NULL) { return NULL; }
@@ -68,6 +92,8 @@ static IONVMeSMARTInterface **DBHVCreateInterface(const char *bsdName) {
 
         IOCFPlugInInterface **plugin = NULL;
         SInt32 score = 0;
+        uint64_t matchedEntryID = 0;
+        IORegistryEntryGetRegistryEntryID(service, &matchedEntryID);
         status = IOCreatePlugInInterfaceForService(
             service,
             kIONVMeSMARTUserClientTypeID,
@@ -88,6 +114,7 @@ static IONVMeSMARTInterface **DBHVCreateInterface(const char *bsdName) {
         if (query != S_OK || smart == NULL) { continue; }
 
         result = smart;
+        if (registryEntryID != NULL) { *registryEntryID = matchedEntryID; }
         break;
     }
 
@@ -95,41 +122,72 @@ static IONVMeSMARTInterface **DBHVCreateInterface(const char *bsdName) {
     return result;
 }
 
+static void DBHVInvalidateCachedInterface(const char *bsdName);
+
 static IONVMeSMARTInterface **DBHVCachedInterface(const char *bsdName) {
     for (size_t index = 0; index < gInterfaceCacheCount; index++) {
         if (strcmp(gInterfaceCache[index].bsdName, bsdName) == 0) {
-            return gInterfaceCache[index].interface;
+            uint64_t currentEntryID = DBHVCurrentRegistryEntryID(bsdName);
+            if (currentEntryID != 0 && currentEntryID == gInterfaceCache[index].registryEntryID) {
+                return gInterfaceCache[index].interface;
+            }
+            DBHVInvalidateCachedInterface(bsdName);
+            break;
         }
     }
 
     if (gInterfaceCacheCount >= kDBHVMaximumCachedNVMeDevices) { return NULL; }
-    IONVMeSMARTInterface **smart = DBHVCreateInterface(bsdName);
+    uint64_t registryEntryID = 0;
+    IONVMeSMARTInterface **smart = DBHVCreateInterface(bsdName, &registryEntryID);
     if (smart == NULL) { return NULL; }
 
     DBHVNVMeInterfaceCache *slot = &gInterfaceCache[gInterfaceCacheCount++];
     strncpy(slot->bsdName, bsdName, sizeof(slot->bsdName) - 1);
     slot->bsdName[sizeof(slot->bsdName) - 1] = '\0';
+    slot->registryEntryID = registryEntryID;
     slot->interface = smart;
     return smart;
+}
+
+static void DBHVInvalidateCachedInterface(const char *bsdName) {
+    for (size_t index = 0; index < gInterfaceCacheCount; index++) {
+        DBHVNVMeInterfaceCache *slot = &gInterfaceCache[index];
+        if (strcmp(slot->bsdName, bsdName) != 0) { continue; }
+        if (slot->interface != NULL) { (*slot->interface)->Release(slot->interface); }
+        size_t last = gInterfaceCacheCount - 1;
+        if (index != last) { gInterfaceCache[index] = gInterfaceCache[last]; }
+        memset(&gInterfaceCache[last], 0, sizeof(gInterfaceCache[last]));
+        gInterfaceCacheCount--;
+        return;
+    }
+}
+
+void DBHVResetNVMeSMARTInterfaces(void) {
+    // Releasing Apple's NVMe user client while the process remains alive can
+    // make the controller refuse an immediate replacement interface. Keep the
+    // cached client across sleep and window lifecycle events instead. Every
+    // read validates the registry-entry identity, and a failed SMART read
+    // invalidates and recreates only the affected interface. The process owns
+    // the cache, so macOS reclaims it normally at application termination.
 }
 
 int32_t DBHVReadNVMeSMART(const char *bsdName, DBHVNVMeSMARTData *result) {
     if (bsdName == NULL || result == NULL) { return 0; }
     memset(result, 0, sizeof(*result));
 
-    pthread_mutex_lock(&gInterfaceCacheLock);
-    IONVMeSMARTInterface **smart = DBHVCachedInterface(bsdName);
-    if (smart == NULL) {
-        pthread_mutex_unlock(&gInterfaceCacheLock);
-        return 0;
-    }
-
     NVMeSMARTData data;
     IOReturn status = kIOReturnError;
+    pthread_mutex_lock(&gInterfaceCacheLock);
     for (int attempt = 0; attempt < 3; attempt++) {
+        // Apple NVMe controllers expect the user client to be reused during
+        // normal polling. If it stops responding after sleep/wake or a
+        // controller reset, release that exact interface before recreating it.
+        IONVMeSMARTInterface **smart = DBHVCachedInterface(bsdName);
+        if (smart == NULL) { break; }
         memset(&data, 0, sizeof(data));
         status = (*smart)->SMARTReadData(smart, &data);
         if (status == kIOReturnSuccess) { break; }
+        DBHVInvalidateCachedInterface(bsdName);
         usleep(20 * 1000);
     }
     pthread_mutex_unlock(&gInterfaceCacheLock);

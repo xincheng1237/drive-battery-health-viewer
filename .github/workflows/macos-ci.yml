@@ -24,14 +24,16 @@ jobs:
       - name: Show Swift toolchain
         run: swift --version
 
+      - name: Install DMG builder
+        run: |
+          brew install create-dmg
+          create-dmg --version
+
       - name: Run macOS tests
         working-directory: macos
         run: swift test --disable-sandbox
 
-      - name: Build Universal app archive
-        run: ./macos/scripts/build-universal.sh
-
-      - name: Build DMG installer
+      - name: Build and verify Universal release artifacts
         run: ./macos/scripts/build-dmg.sh
 
       - name: Upload macOS release artifacts
@@ -41,4 +43,5 @@ jobs:
           path: |
             macos/dist/*.zip
             macos/dist/*.dmg
+            macos/dist/*.sha256
           if-no-files-found: error
