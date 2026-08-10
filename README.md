@@ -14,7 +14,7 @@ macOS 当前版本：**v1.0.6**；Windows 当前版本：**v1.0.4**。请前往 
 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
-| macOS | [`Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg`](../../releases/download/v1.0.6/Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
+| macOS | [`DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 或更高版本 |
 
 ### macOS 安装

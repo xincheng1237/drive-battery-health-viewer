@@ -8,7 +8,7 @@ dist_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
 version="1.0.6"
 app_name="Drive & Battery Health Viewer"
-artifact_name="Drive-Battery-Health-Viewer"
+artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 executable_name="DriveBatteryHealthViewer"
 bundle_build="7"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
@@ -167,7 +167,7 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${universal_app}/C
     exit 1
 fi
 
-archive="${dist_dir}/${artifact_name}-${version}-macOS-Universal.zip"
+archive="${dist_dir}/${artifact_name}.zip"
 ditto -c -k --sequesterRsrc --keepParent "${universal_app}" "${archive}"
 (
     cd "${dist_dir}"

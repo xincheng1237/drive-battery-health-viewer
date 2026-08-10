@@ -36,8 +36,8 @@ swift test --disable-sandbox
 
 构建脚本生成：
 
-- `Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.zip`
-- `Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg`
+- `DriveBatteryHealthViewer_v1.0.6_macOS_Universal.zip`
+- `DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`
 
 发布文件位于 `macos/dist/`。文件名包含版本、系统和 Universal 标识，便于在 GitHub Releases 中管理；DMG 提供“拖入应用程序”安装界面，安装后的应用始终为简洁的 `Drive & Battery Health Viewer.app`。
 
