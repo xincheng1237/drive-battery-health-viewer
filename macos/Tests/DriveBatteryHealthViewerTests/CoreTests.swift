@@ -599,7 +599,11 @@ struct CoreTests {
         #expect(try sha256(of: source) == "690b83ca331378da9ea0d9d61008c4b22dde391387b9bbad7f29387f2595f76e")
         #expect(try sha256(of: thirdParty.appendingPathComponent("COPYING")) == "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643")
 
-        let architectures = try SystemCommandRunner(timeout: 3).run(
+        // GitHub's shared macOS runners execute Swift Testing cases in
+        // parallel, so a normally instant `lipo` launch can occasionally be
+        // delayed by process contention. Keep this packaging assertion
+        // bounded without treating a short-lived runner delay as a failure.
+        let architectures = try SystemCommandRunner(timeout: 15).run(
             "/usr/bin/lipo", arguments: ["-archs", smartctl.path]
         )
         let text = String(data: architectures.data, encoding: .utf8) ?? ""
