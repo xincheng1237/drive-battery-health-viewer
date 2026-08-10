@@ -14,7 +14,7 @@ Current macOS version: **v1.0.6**; Windows version: **v1.0.4**. Visit [Releases]
 
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
-| macOS | [`Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg`](../../releases/download/v1.0.6/Drive-Battery-Health-Viewer-1.0.6-macOS-Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
+| macOS | [`DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 or later |
 
 ### Install on macOS
