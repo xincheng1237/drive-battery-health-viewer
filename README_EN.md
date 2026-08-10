@@ -59,14 +59,14 @@ The Windows x64 edition is a standalone executable. No installation is required.
 ### macOS
 
 - Native SwiftUI interface with dark mode, system accent colors, keyboard support, and VoiceOver semantics
-- Liquid Glass interface treatment on macOS 26 and later, with the native card design retained on macOS 13–15
+- Liquid Glass interface treatment on macOS 26 and later
 - Live updates for battery level, charge/power state, and available drive and battery temperatures
 - Optional automatic history saving when other hardware data is manually refreshed
 - One Universal 2 package runs natively on Apple silicon and Intel Macs
 - Bundled Universal 2 read-only `smartctl` can add drive details when macOS or an installed compatible driver exposes the low-level data
 - See [`macos/README.md`](macos/README.md) for implementation details, build steps, and hardware-data limitations
 
-macOS does not natively provide generic USB/SCSI S.M.A.R.T. passthrough. The bundled reader installs no driver and does not probe bridge modes unsupported by the system; it adds details only when macOS, a Thunderbolt connection, or an installed compatible driver exposes the low-level device. Data may still be unavailable when an enclosure blocks passthrough, RAID exposes only a logical device, or macOS denies the interface. Unavailable values are shown as not reported; the app does not replace them with `0`, guess a value, or interpret missing data as a hardware fault.
+macOS does not natively provide generic USB/SCSI S.M.A.R.T. passthrough. The bundled reader installs no driver and does not probe bridge modes unsupported by the system; it adds details only when macOS, a Thunderbolt connection, or an installed compatible driver exposes the low-level device. Data may still be unavailable when an enclosure blocks passthrough, RAID exposes only a logical device, or macOS denies the interface. Unavailable values are shown as not reported.
 
 Drive operating time is reported by the drive firmware and may exclude periods when the controller is in a low-power state. It is not the same as the computer's power-on or actual usage time.
 
