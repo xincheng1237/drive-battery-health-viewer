@@ -2,7 +2,7 @@ package main
 
 import "time"
 
-const appVersion = "1.0.4"
+const appVersion = "1.0.6"
 
 type diskDescriptor struct {
 	Number      int
@@ -12,8 +12,28 @@ type diskDescriptor struct {
 	Bus         string
 	Capacity    uint64
 	Health      *NVMeHealth
+	Smartctl    *smartctlDriveInfo
 	Reliability *storageReliability
 	ErrorParts  []diskErrorPart
+}
+
+// smartctlDriveInfo contains the read-only health information returned by the
+// bundled smartctl helper. Pointer fields distinguish an actual zero from a
+// value the bridge or drive did not report.
+type smartctlDriveInfo struct {
+	Model           string
+	Serial          string
+	Firmware        string
+	Protocol        string
+	SmartPassed     *bool
+	Temperature     *int64
+	PercentageUsed  *uint64
+	PowerOnHours    *uint64
+	PowerCycles     *uint64
+	BytesRead       *uint64
+	BytesWritten    *uint64
+	UnsafeShutdowns *uint64
+	MediaErrors     *uint64
 }
 
 type diskErrorPart struct {

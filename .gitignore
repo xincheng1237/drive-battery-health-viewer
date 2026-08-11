@@ -3,10 +3,12 @@
 #
 # Binaries for programs and plugins
 *.exe
+!assets/windows/smartctl.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+dist/
 
 # Test binary, built with `go test -c`
 *.test

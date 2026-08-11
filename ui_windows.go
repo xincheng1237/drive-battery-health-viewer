@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,12 @@ const (
 	ID_H_LIST       = 2003
 	ID_H_FULL       = 2004
 	ID_H_EMPTY      = 2005
+	ID_H_BATCH      = 2006
+	ID_H_SELECT_ALL = 2007
+	ID_H_EXPORT     = 2008
+	ID_H_DELETE     = 2009
+	ID_H_DONE       = 2010
+	ID_H_PATH       = 2011
 	ID_C_LIST       = 3001
 	ID_C_CONTENT    = 3002
 	ID_V_CONTENT    = 4001
@@ -60,13 +67,18 @@ const (
 	ID_A_EMAIL_VALUE    = 7016
 	ID_A_COPYRIGHT_TXT  = 7017
 
-	MENU_LANG_BASE      = 6000
-	MENU_MORE_OPEN      = 6101
-	MENU_MORE_CHANGE    = 6102
-	MENU_MORE_REFRESH   = 6103
-	MENU_MORE_EXPORT    = 6104
-	MENU_MORE_CHANGELOG = 6105
-	MENU_MORE_ABOUT     = 6106
+	MENU_LANG_BASE          = 6000
+	MENU_MORE_OPEN          = 6101
+	MENU_MORE_CHANGE        = 6102
+	MENU_MORE_REFRESH       = 6103
+	MENU_MORE_EXPORT        = 6104
+	MENU_MORE_CHANGELOG     = 6105
+	MENU_MORE_ABOUT         = 6106
+	MENU_MORE_UPDATE        = 6107
+	MENU_HISTORY_SELECT_ALL = 6201
+	MENU_HISTORY_CLEAR      = 6202
+	MENU_HISTORY_EXPORT     = 6203
+	MENU_HISTORY_DELETE     = 6204
 )
 
 var (
@@ -76,31 +88,39 @@ var (
 	mainUIFont, mainReportFont, mainStatusFont                                                            syscall.Handle
 	mainDPI                                                                                               = 96
 
-	scanMu         sync.RWMutex
-	currentScan    *scanResult
-	pendingScan    *scanResult
-	scanInFlight   bool
-	currentHistory *historyRecord
+	scanMu                sync.RWMutex
+	currentScan           *scanResult
+	pendingScan           *scanResult
+	pendingScanGeneration uint64
+	scanInFlight          bool
+	scanGeneration        uint64
+	scanCancel            context.CancelFunc
+	currentHistory        *historyRecord
+	updateChecking        bool
+	pendingUpdate         releaseInfo
+	pendingUpdateErr      error
 
-	historyHwnd                                                                                                                                                       syscall.Handle
-	histTitleHwnd, histPathHwnd, histOpenHwnd, histChangeHwnd, histRecordsLabelHwnd, histPreviewLabelHwnd, histListHwnd, histPreviewHwnd, histFullHwnd, histEmptyHwnd syscall.Handle
-	histSplitterHwnd, histDragOverlayHwnd                                                                                                                             syscall.Handle
-	histFonts                                                                                                                                                         []syscall.Handle
-	histSplitterBrush, histSplitterActiveBrush                                                                                                                        syscall.Handle
-	histDragSnapshot                                                                                                                                                  syscall.Handle
-	histDragSnapshotW, histDragSnapshotH                                                                                                                              int32
-	histDragSourceLeftW, histDragSourceSplitW, histDragTargetLeftW, histDragLabelH                                                                                    int32
-	histRecords                                                                                                                                                       []historyRecord
-	histSelected                                                                                                                                                      = -1
-	histHover                                                                                                                                                         = -1
-	histHoverAlpha                                                                                                                                                    = 0
-	histListOldProc, histSplitterOldProc                                                                                                                              uintptr
-	histListCallback, histSplitterCallback                                                                                                                            uintptr
-	histSplitRatio                                                                                                                                                    = 0.39
-	histSplitDragging                                                                                                                                                 bool
-	histSplitStartScreenX, histSplitStartLeftW                                                                                                                        int32
-	histSplitPendingRatio                                                                                                                                             = 0.39
-	histSplitLastRender                                                                                                                                               time.Time
+	historyHwnd                                                                                                                                                                      syscall.Handle
+	histTitleHwnd, histPathHwnd, histOpenHwnd, histChangeHwnd, histRecordsLabelHwnd, histPreviewLabelHwnd, histListHwnd, histPreviewHwnd, histFullHwnd, histEmptyHwnd, histBatchHwnd syscall.Handle
+	histSelectAllHwnd, histExportSelectedHwnd, histDeleteSelectedHwnd, histDoneHwnd                                                                                                  syscall.Handle
+	histSplitterHwnd, histDragOverlayHwnd                                                                                                                                            syscall.Handle
+	histFonts                                                                                                                                                                        []syscall.Handle
+	histSplitterBrush, histSplitterActiveBrush                                                                                                                                       syscall.Handle
+	histDragSnapshot                                                                                                                                                                 syscall.Handle
+	histDragSnapshotW, histDragSnapshotH                                                                                                                                             int32
+	histDragSourceLeftW, histDragSourceSplitW, histDragTargetLeftW, histDragLabelH                                                                                                   int32
+	histRecords                                                                                                                                                                      []historyRecord
+	histSelected                                                                                                                                                                     = -1
+	histSelectionMode                                                                                                                                                                bool
+	histHover                                                                                                                                                                        = -1
+	histHoverAlpha                                                                                                                                                                   = 0
+	histListOldProc, histSplitterOldProc                                                                                                                                             uintptr
+	histListCallback, histSplitterCallback                                                                                                                                           uintptr
+	histSplitRatio                                                                                                                                                                   = 0.28
+	histSplitDragging                                                                                                                                                                bool
+	histSplitStartScreenX, histSplitStartLeftW                                                                                                                                       int32
+	histSplitPendingRatio                                                                                                                                                            = 0.28
+	histSplitLastRender                                                                                                                                                              time.Time
 
 	changelogHwnd                                                                                                           syscall.Handle
 	changeTitleHwnd, changeSubtitleHwnd, changeVersionsLabelHwnd, changeContentLabelHwnd, changeListHwnd, changeContentHwnd syscall.Handle
@@ -129,7 +149,8 @@ var (
 	deleteDialogConfirmed                                                              bool
 	deleteDialogExternal                                                               bool
 	deleteDialogShowExternal                                                           bool
-	deleteDialogFont                                                                   syscall.Handle
+	deleteDialogFont, deleteDialogTitleFont                                            syscall.Handle
+	deleteDialogCount                                                                  int
 	lastPathOpen                                                                       time.Time
 )
 
@@ -217,15 +238,10 @@ func deleteFonts(list []syscall.Handle) {
 }
 func recreateMainFonts() {
 	deleteFonts([]syscall.Handle{mainUIFont, mainReportFont, mainStatusFont})
-	s := currentSettings()
 	mainDPI = windowDPI(mainHwnd)
-	uiPt := 9 + (s.FontSize-9)/3
-	if uiPt < 9 {
-		uiPt = 9
-	}
-	mainUIFont = createUIFontDPI(uiPt, FW_NORMAL, mainDPI)
-	mainReportFont = createUIFontDPI(s.FontSize, FW_NORMAL, mainDPI)
-	mainStatusFont = createUIFontDPI(maxInt(8, uiPt-1), FW_NORMAL, mainDPI)
+	mainUIFont = createUIFontDPI(10, FW_NORMAL, mainDPI)
+	mainReportFont = createUIFontDPI(currentSettings().FontSize, FW_NORMAL, mainDPI)
+	mainStatusFont = createUIFontDPI(9, FW_NORMAL, mainDPI)
 	for _, h := range []syscall.Handle{refreshHwnd, exportHwnd, copyHwnd, historyButtonHwnd, languageHwnd, zoomOutHwnd, zoomInHwnd, moreHwnd} {
 		applyFont(h, mainUIFont)
 	}
@@ -236,6 +252,9 @@ func recreateMainFonts() {
 	applyFont(fontStatusHwnd, mainStatusFont)
 	applyFont(hideSerialHwnd, mainStatusFont)
 	refreshSecondaryFonts()
+	if shellBrandHwnd != 0 {
+		recreateShellFonts()
+	}
 }
 func maxInt(a, b int) int {
 	if a > b {
@@ -273,16 +292,16 @@ func updateMainTexts() {
 		setRichText(reportHwnd, tr(code, "initializing"))
 	}
 	updateSecondaryTexts()
+	if shellBrandHwnd != 0 {
+		updateShellTexts()
+	}
 }
 
 func refreshSecondaryFonts() {
-	if historyHwnd != 0 {
-		recreateHistoryFonts()
-	}
-	if changelogHwnd != 0 {
+	if changelogHwnd != 0 && shellBrandHwnd == 0 {
 		recreateChangeFonts()
 	}
-	if aboutHwnd != 0 {
+	if aboutHwnd != 0 && shellBrandHwnd == 0 {
 		recreateAboutFonts()
 	}
 	if viewerHwnd != 0 {
@@ -314,25 +333,40 @@ func startScan() {
 		return
 	}
 	scanInFlight = true
+	scanGeneration++
+	generation := scanGeneration
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	scanCancel = cancel
 	scanMu.Unlock()
 	enableWindow(refreshHwnd, false)
 	code := effectiveLocale()
 	setText(statusHwnd, tr(code, "scanning"))
 	setRichText(reportHwnd, tr(code, "scanning"))
+	refreshDashboard()
 	go func() {
-		r := scanHardware()
+		defer cancel()
+		r := scanHardwareContext(ctx)
 		scanMu.Lock()
-		pendingScan = &r
+		if generation == scanGeneration && ctx.Err() != context.Canceled {
+			pendingScan = &r
+			pendingScanGeneration = generation
+		}
 		scanMu.Unlock()
-		procPostMessageW.Call(uintptr(mainHwnd), WM_APP_SCAN_DONE, 0, 0)
+		procPostMessageW.Call(uintptr(mainHwnd), WM_APP_SCAN_DONE, uintptr(generation), 0)
 	}()
 }
 
-func finishScan() {
+func finishScan(generation uint64) {
 	scanMu.Lock()
+	if generation != pendingScanGeneration || generation != scanGeneration {
+		scanMu.Unlock()
+		return
+	}
 	r := pendingScan
 	pendingScan = nil
+	pendingScanGeneration = 0
 	scanInFlight = false
+	scanCancel = nil
 	scanMu.Unlock()
 	enableWindow(refreshHwnd, true)
 	if r == nil {
@@ -364,6 +398,7 @@ func finishScan() {
 	if historyHwnd != 0 {
 		reloadHistoryRecords()
 	}
+	refreshDashboard()
 }
 
 func copyUnicodeText(s string) error {
@@ -487,6 +522,14 @@ func showMoreMenu() {
 	procAppendMenuW.Call(m, f2, MENU_MORE_EXPORT, uintptr(unsafe.Pointer(utf16Ptr(tr(code, "saveOnExport")))))
 	procAppendMenuW.Call(m, MF_SEPARATOR, 0, 0)
 	procAppendMenuW.Call(m, MF_STRING, MENU_MORE_CHANGELOG, uintptr(unsafe.Pointer(utf16Ptr(tr(code, "changelogTitle")))))
+	updateFlags := uintptr(MF_STRING)
+	scanMu.RLock()
+	checking := updateChecking
+	scanMu.RUnlock()
+	if checking {
+		updateFlags |= MF_GRAYED
+	}
+	procAppendMenuW.Call(m, updateFlags, MENU_MORE_UPDATE, uintptr(unsafe.Pointer(utf16Ptr(updateText(code, "check")))))
 	procAppendMenuW.Call(m, MF_STRING, MENU_MORE_ABOUT, uintptr(unsafe.Pointer(utf16Ptr(tr(code, "about")))))
 	var p point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
@@ -502,9 +545,78 @@ func showMoreMenu() {
 		updateSettings(func(s *appSettings) { s.HistoryMode = historyOnExport })
 	case MENU_MORE_CHANGELOG:
 		openChangelog()
+	case MENU_MORE_UPDATE:
+		checkForUpdates()
 	case MENU_MORE_ABOUT:
 		openAbout()
 	}
+}
+
+func checkForUpdates() {
+	scanMu.Lock()
+	if updateChecking {
+		scanMu.Unlock()
+		return
+	}
+	updateChecking = true
+	pendingUpdate = releaseInfo{}
+	pendingUpdateErr = nil
+	scanMu.Unlock()
+	setText(statusHwnd, updateText(effectiveLocale(), "checking"))
+	go func() {
+		release, err := queryLatestRelease()
+		scanMu.Lock()
+		pendingUpdate = release
+		pendingUpdateErr = err
+		updateChecking = false
+		scanMu.Unlock()
+		procPostMessageW.Call(uintptr(mainHwnd), WM_APP_UPDATE_DONE, 0, 0)
+	}()
+}
+
+func restoreOverviewStatus() {
+	r := getCurrentScan()
+	if r == nil {
+		setText(statusHwnd, tr(effectiveLocale(), "ready"))
+		return
+	}
+	key := "scanCompleteNoSave"
+	if currentSettings().HistoryMode == historyOnRefresh {
+		key = "scanCompleteRefresh"
+	}
+	setText(statusHwnd, trf(effectiveLocale(), key, len(r.Disks), len(r.Batteries)))
+}
+
+func finishUpdateCheck() {
+	scanMu.Lock()
+	release, err := pendingUpdate, pendingUpdateErr
+	pendingUpdate, pendingUpdateErr = releaseInfo{}, nil
+	scanMu.Unlock()
+	code := effectiveLocale()
+	title := updateText(code, "title")
+	if err != nil {
+		messageBox(mainHwnd, title, updateText(code, "failed")+"\r\n\r\n"+err.Error(), MB_OK|MB_ICONWARNING)
+		restoreOverviewStatus()
+		return
+	}
+	comparison, valid := compareVersions(appVersion, release.Version)
+	if !valid {
+		messageBox(mainHwnd, title, updateText(code, "failed"), MB_OK|MB_ICONWARNING)
+		return
+	}
+	if comparison >= 0 {
+		text := fmt.Sprintf(updateText(code, "latest"), normalizedVersion(appVersion))
+		messageBox(mainHwnd, title, text, MB_OK|MB_ICONINFORMATION)
+		restoreOverviewStatus()
+		return
+	}
+	text := fmt.Sprintf(updateText(code, "available"), release.Version, normalizedVersion(appVersion))
+	if messageBox(mainHwnd, title, text, MB_YESNO|MB_ICONINFORMATION) == IDYES {
+		if err := openPath(release.URL); err != nil {
+			messageBox(mainHwnd, tr(code, "errorTitle"), err.Error(), MB_OK|MB_ICONERROR)
+		}
+	}
+	restoreOverviewStatus()
 }
 
 func openHistoryDirectory() {
@@ -545,21 +657,36 @@ func changeZoom(delta int) {
 		return
 	}
 	updateSettings(func(s *appSettings) { s.FontSize = n })
-	recreateMainFonts()
-	updateMainTexts()
-	layoutMain()
-	if historyHwnd != 0 {
+	if mainReportFont != 0 {
+		procDeleteObject.Call(uintptr(mainReportFont))
+	}
+	mainReportFont = createUIFontDPI(n, FW_NORMAL, mainDPI)
+	applyFont(reportHwnd, mainReportFont)
+	if r := getCurrentScan(); r != nil {
+		setRichText(reportHwnd, renderReportWithOptions(*r, effectiveLocale(), currentSettings().HideSerial))
+	}
+	if viewerHwnd != 0 {
+		if viewerFont != 0 {
+			procDeleteObject.Call(uintptr(viewerFont))
+		}
+		viewerFont = createUIFontDPI(n, FW_NORMAL, windowDPI(viewerHwnd))
+		applyFont(viewerEditHwnd, viewerFont)
+	}
+	updateSettingsPageTexts()
+	enforceShellPageVisibility()
+	if shellPage == shellPageHistory {
+		recreateHistoryFonts()
 		layoutHistory()
 	}
-	if changelogHwnd != 0 {
-		layoutChangelog()
-	}
-	if aboutHwnd != 0 {
-		layoutAbout()
-	}
+	active := []syscall.Handle{dashboardHwnd, historyHwnd, settingsPageHwnd, aboutHwnd}[shellPage]
+	procRedrawWindow.Call(uintptr(active), 0, 0, RDW_INVALIDATE|RDW_ERASE|RDW_UPDATENOW|RDW_ALLCHILDREN)
 }
 
 func layoutMain() {
+	if shellBrandHwnd != 0 {
+		layoutModernShell()
+		return
+	}
 	if mainHwnd == 0 {
 		return
 	}
@@ -631,33 +758,21 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 	case WM_CREATE:
 		mainHwnd = hwnd
 		applyWindowIcons(hwnd)
-		_, _, _ = procLoadLibraryW.Call(uintptr(unsafe.Pointer(utf16Ptr("Msftedit.dll"))))
-		refreshHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_REFRESH)
-		exportHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_EXPORT)
-		copyHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_COPY)
-		historyButtonHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_HISTORY)
-		languageHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_LANGUAGE)
-		zoomOutHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_ZOOM_OUT)
-		zoomInHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_ZOOM_IN)
-		moreHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_MORE)
-		reportHwnd = createWindow(WS_EX_CLIENTEDGE, "RICHEDIT50W", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_HSCROLL|WS_TABSTOP|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY|ES_NOHIDESEL, 0, 0, 0, 0, hwnd, ID_REPORT)
-		if reportHwnd == 0 {
-			reportHwnd = createWindow(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_READONLY, 0, 0, 0, 0, hwnd, ID_REPORT)
-		}
-		statusHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, ID_STATUS)
-		pathLabelHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, 0)
-		pathHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_LEFT|SS_CENTERIMAGE|SS_NOTIFY, 0, 0, 0, 0, hwnd, ID_PATH)
-		fontStatusHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, ID_FONTSTATUS)
-		hideSerialHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX, 0, 0, 0, 0, hwnd, ID_HIDE_SERIAL)
-		setWindowTheme(reportHwnd, "Explorer")
+		createModernShell(hwnd)
 		recreateMainFonts()
 		updateMainTexts()
 		setText(statusHwnd, tr(effectiveLocale(), "initializing"))
+		// Defer the first page activation and scan until after WM_CREATE returns.
+		// Synchronously repainting the complete child hierarchy while the main
+		// window is still being created can leave the process without a window.
 		procPostMessageW.Call(uintptr(hwnd), WM_APP_SCAN_DONE-1, 0, 0)
 		return 0
 	case WM_SIZE:
 		if wParam != SIZE_MINIMIZED {
 			layoutMain()
+			enforceShellPageVisibility()
+			invalidateShellNavigation()
+			procRedrawWindow.Call(uintptr(hwnd), 0, 0, RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN)
 		}
 		return 0
 	case WM_DPICHANGED:
@@ -671,12 +786,24 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 	case WM_GETMINMAXINFO:
 		if lParam != 0 {
 			m := (*minMaxInfo)(unsafe.Pointer(lParam))
-			m.MinTrackSize.X = scale(620, windowDPI(hwnd))
-			m.MinTrackSize.Y = scale(440, windowDPI(hwnd))
+			m.MinTrackSize.X = scale(900, windowDPI(hwnd))
+			m.MinTrackSize.Y = scale(600, windowDPI(hwnd))
 		}
 		return 0
+	case WM_PAINT:
+		paintModernShell(hwnd)
+		return 0
+	case WM_ERASEBKGND:
+		return 1
+	case WM_DRAWITEM:
+		if drawShellOwnerItem((*drawItemStruct)(unsafe.Pointer(lParam))) {
+			return 1
+		}
 	case WM_COMMAND:
 		id := loword(wParam)
+		if shellMainCommand(id) {
+			return 0
+		}
 		switch id {
 		case ID_REFRESH:
 			startScan()
@@ -702,10 +829,22 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 		case ID_PATH:
 			openHistoryDirectory()
 		case ID_HIDE_SERIAL:
-			v, _, _ := procSendMessageW.Call(uintptr(hideSerialHwnd), BM_GETCHECK, 0, 0)
-			hide := v == BST_CHECKED
+			hide := !currentSettings().HideSerial
+			if syscall.Handle(lParam) == hideSerialHwnd {
+				v, _, _ := procSendMessageW.Call(uintptr(hideSerialHwnd), BM_GETCHECK, 0, 0)
+				hide = v == BST_CHECKED
+			}
 			updateSettings(func(s *appSettings) { s.HideSerial = hide })
-			updateMainTexts()
+			check := uintptr(0)
+			if hide {
+				check = BST_CHECKED
+			}
+			procSendMessageW.Call(uintptr(hideSerialHwnd), BM_SETCHECK, check, 0)
+			invalidateShellPrivacyButton()
+			if r := getCurrentScan(); r != nil {
+				setRichText(reportHwnd, renderReportWithOptions(*r, effectiveLocale(), hide))
+			}
+			refreshDashboard()
 			if histSelected >= 0 && histSelected < len(histRecords) {
 				setRichText(histPreviewHwnd, historyDisplayText(histRecords[histSelected].Report))
 			}
@@ -715,12 +854,25 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 		}
 		return 0
 	case WM_APP_SCAN_DONE - 1:
+		switchShellPage(shellPageOverview)
 		startScan()
 		return 0
 	case WM_APP_SCAN_DONE:
-		finishScan()
+		finishScan(uint64(wParam))
+		return 0
+	case WM_APP_UPDATE_DONE:
+		finishUpdateCheck()
 		return 0
 	case WM_CTLCOLORSTATIC:
+		if shellBrandHwnd != 0 {
+			procSetBkMode.Call(wParam, TRANSPARENT)
+			if (syscall.Handle(lParam) == shellBrandHwnd || syscall.Handle(lParam) == shellBrandVersionHwnd) && shellSidebarBrush != 0 {
+				return uintptr(shellSidebarBrush)
+			}
+			if shellCanvasBrush != 0 {
+				return uintptr(shellCanvasBrush)
+			}
+		}
 		if syscall.Handle(lParam) == pathHwnd {
 			procSetTextColor.Call(wParam, uintptr(rgb(25, 99, 210)))
 			procSetBkMode.Call(wParam, TRANSPARENT)
@@ -734,6 +886,14 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 		procDestroyWindow.Call(uintptr(hwnd))
 		return 0
 	case WM_DESTROY:
+		scanMu.Lock()
+		if scanCancel != nil {
+			scanCancel()
+			scanCancel = nil
+		}
+		scanGeneration++
+		scanInFlight = false
+		scanMu.Unlock()
 		if historyHwnd != 0 {
 			procDestroyWindow.Call(uintptr(historyHwnd))
 		}
@@ -746,7 +906,12 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 		if aboutHwnd != 0 {
 			procDestroyWindow.Call(uintptr(aboutHwnd))
 		}
-		deleteFonts([]syscall.Handle{mainUIFont, mainReportFont, mainStatusFont})
+		deleteFonts([]syscall.Handle{mainUIFont, mainReportFont, mainStatusFont, shellTitleFont, shellBrandFont, shellNavFont, shellSmallFont, shellIconFont, dashboardTitleFont, dashboardCardTitleFont, dashboardBodyFont, dashboardSmallFont, dashboardPercentFont})
+		for _, brush := range []syscall.Handle{shellSidebarBrush, shellCanvasBrush, shellCardBrush} {
+			if brush != 0 {
+				procDeleteObject.Call(uintptr(brush))
+			}
+		}
 		releaseAppIcons()
 		procPostQuitMessage.Call(0)
 		return 0
@@ -769,20 +934,16 @@ func sourceText(code, source string) string {
 func recreateHistoryFonts() {
 	deleteFonts(histFonts)
 	dpi := windowDPI(historyHwnd)
-	base := currentSettings().FontSize
-	// Keep the history window visually subordinate to the main report.
-	// All history text uses a slightly smaller default scale while preserving
-	// the existing hierarchy between titles, records and auxiliary text.
-	histFonts = []syscall.Handle{createUIFontDPI(base+6, FW_SEMIBOLD, dpi), createUIFontDPI(maxInt(8, base-2), FW_SEMIBOLD, dpi), createUIFontDPI(maxInt(8, base-1), FW_NORMAL, dpi), createUIFontDPI(maxInt(7, base-3), FW_NORMAL, dpi), createUIFontDPI(maxInt(7, base-3), FW_SEMIBOLD, dpi)}
+	histFonts = []syscall.Handle{createUIFontDPI(16, FW_SEMIBOLD, dpi), createUIFontDPI(10, FW_SEMIBOLD, dpi), createUIFontDPI(9, FW_NORMAL, dpi), createUIFontDPI(8, FW_NORMAL, dpi), createUIFontDPI(8, FW_SEMIBOLD, dpi), createUIFontDPI(currentSettings().FontSize, FW_NORMAL, dpi)}
 	applyFont(histTitleHwnd, histFonts[0])
-	for _, h := range []syscall.Handle{histOpenHwnd, histChangeHwnd, histFullHwnd} {
+	for _, h := range []syscall.Handle{histOpenHwnd, histChangeHwnd, histFullHwnd, histBatchHwnd, histSelectAllHwnd, histExportSelectedHwnd, histDeleteSelectedHwnd, histDoneHwnd} {
 		applyFont(h, histFonts[2])
 	}
 	for _, h := range []syscall.Handle{histPathHwnd, histRecordsLabelHwnd, histPreviewLabelHwnd, histEmptyHwnd} {
 		applyFont(h, histFonts[2])
 	}
-	applyFont(histPreviewHwnd, histFonts[2])
-	itemH := scale(int32(44+(base-9)*3), dpi)
+	applyFont(histPreviewHwnd, histFonts[5])
+	itemH := scale(52, dpi)
 	procSendMessageW.Call(uintptr(histListHwnd), LB_SETITEMHEIGHT, 0, uintptr(itemH))
 }
 func updateHistoryTexts() {
@@ -796,6 +957,66 @@ func updateHistoryTexts() {
 	setText(histPreviewLabelHwnd, tr(code, "reportPreview"))
 	setText(histFullHwnd, tr(code, "fullView"))
 	setText(histEmptyHwnd, tr(code, "noHistoryInline"))
+	setText(histBatchHwnd, historyBatchText(code, "batch"))
+	setText(histExportSelectedHwnd, historyBatchText(code, "export"))
+	setText(histDeleteSelectedHwnd, historyBatchText(code, "delete"))
+	setText(histDoneHwnd, historyDoneText(code))
+	updateHistorySelectionActions()
+}
+
+func historyDoneText(code string) string {
+	if code == "zh-CN" || code == "zh-TW" {
+		return "\u5b8c\u6210"
+	}
+	return "Done"
+}
+
+func updateHistorySelectionActions() {
+	if histSelectAllHwnd == 0 {
+		return
+	}
+	selected := len(selectedHistoryIndices())
+	all := len(histRecords) > 0 && selected == len(histRecords)
+	prefix := "\u2610  "
+	if all {
+		prefix = "\u2713  "
+	}
+	setText(histSelectAllHwnd, prefix+historyBatchText(effectiveLocale(), "selectAll"))
+	enableWindow(histExportSelectedHwnd, selected > 0)
+	enableWindow(histDeleteSelectedHwnd, selected > 0)
+	procInvalidateRect.Call(uintptr(histSelectAllHwnd), 0, 0)
+}
+
+func setHistorySelectionMode(enabled bool) {
+	if histSelectionMode == enabled || histListHwnd == 0 {
+		return
+	}
+	histSelectionMode = enabled
+	procSendMessageW.Call(uintptr(histListHwnd), LB_SETSEL, 0, ^uintptr(0))
+	if !enabled && len(histRecords) > 0 {
+		if histSelected < 0 || histSelected >= len(histRecords) {
+			histSelected = 0
+		}
+		procSendMessageW.Call(uintptr(histListHwnd), LB_SETSEL, 1, uintptr(histSelected))
+		setRichText(histPreviewHwnd, historyDisplayText(histRecords[histSelected].Report))
+	}
+	for _, h := range []syscall.Handle{histPathHwnd, histChangeHwnd, histBatchHwnd} {
+		if enabled {
+			procShowWindow.Call(uintptr(h), SW_HIDE)
+		} else {
+			procShowWindow.Call(uintptr(h), SW_SHOW)
+		}
+	}
+	for _, h := range []syscall.Handle{histSelectAllHwnd, histExportSelectedHwnd, histDeleteSelectedHwnd, histDoneHwnd} {
+		if enabled {
+			procShowWindow.Call(uintptr(h), SW_SHOW)
+		} else {
+			procShowWindow.Call(uintptr(h), SW_HIDE)
+		}
+	}
+	updateHistorySelectionActions()
+	layoutHistory()
+	procSetFocus.Call(uintptr(histListHwnd))
 }
 func reloadHistoryRecords() {
 	if histListHwnd == 0 {
@@ -822,20 +1043,27 @@ func reloadHistoryRecords() {
 		if histSelected < 0 || histSelected >= len(records) {
 			histSelected = 0
 		}
-		procSendMessageW.Call(uintptr(histListHwnd), LB_SETCURSEL, uintptr(histSelected), 0)
+		if !histSelectionMode {
+			procSendMessageW.Call(uintptr(histListHwnd), LB_SETSEL, 1, uintptr(histSelected))
+		}
 		setRichText(histPreviewHwnd, historyDisplayText(records[histSelected].Report))
 	}
 	procSendMessageW.Call(uintptr(histListHwnd), WM_SETREDRAW, 1, 0)
 	procRedrawWindow.Call(uintptr(histListHwnd), 0, 0, RDW_INVALIDATE|RDW_UPDATENOW|RDW_ALLCHILDREN)
+	updateHistorySelectionActions()
 }
 func openHistory() {
+	if shellBrandHwnd != 0 {
+		switchShellPage(shellPageHistory)
+		return
+	}
 	if historyHwnd != 0 {
 		showWindowFront(historyHwnd)
 		reloadHistoryRecords()
 		return
 	}
 	dpi := mainDPI
-	historyHwnd = createWindow(WS_EX_APPWINDOW|WS_EX_CONTROLPARENT, "HHVHistoryWindow", tr(effectiveLocale(), "historyWindowTitle"), WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, scale(1080, dpi), scale(700, dpi), 0, 0)
+	historyHwnd = createWindow(secondaryWindowExStyle(), "HHVHistoryWindow", tr(effectiveLocale(), "historyWindowTitle"), WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, scale(1080, dpi), scale(700, dpi), 0, 0)
 	if historyHwnd != 0 {
 		showWindowFront(historyHwnd)
 	}
@@ -875,20 +1103,20 @@ func currentHistoryMetrics() historyMetrics {
 	buttonGap := scale(12, int(dpi))
 	wide := w >= scale(760, int(dpi))
 	buttonTop := m + scale(2, int(dpi))
-	buttonW := scale(190, int(dpi))
-	buttonStart := w - m - buttonW*2 - buttonGap
-	titleW := max32(scale(150, int(dpi)), buttonStart-m-scale(18, int(dpi)))
+	buttonW := scale(150, int(dpi))
+	buttonStart := w - m - buttonW
+	titleW := min32(scale(260, int(dpi)), max32(scale(150, int(dpi)), w/3))
 	headerBottom := m + titleH
 	if !wide {
 		buttonTop = m + titleH + scale(8, int(dpi))
-		buttonW = max32(scale(120, int(dpi)), (w-2*m-buttonGap)/2)
+		buttonW = max32(scale(90, int(dpi)), (w-2*m-buttonGap)/3)
 		buttonStart = m
 		titleW = max32(scale(120, int(dpi)), w-2*m)
 		headerBottom = buttonTop + buttonH
 	}
-	pathTop := headerBottom + scale(8, int(dpi))
-	pathH := scale(28, int(dpi))
-	bodyTop := pathTop + pathH + scale(18, int(dpi))
+	pathTop := buttonTop
+	pathH := buttonH
+	bodyTop := headerBottom + scale(18, int(dpi))
 	bodyH := h - bodyTop - m
 	if bodyH < scale(80, int(dpi)) {
 		bodyH = scale(80, int(dpi))
@@ -1219,6 +1447,14 @@ func historySplitterProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr
 		}
 		return 0
 	case WM_MOUSEMOVE:
+		if histSelectionMode {
+			if histHover >= 0 {
+				old := histHover
+				histHover = -1
+				invalidateListItem(hwnd, old)
+			}
+			break
+		}
 		if histSplitDragging {
 			var pt point
 			procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
@@ -1303,7 +1539,7 @@ func historyListProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) ui
 		}
 		return 0
 	case WM_LBUTTONUP:
-		if histHover >= 0 && histHover < len(histRecords) {
+		if !histSelectionMode && histHover >= 0 && histHover < len(histRecords) {
 			var rr rect
 			procSendMessageW.Call(uintptr(hwnd), LB_GETITEMRECT, uintptr(histHover), uintptr(unsafe.Pointer(&rr)))
 			x := int32(int16(loword(lParam)))
@@ -1315,7 +1551,10 @@ func historyListProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) ui
 			}
 		}
 	case WM_LBUTTONDBLCLK:
-		idx, _, _ := procSendMessageW.Call(uintptr(hwnd), LB_GETCURSEL, 0, 0)
+		if histSelectionMode {
+			break
+		}
+		idx, _, _ := procSendMessageW.Call(uintptr(hwnd), LB_GETCARETINDEX, 0, 0)
 		if int(idx) >= 0 && int(idx) < len(histRecords) {
 			showFullReport(histRecords[int(idx)])
 		}
@@ -1356,9 +1595,25 @@ func drawHistoryItem(dis *drawItemStruct) {
 	procDeleteObject.Call(uintptr(brush))
 	dpi := windowDPI(historyHwnd)
 	pad := scale(14, dpi)
+	if histSelectionMode {
+		box := scale(18, dpi)
+		boxTop := (h - box) / 2
+		boxRect := rect{pad, boxTop, pad + box, boxTop + box}
+		fill := rgb(255, 255, 255)
+		border := rgb(174, 184, 198)
+		if selected {
+			fill = rgb(37, 99, 180)
+			border = fill
+		}
+		drawRoundedSurface(syscall.Handle(mem), boxRect, fill, border, scale(4, dpi))
+		if selected {
+			drawText(syscall.Handle(mem), "\u2713", &boxRect, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX, histFonts[2], rgb(255, 255, 255))
+		}
+		pad += box + scale(12, dpi)
+	}
 	dr := historyDeleteRect(local, dpi)
 	textRight := local.Right - pad
-	if hover {
+	if hover && !histSelectionMode {
 		textRight = dr.Left - scale(10, dpi)
 	}
 	base := currentSettings().FontSize
@@ -1373,7 +1628,7 @@ func drawHistoryItem(dis *drawItemStruct) {
 	}
 	subtitle := computer + "  ·  " + sourceText(effectiveLocale(), rec.Source)
 	drawText(syscall.Handle(mem), subtitle, &subR, DT_LEFT|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, histFonts[3], rgb(83, 105, 140))
-	if hover {
+	if hover && !histSelectionMode {
 		a := histHoverAlpha
 		ease := 255 - (255-a)*(255-a)/255
 		red := byte(255)
@@ -1406,6 +1661,7 @@ func deleteHistoryAt(i int) {
 	}
 	rec := histRecords[i]
 	_, externalAvailable := linkedExternalReport(rec)
+	deleteDialogCount = 1
 	confirmed, external := showDeleteDialog(externalAvailable)
 	if !confirmed {
 		return
@@ -1416,11 +1672,179 @@ func deleteHistoryAt(i int) {
 	histSelected = -1
 	reloadHistoryRecords()
 }
+
+func drawDeleteDialogButton(dis *drawItemStruct) bool {
+	if dis == nil || (dis.CtlID != ID_D_DELETE && dis.CtlID != ID_D_CANCEL) {
+		return false
+	}
+	dpi := windowDPI(deleteDialogHwnd)
+	background := rgb(255, 255, 255)
+	border := rgb(215, 220, 228)
+	foreground := rgb(42, 53, 70)
+	if dis.CtlID == ID_D_DELETE {
+		background = rgb(201, 45, 55)
+		border = rgb(201, 45, 55)
+		foreground = rgb(255, 255, 255)
+	}
+	if dis.ItemState&ODS_SELECTED != 0 {
+		if dis.CtlID == ID_D_DELETE {
+			background = rgb(174, 35, 45)
+			border = background
+		} else {
+			background = rgb(232, 238, 247)
+			border = rgb(180, 196, 218)
+		}
+	}
+	drawRoundedSurface(dis.HDC, dis.RcItem, background, border, scale(8, dpi))
+	r := dis.RcItem
+	drawText(dis.HDC, getText(syscall.Handle(dis.HwndItem)), &r, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX, deleteDialogFont, foreground)
+	return true
+}
+
+func historyBatchText(code, key string) string {
+	texts := map[string]map[string]string{
+		"en":    {"batch": "Select...", "selectAll": "Select All", "clear": "Clear Selection", "export": "Export Selected...", "delete": "Delete Selected", "none": "Select one or more history records first.", "confirm": "Delete the selected history records? Exported report files will be kept.", "exported": "Selected reports were exported to:\r\n%s"},
+		"zh-CN": {"batch": "选择…", "selectAll": "全选", "clear": "取消全选", "export": "导出所选记录…", "delete": "删除所选记录", "none": "请先选择一条或多条历史记录。", "confirm": "是否删除所选历史记录？已经导出的报告文件会保留。", "exported": "所选报告已导出到：\r\n%s"},
+		"ru":    {"batch": "Выбрать…", "selectAll": "Выбрать все", "clear": "Снять выбор", "export": "Экспортировать выбранные…", "delete": "Удалить выбранные", "none": "Сначала выберите одну или несколько записей.", "confirm": "Удалить выбранные записи? Экспортированные файлы будут сохранены.", "exported": "Выбранные отчеты экспортированы в:\r\n%s"},
+		"fr":    {"batch": "Sélection…", "selectAll": "Tout sélectionner", "clear": "Tout désélectionner", "export": "Exporter la sélection…", "delete": "Supprimer la sélection", "none": "Sélectionnez d’abord un ou plusieurs rapports.", "confirm": "Supprimer les rapports sélectionnés ? Les fichiers exportés seront conservés.", "exported": "Rapports sélectionnés exportés vers :\r\n%s"},
+		"de":    {"batch": "Auswahl…", "selectAll": "Alle auswählen", "clear": "Auswahl aufheben", "export": "Auswahl exportieren…", "delete": "Auswahl löschen", "none": "Wählen Sie zuerst mindestens einen Verlaufseintrag aus.", "confirm": "Ausgewählte Einträge löschen? Exportierte Dateien bleiben erhalten.", "exported": "Ausgewählte Berichte wurden exportiert nach:\r\n%s"},
+		"ko":    {"batch": "선택…", "selectAll": "모두 선택", "clear": "모두 선택 해제", "export": "선택 항목 내보내기…", "delete": "선택 항목 삭제", "none": "먼저 하나 이상의 기록을 선택하십시오.", "confirm": "선택한 기록을 삭제할까요? 내보낸 보고서 파일은 유지됩니다.", "exported": "선택한 보고서를 다음 위치로 내보냈습니다:\r\n%s"},
+		"ja":    {"batch": "選択…", "selectAll": "すべて選択", "clear": "選択を解除", "export": "選択項目を書き出す…", "delete": "選択項目を削除", "none": "先に1件以上の履歴を選択してください。", "confirm": "選択した履歴を削除しますか？書き出したファイルは保持されます。", "exported": "選択したレポートを書き出しました：\r\n%s"},
+	}
+	if values, ok := texts[code]; ok {
+		return values[key]
+	}
+	return texts["en"][key]
+}
+
+func selectedHistoryIndices() []int {
+	if histListHwnd == 0 || len(histRecords) == 0 {
+		return nil
+	}
+	count, _, _ := procSendMessageW.Call(uintptr(histListHwnd), LB_GETSELCOUNT, 0, 0)
+	if count == 0 || count > uintptr(len(histRecords)) {
+		return nil
+	}
+	buffer := make([]int32, int(count))
+	actual, _, _ := procSendMessageW.Call(uintptr(histListHwnd), LB_GETSELITEMS, count, uintptr(unsafe.Pointer(&buffer[0])))
+	if actual == ^uintptr(0) {
+		return nil
+	}
+	if actual > count {
+		actual = count
+	}
+	result := make([]int, 0, int(actual))
+	for _, index := range buffer[:int(actual)] {
+		if index >= 0 && int(index) < len(histRecords) {
+			result = append(result, int(index))
+		}
+	}
+	return result
+}
+
+func showHistoryBatchMenu() {
+	code := effectiveLocale()
+	menu, _, _ := procCreatePopupMenu.Call()
+	defer procDestroyMenu.Call(menu)
+	procAppendMenuW.Call(menu, MF_STRING, MENU_HISTORY_SELECT_ALL, uintptr(unsafe.Pointer(utf16Ptr(historyBatchText(code, "selectAll")))))
+	procAppendMenuW.Call(menu, MF_STRING, MENU_HISTORY_CLEAR, uintptr(unsafe.Pointer(utf16Ptr(historyBatchText(code, "clear")))))
+	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
+	actionFlags := uintptr(MF_STRING)
+	if len(selectedHistoryIndices()) == 0 {
+		actionFlags |= MF_GRAYED
+	}
+	procAppendMenuW.Call(menu, actionFlags, MENU_HISTORY_EXPORT, uintptr(unsafe.Pointer(utf16Ptr(historyBatchText(code, "export")))))
+	procAppendMenuW.Call(menu, actionFlags, MENU_HISTORY_DELETE, uintptr(unsafe.Pointer(utf16Ptr(historyBatchText(code, "delete")))))
+	var position point
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&position)))
+	command, _, _ := procTrackPopupMenu.Call(menu, TPM_RETURNCMD|TPM_RIGHTALIGN|TPM_TOPALIGN, uintptr(position.X), uintptr(position.Y), 0, uintptr(historyHwnd), 0)
+	switch command {
+	case MENU_HISTORY_SELECT_ALL:
+		procSendMessageW.Call(uintptr(histListHwnd), LB_SETSEL, 1, ^uintptr(0))
+		procInvalidateRect.Call(uintptr(histListHwnd), 0, 0)
+	case MENU_HISTORY_CLEAR:
+		procSendMessageW.Call(uintptr(histListHwnd), LB_SETSEL, 0, ^uintptr(0))
+		procInvalidateRect.Call(uintptr(histListHwnd), 0, 0)
+	case MENU_HISTORY_EXPORT:
+		exportSelectedHistory()
+	case MENU_HISTORY_DELETE:
+		deleteSelectedHistory()
+	}
+}
+
+func exportSelectedHistory() {
+	indices := selectedHistoryIndices()
+	code := effectiveLocale()
+	if len(indices) == 0 {
+		messageBox(historyHwnd, tr(code, "historyWindowTitle"), historyBatchText(code, "none"), MB_OK|MB_ICONINFORMATION)
+		return
+	}
+	destination, ok := chooseFolder(historyHwnd, historyBatchText(code, "export"))
+	if !ok {
+		return
+	}
+	folder := filepath.Join(destination, "DriveBatteryHealthViewer-Reports-"+time.Now().Format("20060102-150405"))
+	if err := os.MkdirAll(folder, 0755); err != nil {
+		messageBox(historyHwnd, tr(code, "errorTitle"), err.Error(), MB_OK|MB_ICONERROR)
+		return
+	}
+	for sequence, index := range indices {
+		record := histRecords[index]
+		id := sanitizeFileName(record.ID)
+		if id == "" {
+			id = fmt.Sprintf("%03d", sequence+1)
+		}
+		name := fmt.Sprintf("HHV_%s_%s.txt", record.GeneratedAt.Format("20060102_150405_000"), id)
+		if err := writeUTF8BOM(filepath.Join(folder, name), historyDisplayText(record.Report)); err != nil {
+			messageBox(historyHwnd, tr(code, "errorTitle"), err.Error(), MB_OK|MB_ICONERROR)
+			return
+		}
+	}
+	messageBox(historyHwnd, tr(code, "historyWindowTitle"), fmt.Sprintf(historyBatchText(code, "exported"), folder), MB_OK|MB_ICONINFORMATION)
+}
+
+func deleteSelectedHistory() {
+	indices := selectedHistoryIndices()
+	code := effectiveLocale()
+	if len(indices) == 0 {
+		messageBox(historyHwnd, tr(code, "historyWindowTitle"), historyBatchText(code, "none"), MB_OK|MB_ICONINFORMATION)
+		return
+	}
+	externalAvailable := false
+	for _, index := range indices {
+		if _, ok := linkedExternalReport(histRecords[index]); ok {
+			externalAvailable = true
+			break
+		}
+	}
+	deleteDialogCount = len(indices)
+	confirmed, deleteExternal := showDeleteDialog(externalAvailable)
+	if !confirmed {
+		return
+	}
+	for _, index := range indices {
+		if err := deleteHistoryRecord(histRecords[index], deleteExternal); err != nil {
+			messageBox(historyHwnd, tr(code, "errorTitle"), trf(code, "deleteFailed", err.Error()), MB_OK|MB_ICONERROR)
+			return
+		}
+	}
+	histSelected = -1
+	reloadHistoryRecords()
+	if len(histRecords) == 0 {
+		setHistorySelectionMode(false)
+	} else {
+		updateHistorySelectionActions()
+	}
+}
+
 func showDeleteDialog(showExternal bool) (bool, bool) {
 	deleteDialogDone = false
 	deleteDialogConfirmed = false
 	deleteDialogExternal = false
 	deleteDialogShowExternal = showExternal
+	if deleteDialogCount <= 0 {
+		deleteDialogCount = 1
+	}
 	// Suppress redraw while the owner changes enabled state. This keeps the
 	// history window visually stable instead of flashing when the confirmation
 	// window is opened or closed.
@@ -1428,7 +1852,7 @@ func showDeleteDialog(showExternal bool) (bool, bool) {
 	enableWindow(historyHwnd, false)
 	procSendMessageW.Call(uintptr(historyHwnd), WM_SETREDRAW, 1, 0)
 	dpi := windowDPI(historyHwnd)
-	deleteDialogHwnd = createWindow(0, "HHVDeleteDialog", tr(effectiveLocale(), "deleteConfirmTitle"), WS_CAPTION|WS_SYSMENU|WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, scale(500, dpi), scale(230, dpi), historyHwnd, 0)
+	deleteDialogHwnd = createWindow(0, "HHVDeleteDialog", tr(effectiveLocale(), "deleteConfirmTitle"), WS_CAPTION|WS_SYSMENU|WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, scale(540, dpi), scale(260, dpi), historyHwnd, 0)
 	if deleteDialogHwnd == 0 {
 		procSendMessageW.Call(uintptr(historyHwnd), WM_SETREDRAW, 0, 0)
 		enableWindow(historyHwnd, true)
@@ -1436,6 +1860,7 @@ func showDeleteDialog(showExternal bool) (bool, bool) {
 		return false, false
 	}
 	showWindowFront(deleteDialogHwnd)
+	centerWindow(deleteDialogHwnd, scale(540, dpi), scale(260, dpi))
 	var m msg
 	for !deleteDialogDone {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
@@ -1454,39 +1879,84 @@ func showDeleteDialog(showExternal bool) (bool, bool) {
 	}
 	return deleteDialogConfirmed, deleteDialogExternal
 }
+
+func deleteDialogPrompt(code string, count int) string {
+	if count <= 1 {
+		return tr(code, "deleteConfirmText")
+	}
+	if code == "zh-CN" || code == "zh-TW" {
+		return fmt.Sprintf("\u786e\u5b9a\u4ece\u5386\u53f2\u8bb0\u5f55\u4e2d\u5220\u9664\u9009\u4e2d\u7684 %d \u6761\u62a5\u544a\u5417\uff1f", count)
+	}
+	return fmt.Sprintf("Delete the %d selected reports from history?", count)
+}
 func deleteDialogProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case WM_CREATE:
 		deleteDialogHwnd = hwnd
 		applyWindowIcons(hwnd)
 		dpi := windowDPI(hwnd)
-		deleteDialogFont = createUIFontDPI(currentSettings().FontSize, FW_NORMAL, dpi)
-		deleteTextHwnd = createWindow(0, "STATIC", tr(effectiveLocale(), "deleteConfirmText"), WS_CHILD|WS_VISIBLE|SS_LEFT, 0, 0, 0, 0, hwnd, 0)
+		deleteDialogFont = createUIFontDPI(10, FW_NORMAL, dpi)
+		deleteDialogTitleFont = createUIFontDPI(14, FW_SEMIBOLD, dpi)
+		deleteTextHwnd = createWindow(0, "STATIC", deleteDialogPrompt(effectiveLocale(), deleteDialogCount), WS_CHILD|WS_VISIBLE|SS_LEFT, 0, 0, 0, 0, hwnd, 0)
 		checkText := tr(effectiveLocale(), "deleteExternal")
 		if !deleteDialogShowExternal {
 			checkText = tr(effectiveLocale(), "deleteExternalUnavailable")
 		}
 		deleteCheckHwnd = createWindow(0, "BUTTON", checkText, WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX, 0, 0, 0, 0, hwnd, ID_D_CHECK)
-		deleteYesHwnd = createWindow(0, "BUTTON", tr(effectiveLocale(), "delete"), WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_D_DELETE)
-		deleteCancelHwnd = createWindow(0, "BUTTON", tr(effectiveLocale(), "cancel"), WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_D_CANCEL)
-		for _, h := range []syscall.Handle{deleteTextHwnd, deleteCheckHwnd, deleteYesHwnd, deleteCancelHwnd} {
+		deleteYesHwnd = createWindow(0, "BUTTON", tr(effectiveLocale(), "delete"), WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_D_DELETE)
+		deleteCancelHwnd = createWindow(0, "BUTTON", tr(effectiveLocale(), "cancel"), WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_D_CANCEL)
+		for _, h := range []syscall.Handle{deleteCheckHwnd, deleteYesHwnd, deleteCancelHwnd} {
 			applyFont(h, deleteDialogFont)
 		}
+		applyFont(deleteTextHwnd, deleteDialogTitleFont)
 		if !deleteDialogShowExternal {
 			enableWindow(deleteCheckHwnd, false)
+			procSendMessageW.Call(uintptr(deleteCheckHwnd), BM_SETCHECK, BST_UNCHECKED, 0)
+		} else {
+			procSendMessageW.Call(uintptr(deleteCheckHwnd), BM_SETCHECK, BST_CHECKED, 0)
 		}
+		procSetFocus.Call(uintptr(deleteCancelHwnd))
 		return 0
 	case WM_SIZE:
 		r := clientRect(hwnd)
 		dpi := windowDPI(hwnd)
-		m := scale(22, dpi)
-		procMoveWindow.Call(uintptr(deleteTextHwnd), uintptr(m), uintptr(m), uintptr(r.Right-2*m), uintptr(scale(42, dpi)), 1)
-		procMoveWindow.Call(uintptr(deleteCheckHwnd), uintptr(m), uintptr(scale(78, dpi)), uintptr(r.Right-2*m), uintptr(scale(30, dpi)), 1)
+		m := scale(24, dpi)
+		procMoveWindow.Call(uintptr(deleteTextHwnd), uintptr(m), uintptr(m), uintptr(r.Right-2*m), uintptr(scale(54, dpi)), 1)
+		procMoveWindow.Call(uintptr(deleteCheckHwnd), uintptr(m), uintptr(scale(88, dpi)), uintptr(r.Right-2*m), uintptr(scale(34, dpi)), 1)
 		bw := scale(100, dpi)
 		bh := scale(34, dpi)
 		procMoveWindow.Call(uintptr(deleteCancelHwnd), uintptr(r.Right-m-bw), uintptr(r.Bottom-m-bh), uintptr(bw), uintptr(bh), 1)
 		procMoveWindow.Call(uintptr(deleteYesHwnd), uintptr(r.Right-m-bw*2-scale(10, dpi)), uintptr(r.Bottom-m-bh), uintptr(bw), uintptr(bh), 1)
 		return 0
+	case WM_ERASEBKGND:
+		return 1
+	case WM_PAINT:
+		var ps paintStruct
+		hdc, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		if hdc != 0 {
+			r := clientRect(hwnd)
+			dpi := windowDPI(hwnd)
+			fillDC(syscall.Handle(hdc), rect{0, 0, r.Right, r.Bottom}, rgb(248, 249, 251))
+			m := scale(16, dpi)
+			drawRoundedSurface(syscall.Handle(hdc), rect{m, m, r.Right - m, r.Bottom - scale(66, dpi)}, rgb(255, 255, 255), rgb(226, 229, 234), scale(10, dpi))
+		}
+		procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		return 0
+	case WM_DRAWITEM:
+		if drawDeleteDialogButton((*drawItemStruct)(unsafe.Pointer(lParam))) {
+			return 1
+		}
+	case WM_CTLCOLORSTATIC:
+		procSetBkMode.Call(wParam, TRANSPARENT)
+		procSetTextColor.Call(wParam, uintptr(rgb(32, 41, 55)))
+		if shellCardBrush != 0 {
+			return uintptr(shellCardBrush)
+		}
+	case WM_CTLCOLORBTN:
+		procSetBkMode.Call(wParam, TRANSPARENT)
+		if shellCardBrush != 0 {
+			return uintptr(shellCardBrush)
+		}
 	case WM_COMMAND:
 		switch loword(wParam) {
 		case ID_D_DELETE:
@@ -1509,6 +1979,11 @@ func deleteDialogProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) u
 			procDeleteObject.Call(uintptr(deleteDialogFont))
 			deleteDialogFont = 0
 		}
+		if deleteDialogTitleFont != 0 {
+			procDeleteObject.Call(uintptr(deleteDialogTitleFont))
+			deleteDialogTitleFont = 0
+		}
+		deleteDialogCount = 0
 		deleteDialogHwnd = 0
 		return 0
 	}
@@ -1576,11 +2051,48 @@ func layoutHistory() {
 	}
 	m := currentHistoryMetrics()
 	paneMoves, _ := historyPaneMoves()
-	moves := []windowMove{
-		{histTitleHwnd, m.m, m.m, m.titleW, m.titleH},
-		{histOpenHwnd, m.buttonStart, m.buttonTop, m.buttonW, m.buttonH},
-		{histChangeHwnd, m.buttonStart + m.buttonW + m.buttonGap, m.buttonTop, m.buttonW, m.buttonH},
-		{histPathHwnd, m.m, m.pathTop, max32(scale(100, int(m.dpi)), m.w-2*m.m), m.pathH},
+	titleW := min32(scale(190, int(m.dpi)), max32(scale(140, int(m.dpi)), m.w/4))
+	moves := []windowMove{{histTitleHwnd, m.m, m.m, titleW, m.titleH}}
+	availableX := m.m + titleW + m.buttonGap
+	availableW := m.w - m.m - availableX
+	if !m.wideHeader {
+		availableX = m.m
+		availableW = m.w - 2*m.m
+	}
+	if histSelectionMode {
+		gap := scale(8, int(m.dpi))
+		buttonW := max32(scale(72, int(m.dpi)), (availableW-3*gap)/4)
+		x := availableX
+		moves = append(moves,
+			windowMove{histSelectAllHwnd, x, m.buttonTop, buttonW, m.buttonH},
+			windowMove{histExportSelectedHwnd, x + buttonW + gap, m.buttonTop, buttonW, m.buttonH},
+			windowMove{histDeleteSelectedHwnd, x + 2*(buttonW+gap), m.buttonTop, buttonW, m.buttonH},
+			windowMove{histDoneHwnd, x + 3*(buttonW+gap), m.buttonTop, availableW - 3*(buttonW+gap), m.buttonH},
+		)
+	} else {
+		gap := scale(8, int(m.dpi))
+		selectW := scale(92, int(m.dpi))
+		changeW := scale(174, int(m.dpi))
+		if m.wideHeader {
+			selectX := m.m + titleW + gap
+			changeX := m.w - m.m - changeW
+			pathRight := changeX - gap
+			pathLeft := max32(selectX+selectW+gap, pathRight-scale(520, int(m.dpi)))
+			moves = append(moves,
+				windowMove{histBatchHwnd, selectX, m.buttonTop, selectW, m.buttonH},
+				windowMove{histPathHwnd, pathLeft, m.pathTop, max32(scale(80, int(m.dpi)), pathRight-pathLeft), m.pathH},
+				windowMove{histChangeHwnd, changeX, m.buttonTop, changeW, m.buttonH},
+			)
+		} else {
+			changeW = min32(changeW, max32(scale(132, int(m.dpi)), availableW/3))
+			selectW = min32(selectW, max32(scale(76, int(m.dpi)), availableW/5))
+			pathW := max32(scale(80, int(m.dpi)), availableW-selectW-changeW-2*gap)
+			moves = append(moves,
+				windowMove{histBatchHwnd, availableX, m.buttonTop, selectW, m.buttonH},
+				windowMove{histPathHwnd, availableX + selectW + gap, m.pathTop, pathW, m.pathH},
+				windowMove{histChangeHwnd, availableX + selectW + gap + pathW + gap, m.buttonTop, changeW, m.buttonH},
+			)
+		}
 	}
 	moves = append(moves, paneMoves...)
 	procSendMessageW.Call(uintptr(historyHwnd), WM_SETREDRAW, 0, 0)
@@ -1589,26 +2101,77 @@ func layoutHistory() {
 	redrawWindowClean(historyHwnd, nil)
 }
 
+func drawHistoryCommandButton(dis *drawItemStruct) bool {
+	if dis == nil {
+		return false
+	}
+	switch dis.CtlID {
+	case ID_H_OPEN_DIR, ID_H_CHANGE_DIR, ID_H_FULL, ID_H_BATCH, ID_H_SELECT_ALL, ID_H_EXPORT, ID_H_DELETE, ID_H_DONE:
+	default:
+		return false
+	}
+	dpi := windowDPI(historyHwnd)
+	background := rgb(255, 255, 255)
+	border := rgb(224, 228, 234)
+	foreground := rgb(42, 53, 70)
+	if dis.CtlID == ID_H_DELETE {
+		foreground = rgb(184, 40, 51)
+		border = rgb(237, 203, 207)
+		background = rgb(255, 250, 250)
+	}
+	if dis.ItemState&ODS_DISABLED != 0 {
+		foreground = rgb(151, 158, 168)
+		background = rgb(247, 248, 250)
+		border = rgb(231, 234, 239)
+	}
+	if dis.ItemState&ODS_SELECTED != 0 {
+		background = rgb(226, 237, 252)
+		border = rgb(169, 194, 228)
+		foreground = rgb(20, 91, 173)
+	}
+	drawRoundedSurface(dis.HDC, dis.RcItem, background, border, scale(8, dpi))
+	textRect := dis.RcItem
+	textRect.Left += scale(10, dpi)
+	textRect.Right -= scale(10, dpi)
+	drawText(dis.HDC, getText(syscall.Handle(dis.HwndItem)), &textRect, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, histFonts[2], foreground)
+	if dis.ItemState&ODS_FOCUS != 0 {
+		focusBrush := createBrush(rgb(37, 99, 180))
+		focus := rect{dis.RcItem.Left + scale(3, dpi), dis.RcItem.Top + scale(3, dpi), dis.RcItem.Right - scale(3, dpi), dis.RcItem.Bottom - scale(3, dpi)}
+		procFrameRect.Call(uintptr(dis.HDC), uintptr(unsafe.Pointer(&focus)), uintptr(focusBrush))
+		procDeleteObject.Call(uintptr(focusBrush))
+	}
+	return true
+}
+
 func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case WM_CREATE:
 		historyHwnd = hwnd
 		applyWindowIcons(hwnd)
 		histTitleHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, 0)
-		histPathHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, 0)
-		histOpenHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_H_OPEN_DIR)
-		histChangeHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_H_CHANGE_DIR)
+		histPathHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|SS_RIGHT|SS_CENTERIMAGE|SS_NOTIFY, 0, 0, 0, 0, hwnd, ID_H_PATH)
+		histOpenHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_OPEN_DIR)
+		histChangeHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_CHANGE_DIR)
 		histRecordsLabelHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, 0)
 		histPreviewLabelHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, 0)
 		histSplitterHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|SS_NOTIFY, 0, 0, 0, 0, hwnd, 0)
-		histListHwnd = createWindow(WS_EX_CLIENTEDGE, "LISTBOX", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_OWNERDRAWFIXED|LBS_NOINTEGRALHEIGHT|LBS_HASSTRINGS, 0, 0, 0, 0, hwnd, ID_H_LIST)
-		histPreviewHwnd = createWindow(WS_EX_CLIENTEDGE, "RICHEDIT50W", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, 0)
-		histFullHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP, 0, 0, 0, 0, hwnd, ID_H_FULL)
+		histListHwnd = createWindow(0, "LISTBOX", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_OWNERDRAWFIXED|LBS_NOINTEGRALHEIGHT|LBS_HASSTRINGS|LBS_EXTENDEDSEL, 0, 0, 0, 0, hwnd, ID_H_LIST)
+		histPreviewHwnd = createWindow(0, "RICHEDIT50W", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, 0)
+		procSendMessageW.Call(uintptr(histPreviewHwnd), EM_SETBKGNDCOLOR, 0, uintptr(rgb(255, 255, 255)))
+		histFullHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_FULL)
 		histEmptyHwnd = createWindow(0, "STATIC", "", WS_CHILD|SS_LEFT, 0, 0, 0, 0, hwnd, ID_H_EMPTY)
+		histBatchHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_BATCH)
+		histSelectAllHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_SELECT_ALL)
+		histExportSelectedHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_EXPORT)
+		histDeleteSelectedHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_DELETE)
+		histDoneHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_H_DONE)
 		histDragOverlayHwnd = createWindow(WS_EX_NOACTIVATE, "HHVHistoryDragOverlay", "", WS_CHILD|WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, 0)
 		histSplitterBrush = createBrush(rgb(213, 219, 228))
 		histSplitterActiveBrush = createBrush(rgb(174, 184, 198))
 		setWindowTheme(histListHwnd, "Explorer")
+		for _, button := range []syscall.Handle{histOpenHwnd, histChangeHwnd, histFullHwnd, histBatchHwnd, histSelectAllHwnd, histExportSelectedHwnd, histDeleteSelectedHwnd, histDoneHwnd} {
+			setWindowTheme(button, "Explorer")
+		}
 		histListCallback = syscall.NewCallback(historyListProc)
 		old, _, _ := procSetWindowLongPtrW.Call(uintptr(histListHwnd), ^uintptr(3), histListCallback)
 		histListOldProc = old
@@ -1624,6 +2187,22 @@ func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 			layoutHistory()
 		}
 		return 0
+	case WM_ERASEBKGND:
+		return 1
+	case WM_PAINT:
+		var ps paintStruct
+		hdc, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		if hdc != 0 {
+			m := currentHistoryMetrics()
+			canvas := rect{0, 0, m.w, m.h}
+			fillDC(syscall.Handle(hdc), canvas, rgb(248, 249, 251))
+			leftW, rightW, _ := splitPaneWidths(m.total, m.minLeft, m.minRight, histSplitRatio)
+			rx := m.m + leftW + m.splitW
+			drawRoundedSurface(syscall.Handle(hdc), rect{m.m, m.bodyTop, m.m + leftW, m.bodyTop + m.bodyH}, rgb(255, 255, 255), rgb(226, 229, 234), scale(10, int(m.dpi)))
+			drawRoundedSurface(syscall.Handle(hdc), rect{rx, m.bodyTop, rx + rightW, m.bodyTop + m.bodyH}, rgb(255, 255, 255), rgb(226, 229, 234), scale(10, int(m.dpi)))
+		}
+		procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		return 0
 	case WM_DPICHANGED:
 		recreateHistoryFonts()
 		layoutHistory()
@@ -1637,6 +2216,9 @@ func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 		return 0
 	case WM_DRAWITEM:
 		dis := (*drawItemStruct)(unsafe.Pointer(lParam))
+		if drawHistoryCommandButton(dis) {
+			return 1
+		}
 		if dis != nil && dis.CtlID == ID_H_LIST {
 			drawHistoryItem(dis)
 			return 1
@@ -1654,13 +2236,33 @@ func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 			if histSelected >= 0 && histSelected < len(histRecords) {
 				showFullReport(histRecords[histSelected])
 			}
+		case ID_H_BATCH:
+			setHistorySelectionMode(true)
+		case ID_H_SELECT_ALL:
+			selectAll := len(selectedHistoryIndices()) != len(histRecords)
+			value := uintptr(0)
+			if selectAll {
+				value = 1
+			}
+			procSendMessageW.Call(uintptr(histListHwnd), LB_SETSEL, value, ^uintptr(0))
+			procInvalidateRect.Call(uintptr(histListHwnd), 0, 0)
+			updateHistorySelectionActions()
+		case ID_H_EXPORT:
+			exportSelectedHistory()
+		case ID_H_DELETE:
+			deleteSelectedHistory()
+		case ID_H_DONE:
+			setHistorySelectionMode(false)
+		case ID_H_PATH:
+			openHistoryDirectory()
 		case ID_H_LIST:
 			if notify == LBN_SELCHANGE {
-				idx, _, _ := procSendMessageW.Call(uintptr(histListHwnd), LB_GETCURSEL, 0, 0)
+				idx, _, _ := procSendMessageW.Call(uintptr(histListHwnd), LB_GETCARETINDEX, 0, 0)
 				if int(idx) >= 0 && int(idx) < len(histRecords) {
 					histSelected = int(idx)
 					setRichText(histPreviewHwnd, historyDisplayText(histRecords[histSelected].Report))
 				}
+				updateHistorySelectionActions()
 			}
 		}
 		return 0
@@ -1678,9 +2280,23 @@ func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 		if control == histEmptyHwnd {
 			procSetTextColor.Call(wParam, uintptr(rgb(78, 91, 110)))
 			procSetBkMode.Call(wParam, TRANSPARENT)
-			b, _, _ := procGetSysColorBrush.Call(COLOR_WINDOW)
-			return b
+			if shellCardBrush != 0 {
+				return uintptr(shellCardBrush)
+			}
 		}
+		procSetBkMode.Call(wParam, TRANSPARENT)
+		if control == histPathHwnd {
+			procSetTextColor.Call(wParam, uintptr(rgb(37, 99, 180)))
+		}
+		if control == histTitleHwnd || control == histPathHwnd {
+			if shellCanvasBrush != 0 {
+				return uintptr(shellCanvasBrush)
+			}
+		} else if shellCardBrush != 0 {
+			return uintptr(shellCardBrush)
+		}
+		b, _, _ := procGetSysColorBrush.Call(COLOR_WINDOW)
+		return b
 	case WM_CLOSE:
 		procDestroyWindow.Call(uintptr(hwnd))
 		return 0
@@ -1690,6 +2306,9 @@ func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 		historyHwnd = 0
 		histListHwnd = 0
 		histSplitterHwnd = 0
+		histBatchHwnd = 0
+		histSelectAllHwnd, histExportSelectedHwnd, histDeleteSelectedHwnd, histDoneHwnd = 0, 0, 0, 0
+		histSelectionMode = false
 		histDragOverlayHwnd = 0
 		releaseHistoryDragSnapshot()
 		for _, brush := range []syscall.Handle{histSplitterBrush, histSplitterActiveBrush} {
@@ -1712,21 +2331,19 @@ func historyProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintpt
 func recreateChangeFonts() {
 	deleteFonts(changeFonts)
 	dpi := windowDPI(changelogHwnd)
-	base := currentSettings().FontSize
-	displayBase := maxInt(8, base-1)
 	changeFonts = []syscall.Handle{
-		createUIFontDPI(displayBase+7, FW_SEMIBOLD, dpi),
-		createUIFontDPI(displayBase, FW_NORMAL, dpi),
-		createUIFontDPI(displayBase+1, FW_SEMIBOLD, dpi),
-		createUIFontDPI(displayBase, FW_NORMAL, dpi),
-		createUIFontHalfPointDPI(displayBase*2+1, FW_SEMIBOLD, dpi),
+		createUIFontDPI(18, FW_SEMIBOLD, dpi),
+		createUIFontDPI(10, FW_NORMAL, dpi),
+		createUIFontDPI(11, FW_SEMIBOLD, dpi),
+		createUIFontDPI(11, FW_NORMAL, dpi),
+		createUIFontHalfPointDPI(21, FW_SEMIBOLD, dpi),
 	}
 	applyFont(changeTitleHwnd, changeFonts[0])
 	applyFont(changeSubtitleHwnd, changeFonts[1])
 	applyFont(changeVersionsLabelHwnd, changeFonts[2])
 	applyFont(changeContentLabelHwnd, changeFonts[2])
 	applyFont(changeContentHwnd, changeFonts[3])
-	procSendMessageW.Call(uintptr(changeListHwnd), LB_SETITEMHEIGHT, 0, uintptr(scale(int32(32+(displayBase-8)*2), dpi)))
+	procSendMessageW.Call(uintptr(changeListHwnd), LB_SETITEMHEIGHT, 0, uintptr(scale(34, dpi)))
 }
 func updateChangelogTexts() {
 	code := effectiveLocale()
@@ -1757,7 +2374,7 @@ func openChangelog() {
 		return
 	}
 	dpi := mainDPI
-	changelogHwnd = createWindow(WS_EX_APPWINDOW|WS_EX_CONTROLPARENT, "HHVChangelogWindow", tr(effectiveLocale(), "changelogTitle"), WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, scale(1060, dpi), scale(680, dpi), 0, 0)
+	changelogHwnd = createWindow(secondaryWindowExStyle(), "HHVChangelogWindow", tr(effectiveLocale(), "changelogTitle"), WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, scale(1060, dpi), scale(680, dpi), 0, 0)
 	showWindowFront(changelogHwnd)
 }
 func drawChangeItem(dis *drawItemStruct) {
@@ -1829,8 +2446,9 @@ func changelogProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 		changeSubtitleHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE, 0, 0, 0, 0, hwnd, 0)
 		changeVersionsLabelHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, 0)
 		changeContentLabelHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, 0)
-		changeListHwnd = createWindow(WS_EX_CLIENTEDGE, "LISTBOX", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_OWNERDRAWFIXED|LBS_NOINTEGRALHEIGHT|LBS_HASSTRINGS, 0, 0, 0, 0, hwnd, ID_C_LIST)
-		changeContentHwnd = createWindow(WS_EX_CLIENTEDGE, "RICHEDIT50W", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, ID_C_CONTENT)
+		changeListHwnd = createWindow(0, "LISTBOX", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_OWNERDRAWFIXED|LBS_NOINTEGRALHEIGHT|LBS_HASSTRINGS, 0, 0, 0, 0, hwnd, ID_C_LIST)
+		changeContentHwnd = createWindow(0, "RICHEDIT50W", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, ID_C_CONTENT)
+		procSendMessageW.Call(uintptr(changeContentHwnd), EM_SETBKGNDCOLOR, 0, uintptr(rgb(255, 255, 255)))
 		setWindowTheme(changeListHwnd, "Explorer")
 		recreateChangeFonts()
 		updateChangelogTexts()
@@ -1841,6 +2459,24 @@ func changelogProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uint
 			layoutChangelog()
 		}
 		return 0
+	case WM_ERASEBKGND:
+		return 1
+	case WM_PAINT:
+		var ps paintStruct
+		hdc, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		if hdc != 0 {
+			r := clientRect(hwnd)
+			fillDC(syscall.Handle(hdc), rect{0, 0, r.Right, r.Bottom}, rgb(248, 249, 251))
+		}
+		procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		return 0
+	case WM_CTLCOLORSTATIC:
+		procSetBkMode.Call(wParam, TRANSPARENT)
+		if shellCanvasBrush != 0 {
+			return uintptr(shellCanvasBrush)
+		}
+		b, _, _ := procGetSysColorBrush.Call(COLOR_WINDOW)
+		return b
 	case WM_DPICHANGED:
 		recreateChangeFonts()
 		layoutChangelog()
@@ -1962,22 +2598,13 @@ func recreateAboutFonts() {
 		return
 	}
 	dpi := windowDPI(aboutHwnd)
-	base := currentSettings().FontSize
-	titleSize := base + 5
-	if titleSize < 15 {
-		titleSize = 15
-	}
-	bodySize := base - 1
-	if bodySize < 9 {
-		bodySize = 9
-	}
 	aboutFonts = []syscall.Handle{
-		createUIFontDPI(titleSize, FW_SEMIBOLD, dpi),
-		createUIFontDPI(bodySize, FW_NORMAL, dpi),
-		createUIFontDPI(bodySize, FW_SEMIBOLD, dpi),
-		createUIFontDPI(base+1, FW_SEMIBOLD, dpi),
-		createUIFontDPI(bodySize, FW_NORMAL, dpi),
-		createAboutLinkFont(bodySize, dpi),
+		createUIFontDPI(18, FW_SEMIBOLD, dpi),
+		createUIFontDPI(11, FW_NORMAL, dpi),
+		createUIFontDPI(10, FW_SEMIBOLD, dpi),
+		createUIFontDPI(11, FW_SEMIBOLD, dpi),
+		createUIFontDPI(11, FW_NORMAL, dpi),
+		createAboutLinkFont(11, dpi),
 	}
 	applyFont(aboutTitleHwnd, aboutFonts[0])
 	applyFont(aboutSummaryHwnd, aboutFonts[1])
@@ -2198,12 +2825,16 @@ func createAboutTextControl(hwnd syscall.Handle, id uintptr, multiline bool) sys
 }
 
 func openAbout() {
+	if shellBrandHwnd != 0 {
+		switchShellPage(shellPageAbout)
+		return
+	}
 	if aboutHwnd != 0 {
 		showWindowFront(aboutHwnd)
 		return
 	}
 	dpi := mainDPI
-	aboutHwnd = createWindow(WS_EX_APPWINDOW|WS_EX_CONTROLPARENT, "HHVAboutWindow", tr(effectiveLocale(), "about"), WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN|WS_VSCROLL, CW_USEDEFAULT, CW_USEDEFAULT, scale(780, dpi), scale(720, dpi), 0, 0)
+	aboutHwnd = createWindow(secondaryWindowExStyle(), "HHVAboutWindow", tr(effectiveLocale(), "about"), WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN|WS_VSCROLL, CW_USEDEFAULT, CW_USEDEFAULT, scale(780, dpi), scale(720, dpi), 0, 0)
 	showWindowFront(aboutHwnd)
 }
 
@@ -2286,6 +2917,17 @@ func aboutProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr 
 			setAboutScroll(aboutScrollPos + step)
 		}
 		return 0
+	case WM_ERASEBKGND:
+		return 1
+	case WM_PAINT:
+		var ps paintStruct
+		hdc, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		if hdc != 0 {
+			r := clientRect(hwnd)
+			fillDC(syscall.Handle(hdc), rect{0, 0, r.Right, r.Bottom}, rgb(248, 249, 251))
+		}
+		procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+		return 0
 	case WM_CTLCOLORSTATIC, WM_CTLCOLOREDIT:
 		control := syscall.Handle(lParam)
 		procSetBkMode.Call(wParam, TRANSPARENT)
@@ -2302,6 +2944,9 @@ func aboutProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr 
 			procSetTextColor.Call(wParam, uintptr(rgb(32, 49, 70)))
 		default:
 			procSetTextColor.Call(wParam, uintptr(rgb(18, 31, 48)))
+		}
+		if shellCanvasBrush != 0 {
+			return uintptr(shellCanvasBrush)
 		}
 		b, _, _ := procGetSysColorBrush.Call(COLOR_WINDOW)
 		return b
@@ -2342,18 +2987,14 @@ func main() {
 	loadSettings()
 	cleanupLegacyTemporaryFiles()
 	loadAppIcons()
-	if !isAdmin() {
-		if relaunchElevated() {
-			return
-		}
-		code := effectiveLocale()
-		messageBox(0, tr(code, "needAdminTitle"), tr(code, "needAdminText"), MB_OK|MB_ICONERROR)
-		return
-	}
+	// The application must always be able to open under the current account.
+	// Windows exposes the overview and battery data without elevation; only a
+	// subset of controller-specific SMART fields may be unavailable. Users who
+	// need those fields can explicitly choose "Run as administrator" themselves.
 	classes := []struct {
 		name string
 		proc uintptr
-	}{{"HHVMainWindow", syscall.NewCallback(mainWindowProc)}, {"HHVHistoryWindow", syscall.NewCallback(historyProc)}, {"HHVHistoryDragOverlay", syscall.NewCallback(historyDragOverlayProc)}, {"HHVChangelogWindow", syscall.NewCallback(changelogProc)}, {"HHVAboutWindow", syscall.NewCallback(aboutProc)}, {"HHVViewerWindow", syscall.NewCallback(viewerProc)}, {"HHVDeleteDialog", syscall.NewCallback(deleteDialogProc)}}
+	}{{"HHVMainWindow", syscall.NewCallback(mainWindowProc)}, {"HHVDashboard", syscall.NewCallback(dashboardProc)}, {"HHVSettingsPage", syscall.NewCallback(settingsPageProc)}, {"HHVHistoryWindow", syscall.NewCallback(historyProc)}, {"HHVHistoryDragOverlay", syscall.NewCallback(historyDragOverlayProc)}, {"HHVChangelogWindow", syscall.NewCallback(changelogProc)}, {"HHVAboutWindow", syscall.NewCallback(aboutProc)}, {"HHVViewerWindow", syscall.NewCallback(viewerProc)}, {"HHVDeleteDialog", syscall.NewCallback(deleteDialogProc)}}
 	for _, c := range classes {
 		if e := registerWindowClass(c.name, c.proc, COLOR_WINDOW); e != nil {
 			messageBox(0, tr(effectiveLocale(), "errorTitle"), e.Error(), MB_OK|MB_ICONERROR)

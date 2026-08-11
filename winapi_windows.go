@@ -27,6 +27,7 @@ const (
 	WM_DRAWITEM        = 0x002B
 	WM_MEASUREITEM     = 0x002C
 	WM_CTLCOLORSTATIC  = 0x0138
+	WM_CTLCOLORBTN     = 0x0135
 	WM_CTLCOLOREDIT    = 0x0133
 	WM_CTLCOLORLISTBOX = 0x0134
 	WM_MOUSEMOVE       = 0x0200
@@ -42,6 +43,7 @@ const (
 	WM_NOTIFY          = 0x004E
 	WM_USER            = 0x0400
 	WM_APP_SCAN_DONE   = 0x8001
+	WM_APP_UPDATE_DONE = 0x8002
 
 	WS_OVERLAPPED       = 0x00000000
 	WS_POPUP            = 0x80000000
@@ -71,10 +73,13 @@ const (
 	ES_READONLY     = 0x0800
 	ES_NOHIDESEL    = 0x0100
 	BS_AUTOCHECKBOX = 0x00000003
+	BS_OWNERDRAW    = 0x0000000B
+	BST_UNCHECKED   = 0
 	BST_CHECKED     = 1
 	BM_GETCHECK     = 0x00F0
 	BM_SETCHECK     = 0x00F1
 	SS_LEFT         = 0
+	SS_RIGHT        = 2
 	SS_CENTER       = 1
 	SS_NOTIFY       = 0x0100
 	SS_ETCHEDVERT   = 0x0011
@@ -84,10 +89,15 @@ const (
 	LBS_OWNERDRAWFIXED   = 0x0010
 	LBS_NOINTEGRALHEIGHT = 0x0100
 	LBS_HASSTRINGS       = 0x0040
+	LBS_EXTENDEDSEL      = 0x0800
 	LB_ADDSTRING         = 0x0180
 	LB_RESETCONTENT      = 0x0184
 	LB_GETCURSEL         = 0x0188
 	LB_SETCURSEL         = 0x0186
+	LB_SETSEL            = 0x0185
+	LB_GETSELCOUNT       = 0x0190
+	LB_GETSELITEMS       = 0x0191
+	LB_GETCARETINDEX     = 0x019F
 	LB_GETITEMRECT       = 0x0198
 	LB_ITEMFROMPOINT     = 0x01A9
 	LB_SETITEMHEIGHT     = 0x01A0
@@ -156,6 +166,7 @@ const (
 	TRANSPARENT     = 1
 	OPAQUE          = 2
 	ODS_SELECTED    = 1
+	ODS_DISABLED    = 4
 	ODS_FOCUS       = 0x10
 	SRCCOPY         = 0x00CC0020
 	PS_SOLID        = 0
@@ -326,10 +337,14 @@ var (
 	procGetDeviceCaps          = gdi32.NewProc("GetDeviceCaps")
 	procCreateSolidBrush       = gdi32.NewProc("CreateSolidBrush")
 	procCreatePen              = gdi32.NewProc("CreatePen")
+	procGetStockObject         = gdi32.NewProc("GetStockObject")
 	procSelectObject           = gdi32.NewProc("SelectObject")
 	procSetTextColor           = gdi32.NewProc("SetTextColor")
 	procSetBkMode              = gdi32.NewProc("SetBkMode")
 	procRoundRect              = gdi32.NewProc("RoundRect")
+	procEllipse                = gdi32.NewProc("Ellipse")
+	procArc                    = gdi32.NewProc("Arc")
+	procSetArcDirection        = gdi32.NewProc("SetArcDirection")
 	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	procDeleteDC               = gdi32.NewProc("DeleteDC")
 	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
@@ -507,8 +522,11 @@ func windowDPI(h syscall.Handle) int {
 	return int(d)
 }
 func createUIFontDPI(points int, weight int32, dpi int) syscall.Handle {
+	return createFontFaceDPI(points, weight, dpi, "Segoe UI")
+}
+func createFontFaceDPI(points int, weight int32, dpi int, face string) syscall.Handle {
 	height := -int32(points * dpi / 72)
-	h, _, _ := procCreateFontW.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, uintptr(unsafe.Pointer(utf16Ptr("Segoe UI"))))
+	h, _, _ := procCreateFontW.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, uintptr(unsafe.Pointer(utf16Ptr(face))))
 	return syscall.Handle(h)
 }
 func createUIFontHalfPointDPI(halfPoints int, weight int32, dpi int) syscall.Handle {
@@ -630,6 +648,28 @@ func windowsMajorVersion() uint32 {
 		return 0
 	}
 	return v.Major
+}
+
+func windowsVersion() (major, build uint32) {
+	v := osVersionInfo{Size: uint32(unsafe.Sizeof(osVersionInfo{}))}
+	r, _, _ := procRtlGetVersion.Call(uintptr(unsafe.Pointer(&v)))
+	if r != 0 {
+		return 0, 0
+	}
+	return v.Major, v.Build
+}
+
+func supportsWindows10_1809Features(major, build uint32) bool {
+	return major > 10 || (major == 10 && build >= 17763)
+}
+
+func secondaryWindowExStyle() uint32 {
+	major, build := windowsVersion()
+	style := uint32(WS_EX_APPWINDOW | WS_EX_CONTROLPARENT)
+	if supportsWindows10_1809Features(major, build) {
+		style |= WS_EX_COMPOSITED
+	}
+	return style
 }
 func registerWindowClass(name string, proc uintptr, background uint32) error {
 	inst, _, _ := procGetModuleHandleW.Call(0)

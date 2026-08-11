@@ -111,14 +111,15 @@ func parseNVMeHealth(log []byte) (NVMeHealth, error) {
 }
 
 type BatteryInfo struct {
-	Name              string
-	Manufacturer      string
-	SerialNumber      string
-	Chemistry         string
-	DesignCapacityMWh int64
-	FullChargeMWh     int64
-	CycleCount        string
-	HealthPercent     float64
+	Name                    string
+	Manufacturer            string
+	SerialNumber            string
+	Chemistry               string
+	DesignCapacityMWh       int64
+	FullChargeMWh           int64
+	DesignVoltageMillivolts int64
+	CycleCount              string
+	HealthPercent           float64
 }
 
 type batteryReportXML struct {

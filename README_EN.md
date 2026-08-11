@@ -10,12 +10,12 @@ The Windows edition is written in Go. The macOS edition uses native SwiftUI and 
 
 ## Download
 
-Current macOS version: **v1.0.6**; Windows version: **v1.0.4**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
+The current macOS and Windows release is **v1.0.6**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
 
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
 | macOS | [`DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
-| Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 or later |
+| Windows | [Installer](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) / [Portable](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64.exe) | x64 | Windows 7 SP1 or later |
 
 ### Install on macOS
 
@@ -27,7 +27,7 @@ The current public macOS build uses an ad-hoc signature and has not been notariz
 
 ### Run on Windows
 
-The Windows x64 edition is a standalone executable. No installation is required. Administrator privileges may be needed for some hardware information.
+The Windows x64 edition is available as a standard installer and as a portable single executable; neither requires ZIP extraction. The installer is recommended for most users, while the portable EXE can be run directly. Administrator privileges may be needed for some hardware information. Windows 10 version 1809 and later use supported native storage interfaces; earlier versions automatically use compatibility readers while retaining the same page hierarchy, workflow, and core features.
 
 ## Screenshots
 
@@ -47,7 +47,7 @@ The Windows x64 edition is a standalone executable. No installation is required.
 
 - View drive model, capacity, connection, firmware, serial number, and system-provided S.M.A.R.T. status
 - Read temperature, operating time, power cycles, total reads, and total writes when exposed by the hardware and operating system
-- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, cycle count, charge level, and power state
+- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, and cycle count
 - Save and browse health history with multi-select, Select All, batch export, and batch deletion
 - Copy or export UTF-8 reports and check GitHub for the latest stable release from the application menu
 - Hide drive and battery serial numbers from the interface, history, and exported reports

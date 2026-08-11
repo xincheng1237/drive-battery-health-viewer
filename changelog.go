@@ -13,26 +13,72 @@ type changeSection struct {
 }
 
 var versionOrder = []string{
-	"v1.0.4", "v1.0.3", "v1.0.2", "v1.0.1", "v1.0", "v0.1",
+	"v1.0.6", "v1.0.4", "v1.0.3", "v1.0.2", "v1.0.1", "v1.0", "v0.1",
 }
 
 func changelogFor(code string) []changeVersion {
+	var previous []changeVersion
 	switch code {
 	case "zh-CN":
-		return changelogZH()
+		previous = changelogZH()
 	case "ru":
-		return changelogRU()
+		previous = changelogRU()
 	case "fr":
-		return changelogFR()
+		previous = changelogFR()
 	case "de":
-		return changelogDE()
+		previous = changelogDE()
 	case "ko":
-		return changelogKO()
+		previous = changelogKO()
 	case "ja":
-		return changelogJA()
+		previous = changelogJA()
 	default:
-		return changelogEN()
+		previous = changelogEN()
 	}
+	return append([]changeVersion{changelog106(code)}, previous...)
+}
+
+func changelog106(code string) changeVersion {
+	title := "External-drive diagnostics and scan reliability"
+	newHeading, optimizedHeading, fixedHeading := "New", "Optimized", "Fixed"
+	newText := "Added read-only smartctl diagnostics for supported USB, Thunderbolt, SATA/SAT passthrough, NVMe, and SCSI drives."
+	optimizedText := "Improved external-drive model, firmware, serial number, health, temperature, lifetime, power, and transfer details when the device bridge exposes them."
+	fixedText := "Added command and scan time limits, cancellation, and scan generations so an unresponsive device cannot freeze the interface or apply an obsolete result."
+	identityText := "Added stable identity checks before combining native, CIM/WMI, Storage Reliability, and smartctl data to prevent mismatched information after hot-plugging a drive."
+	uiText := "Introduced a responsive single-window Windows interface with Overview, History, Settings, and About pages aligned with the macOS workflow."
+	historyText := "Added history selection mode, Select All, batch export and deletion, clickable storage paths, and consistent serial-number privacy controls."
+	compatibilityText := "Windows 10 version 1809 and later use supported native storage interfaces, while earlier systems automatically continue through compatible readers with the same workflow."
+	switch code {
+	case "zh-CN":
+		title = "外置存储诊断与扫描可靠性增强"
+		newHeading, optimizedHeading, fixedHeading = "新增", "优化", "修复"
+		newText = "为受支持的 USB、雷雳、SATA/SAT 转接、NVMe 与 SCSI 磁盘新增 smartctl 只读诊断。"
+		optimizedText = "当磁盘盒或转接桥支持时，补充外置磁盘的型号、固件、序列号、健康度、温度、寿命、通电和读写信息。"
+		fixedText = "新增命令与整次扫描超时、取消和扫描代次机制，避免无响应设备卡住界面或让旧扫描结果覆盖当前状态。"
+		identityText = "合并原生、CIM/WMI、存储可靠性与 smartctl 数据前校验稳定身份，避免磁盘热插拔后发生信息串盘。"
+		uiText = "新增响应式 Windows 单窗口界面，概览、历史记录、设置和关于页面与 macOS 版保持一致的操作层级。"
+		historyText = "新增历史记录选择模式、全选、批量导出与删除、可点击保存路径，并统一序列号隐私控制。"
+		compatibilityText = "Windows 10 1809 及以上版本使用受支持的原生存储接口，较早系统自动切换兼容读取路径并保持相同操作流程。"
+	case "ru":
+		title = "Диагностика внешних накопителей и надежность сканирования"
+		newHeading, optimizedHeading, fixedHeading = "Новое", "Оптимизировано", "Исправлено"
+	case "fr":
+		title = "Diagnostic des disques externes et fiabilité de l’analyse"
+		newHeading, optimizedHeading, fixedHeading = "Nouveau", "Optimisé", "Corrigé"
+	case "de":
+		title = "Diagnose externer Laufwerke und zuverlässigere Scans"
+		newHeading, optimizedHeading, fixedHeading = "Neu", "Optimiert", "Behoben"
+	case "ko":
+		title = "외장 드라이브 진단 및 스캔 안정성"
+		newHeading, optimizedHeading, fixedHeading = "새 기능", "개선", "수정"
+	case "ja":
+		title = "外付けドライブ診断とスキャンの信頼性"
+		newHeading, optimizedHeading, fixedHeading = "新機能", "改善", "修正"
+	}
+	return cv("v1.0.6", title,
+		cs(newHeading, newText, uiText, historyText),
+		cs(optimizedHeading, optimizedText, compatibilityText),
+		cs(fixedHeading, fixedText, identityText),
+	)
 }
 
 func renderChangeVersion(v changeVersion) string {
