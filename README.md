@@ -10,12 +10,12 @@ Windows 版使用 Go 开发；macOS 版采用原生 SwiftUI，提供同时兼容
 
 ## 下载
 
-macOS 当前版本：**v1.0.6**；Windows 当前版本：**v1.0.4**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
+macOS 与 Windows 当前版本均为 **v1.0.6**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
 | macOS | [`DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
-| Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 或更高版本 |
+| Windows | [安装程序](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) / [免安装版](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64.exe) | x64 | Windows 7 SP1 或更高版本 |
 
 ### macOS 安装
 
@@ -27,7 +27,7 @@ macOS 当前版本：**v1.0.6**；Windows 当前版本：**v1.0.4**。请前往 
 
 ### Windows 使用
 
-Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行。部分硬件信息可能需要管理员权限。
+Windows x64 版同时提供标准安装程序和免安装单文件版，均不需要解压 ZIP。普通用户建议下载安装程序；需要便携使用时可直接运行免安装版 EXE。部分硬件信息可能需要管理员权限。Windows 10 1809 及以上版本会启用受支持的原生存储接口；更早版本会自动使用兼容读取路径，页面层级、操作方式和主要功能保持一致。
 
 ## 界面预览
 
@@ -47,7 +47,7 @@ Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行
 
 - 查看硬盘型号、容量、连接方式、固件、序列号和系统提供的 S.M.A.R.T. 状态
 - 在硬件与系统允许时读取温度、工作时间、通电次数、总读取量和总写入量
-- 查看电池制造商、类型、设计容量、满充容量、健康度、电压、循环次数、电量和充电状态
+- 查看电池制造商、类型、设计容量、满充容量、健康度、电压和循环次数；Windows 版不显示实时电量与充电状态
 - 保存并浏览历史检测记录，支持多选、全选、批量导出和批量删除
 - 复制或导出 UTF-8 健康报告，并可从应用菜单检查 GitHub 最新正式版本
 - 在界面、历史记录和导出报告中隐藏硬盘与电池序列号

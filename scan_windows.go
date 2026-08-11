@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/csv"
 	"encoding/json"
@@ -13,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -161,10 +161,28 @@ type cimDiskInfo struct {
 	Size             uint64 `json:"Size"`
 }
 
-func runHidden(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+func runHiddenContext(parent context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	return cmd.Output()
+	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return out, fmt.Errorf("%s timed out or was cancelled: %w", filepathBase(name), ctx.Err())
+	}
+	return out, err
+}
+
+func filepathBase(path string) string {
+	path = strings.ReplaceAll(path, "/", `\`)
+	if index := strings.LastIndex(path, `\`); index >= 0 {
+		return path[index+1:]
+	}
+	return path
+}
+
+func runHidden(name string, args ...string) ([]byte, error) {
+	return runHiddenContext(context.Background(), 12*time.Second, name, args...)
 }
 
 func queryCimDisks() map[int]cimDiskInfo {
@@ -265,30 +283,67 @@ func queryStorageReliability() []storageReliability {
 	return values
 }
 
+func normalizedIdentity(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(value))), " ")
+}
+
+func compatibleIdentityText(left, right string) bool {
+	left = normalizedIdentity(left)
+	right = normalizedIdentity(right)
+	if left == "" || right == "" {
+		return true
+	}
+	return left == right || strings.Contains(left, right) || strings.Contains(right, left)
+}
+
+func cimMatchesDisk(d diskDescriptor, c cimDiskInfo) bool {
+	if !compatibleIdentityText(d.Model, c.Model) || !compatibleIdentityText(d.Serial, c.SerialNumber) {
+		return false
+	}
+	if d.Capacity != 0 && c.Size != 0 && d.Capacity != c.Size {
+		return false
+	}
+	return true
+}
+
+func smartctlMatchesDisk(d diskDescriptor, info *smartctlDriveInfo) bool {
+	return info != nil && compatibleIdentityText(d.Model, info.Model) && compatibleIdentityText(d.Serial, info.Serial)
+}
+
 func findReliability(number int, model string, values []storageReliability) *storageReliability {
 	numberText := strconv.Itoa(number)
 	for i := range values {
-		if strings.TrimSpace(values[i].DeviceID) == numberText {
+		if strings.TrimSpace(values[i].DeviceID) == numberText && compatibleIdentityText(model, values[i].FriendlyName) {
 			return &values[i]
 		}
 	}
 	model = strings.TrimSpace(model)
 	if model != "" {
+		match := -1
 		for i := range values {
 			friendly := strings.TrimSpace(values[i].FriendlyName)
-			if friendly != "" && (strings.EqualFold(friendly, model) || strings.Contains(strings.ToLower(model), strings.ToLower(friendly))) {
-				return &values[i]
+			if friendly != "" && compatibleIdentityText(model, friendly) {
+				if match >= 0 {
+					return nil
+				}
+				match = i
 			}
+		}
+		if match >= 0 {
+			return &values[match]
 		}
 	}
 	return nil
 }
 
-func enumerateDisksNative() []diskDescriptor {
+func enumerateDisksNativeContext(ctx context.Context) []diskDescriptor {
 	result := make([]diskDescriptor, 0, 4)
 	missesAfterFound := 0
 	foundAny := false
 	for i := 0; i < 32; i++ {
+		if ctx.Err() != nil {
+			break
+		}
 		h, err := openPhysicalDrive(i)
 		if err != nil {
 			if foundAny {
@@ -328,10 +383,14 @@ func enumerateDisksNative() []diskDescriptor {
 	return result
 }
 
-func mergeDiskFallbacks(disks []diskDescriptor, cim map[int]cimDiskInfo, reliability []storageReliability) []diskDescriptor {
+func enumerateDisksNative() []diskDescriptor {
+	return enumerateDisksNativeContext(context.Background())
+}
+
+func mergeDiskFallbacks(disks []diskDescriptor, cim map[int]cimDiskInfo, reliability []storageReliability, smartctl map[int]*smartctlDriveInfo) []diskDescriptor {
 	for i := range disks {
 		d := &disks[i]
-		if c, ok := cim[d.Number]; ok {
+		if c, ok := cim[d.Number]; ok && cimMatchesDisk(*d, c) {
 			if strings.TrimSpace(d.Model) == "" {
 				d.Model = strings.TrimSpace(c.Model)
 			}
@@ -346,6 +405,21 @@ func mergeDiskFallbacks(disks []diskDescriptor, cim map[int]cimDiskInfo, reliabi
 			}
 			if d.Capacity == 0 {
 				d.Capacity = c.Size
+			}
+		}
+		if info := smartctl[d.Number]; smartctlMatchesDisk(*d, info) {
+			d.Smartctl = info
+			if strings.TrimSpace(d.Model) == "" {
+				d.Model = info.Model
+			}
+			if strings.TrimSpace(d.Serial) == "" {
+				d.Serial = info.Serial
+			}
+			if strings.TrimSpace(d.Firmware) == "" {
+				d.Firmware = info.Firmware
+			}
+			if (strings.TrimSpace(d.Bus) == "" || strings.EqualFold(d.Bus, "Unknown")) && info.Protocol != "" {
+				d.Bus = info.Protocol
 			}
 		}
 		d.Reliability = findReliability(d.Number, d.Model, reliability)
@@ -370,7 +444,11 @@ func mergeDiskFallbacks(disks []diskDescriptor, cim map[int]cimDiskInfo, reliabi
 		if seen[number] {
 			continue
 		}
-		disks = append(disks, diskDescriptor{Number: number, Model: strings.TrimSpace(c.Model), Serial: strings.TrimSpace(c.SerialNumber), Firmware: strings.TrimSpace(c.FirmwareRevision), Bus: strings.TrimSpace(c.InterfaceType), Capacity: c.Size, Reliability: findReliability(number, c.Model, reliability)})
+		d := diskDescriptor{Number: number, Model: strings.TrimSpace(c.Model), Serial: strings.TrimSpace(c.SerialNumber), Firmware: strings.TrimSpace(c.FirmwareRevision), Bus: strings.TrimSpace(c.InterfaceType), Capacity: c.Size, Reliability: findReliability(number, c.Model, reliability)}
+		if info := smartctl[number]; smartctlMatchesDisk(d, info) {
+			d.Smartctl = info
+		}
+		disks = append(disks, d)
 	}
 	sort.Slice(disks, func(i, j int) bool { return disks[i].Number < disks[j].Number })
 	return disks
@@ -383,11 +461,11 @@ func runBatteryReport() ([]BatteryInfo, error) {
 		f.Close()
 		os.Remove(path)
 		defer os.Remove(path)
-		cmd := exec.Command("powercfg.exe", "/batteryreport", "/output", path, "/xml")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		if output, runErr := cmd.CombinedOutput(); runErr == nil {
+		if output, runErr := runHidden("powercfg.exe", "/batteryreport", "/output", path, "/xml"); runErr == nil {
 			if data, readErr := os.ReadFile(path); readErr == nil {
-				return parseBatteryReportXML(data)
+				if batteries, parseErr := parseBatteryReportXML(data); parseErr == nil {
+					return enrichBatteryDesignVoltage(batteries), nil
+				}
 			}
 		} else {
 			_ = output
@@ -428,8 +506,19 @@ func runWmicList(args ...string) []map[string]string {
 	return parseWmicList(decodeWindowsCommandText(out))
 }
 
+func enrichBatteryDesignVoltage(batteries []BatteryInfo) []BatteryInfo {
+	static := runWmicList("/namespace:\\\\root\\wmi", "path", "BatteryStaticData", "get", "InstanceName,DesignedVoltage", "/format:list")
+	for i := range batteries {
+		if i >= len(static) {
+			break
+		}
+		batteries[i].DesignVoltageMillivolts, _ = strconv.ParseInt(strings.TrimSpace(static[i]["DesignedVoltage"]), 10, 64)
+	}
+	return batteries
+}
+
 func runBatteryWmicFallback() ([]BatteryInfo, error) {
-	static := runWmicList("/namespace:\\\\root\\wmi", "path", "BatteryStaticData", "get", "InstanceName,DeviceName,ManufactureName,SerialNumber,DesignedCapacity", "/format:list")
+	static := runWmicList("/namespace:\\\\root\\wmi", "path", "BatteryStaticData", "get", "InstanceName,DeviceName,ManufactureName,SerialNumber,DesignedCapacity,DesignedVoltage", "/format:list")
 	full := runWmicList("/namespace:\\\\root\\wmi", "path", "BatteryFullChargedCapacity", "get", "InstanceName,FullChargedCapacity", "/format:list")
 	cycles := runWmicList("/namespace:\\\\root\\wmi", "path", "BatteryCycleCount", "get", "InstanceName,CycleCount", "/format:list")
 	find := func(list []map[string]string, instance string) map[string]string {
@@ -461,7 +550,8 @@ func runBatteryWmicFallback() ([]BatteryInfo, error) {
 		if c != nil {
 			cycle = c["CycleCount"]
 		}
-		result = append(result, BatteryInfo{Name: s["DeviceName"], Manufacturer: s["ManufactureName"], SerialNumber: s["SerialNumber"], DesignCapacityMWh: design, FullChargeMWh: fullCap, CycleCount: cycle, HealthPercent: health})
+		designVoltage, _ := strconv.ParseInt(strings.TrimSpace(s["DesignedVoltage"]), 10, 64)
+		result = append(result, BatteryInfo{Name: s["DeviceName"], Manufacturer: s["ManufactureName"], SerialNumber: s["SerialNumber"], DesignCapacityMWh: design, FullChargeMWh: fullCap, DesignVoltageMillivolts: designVoltage, CycleCount: cycle, HealthPercent: health})
 	}
 	if len(result) > 0 {
 		return result, nil
@@ -485,23 +575,61 @@ func runBatteryWmicFallback() ([]BatteryInfo, error) {
 }
 
 func scanHardware() scanResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	return scanHardwareContext(ctx)
+}
+
+func scanHardwareContext(ctx context.Context) scanResult {
 	result := scanResult{GeneratedAt: time.Now(), Computer: os.Getenv("COMPUTERNAME")}
+	type batteryAnswer struct {
+		values []BatteryInfo
+		err    error
+	}
+	nativeCh := make(chan []diskDescriptor, 1)
+	cimCh := make(chan map[int]cimDiskInfo, 1)
+	reliabilityCh := make(chan []storageReliability, 1)
+	batteryCh := make(chan batteryAnswer, 1)
+	go func() { nativeCh <- enumerateDisksNativeContext(ctx) }()
+	go func() { cimCh <- queryCimDisks() }()
+	go func() { reliabilityCh <- queryStorageReliability() }()
+	go func() { values, err := runBatteryReport(); batteryCh <- batteryAnswer{values: values, err: err} }()
+
 	var native []diskDescriptor
 	var cim map[int]cimDiskInfo
 	var reliability []storageReliability
-	var batteries []BatteryInfo
-	var batteryErr error
-	var wg sync.WaitGroup
-	wg.Add(4)
-	go func() { defer wg.Done(); native = enumerateDisksNative() }()
-	go func() { defer wg.Done(); cim = queryCimDisks() }()
-	go func() { defer wg.Done(); reliability = queryStorageReliability() }()
-	go func() { defer wg.Done(); batteries, batteryErr = runBatteryReport() }()
-	wg.Wait()
-	result.Disks = mergeDiskFallbacks(native, cim, reliability)
-	result.Batteries = batteries
-	if batteryErr != nil {
-		result.BatteryErr = batteryErr.Error()
+	var smartctl map[int]*smartctlDriveInfo
+	var smartctlCh <-chan map[int]*smartctlDriveInfo
+	remaining := 4
+	for remaining > 0 {
+		select {
+		case native = <-nativeCh:
+			nativeCh = nil
+			remaining--
+			ch := make(chan map[int]*smartctlDriveInfo, 1)
+			smartctlCh = ch
+			remaining++
+			go func(disks []diskDescriptor) { ch <- querySmartctlDrives(ctx, disks) }(append([]diskDescriptor(nil), native...))
+		case cim = <-cimCh:
+			cimCh = nil
+			remaining--
+		case reliability = <-reliabilityCh:
+			reliabilityCh = nil
+			remaining--
+		case battery := <-batteryCh:
+			batteryCh = nil
+			remaining--
+			result.Batteries = battery.values
+			if battery.err != nil {
+				result.BatteryErr = battery.err.Error()
+			}
+		case smartctl = <-smartctlCh:
+			smartctlCh = nil
+			remaining--
+		case <-ctx.Done():
+			remaining = 0
+		}
 	}
+	result.Disks = mergeDiskFallbacks(native, cim, reliability, smartctl)
 	return result
 }
