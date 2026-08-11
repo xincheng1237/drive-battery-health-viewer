@@ -47,7 +47,7 @@ The Windows x64 edition is available as a standard installer and as a portable s
 
 - View drive model, capacity, connection, firmware, serial number, and system-provided S.M.A.R.T. status
 - Read temperature, operating time, power cycles, total reads, and total writes when exposed by the hardware and operating system
-- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, and cycle count; the Windows edition does not show live charge level or charging state
+- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, and cycle count
 - Save and browse health history with multi-select, Select All, batch export, and batch deletion
 - Copy or export UTF-8 reports and check GitHub for the latest stable release from the application menu
 - Hide drive and battery serial numbers from the interface, history, and exported reports
