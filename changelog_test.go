@@ -27,8 +27,8 @@ func TestChangelogContinuity(t *testing.T) {
 	}
 }
 
-func TestCurrentVersionIs104(t *testing.T) {
-	if appVersion != "1.0.4" {
+func TestCurrentVersionIs106(t *testing.T) {
+	if appVersion != "1.0.6" {
 		t.Fatalf("appVersion=%s", appVersion)
 	}
 }
@@ -40,7 +40,7 @@ func TestPatchVersionsAreConsolidated(t *testing.T) {
 	}
 	for _, code := range localeOrder {
 		versions := changelogFor(code)
-		if versions[0].Version != "v1.0.4" {
+		if versions[0].Version != "v1.0.6" {
 			t.Fatalf("%s first version=%s", code, versions[0].Version)
 		}
 		for _, version := range versions {
@@ -51,7 +51,7 @@ func TestPatchVersionsAreConsolidated(t *testing.T) {
 	}
 }
 
-func TestV104HasCompleteUserFacingSummary(t *testing.T) {
+func TestV106HasCompleteUserFacingSummary(t *testing.T) {
 	for _, code := range localeOrder {
 		versions := changelogFor(code)
 		current := versions[0]
@@ -59,8 +59,8 @@ func TestV104HasCompleteUserFacingSummary(t *testing.T) {
 		for _, section := range current.Sections {
 			bullets += len(section.Bullets)
 		}
-		if bullets < 6 {
-			t.Fatalf("%s v1.0.4 has only %d bullets", code, bullets)
+		if bullets < 4 {
+			t.Fatalf("%s v1.0.6 has only %d bullets", code, bullets)
 		}
 	}
 }

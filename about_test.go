@@ -20,7 +20,7 @@ func TestAboutInformationAvailableInAllLocales(t *testing.T) {
 			}
 		}
 		text := l.Text["aboutDeveloperText"] + "\n" + l.Text["aboutFeedbackText"] + "\n" + l.Text["aboutCopyrightText"] + "\n" + l.Text["aboutSummary"] + "\n" + fmt.Sprintf(l.Text["aboutVersion"], appVersion)
-		for _, required := range []string{"v1.0.4", "xincheng1237", "1040456137", "2680149724@qq.com"} {
+		for _, required := range []string{"v" + appVersion, "xincheng1237", "1040456137", "2680149724@qq.com"} {
 			if !strings.Contains(text, required) {
 				t.Fatalf("locale %s about text missing %q", code, required)
 			}

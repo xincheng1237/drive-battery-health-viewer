@@ -3,11 +3,11 @@ package main
 import "testing"
 
 func TestSplitPaneWidthsDefaultHistoryRatio(t *testing.T) {
-	left, right, ratio := splitPaneWidths(1000, 260, 340, 0.39)
-	if left != 390 || right != 610 {
+	left, right, ratio := splitPaneWidths(1000, 260, 340, 0.28)
+	if left != 280 || right != 720 {
 		t.Fatalf("got %d/%d", left, right)
 	}
-	if ratio < 0.389 || ratio > 0.391 {
+	if ratio < 0.279 || ratio > 0.281 {
 		t.Fatalf("ratio %f", ratio)
 	}
 }

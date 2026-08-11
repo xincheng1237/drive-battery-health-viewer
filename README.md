@@ -15,7 +15,7 @@ macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.6**。请前往 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
 | macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
-| Windows | [`DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 SP1 或更高版本 |
+| Windows | [安装程序](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 或更高版本 |
 
 ### macOS 安装
 
@@ -27,10 +27,7 @@ macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.6**。请前往 
 
 ### Windows 安装
 
-Windows 当前最新版为 v1.0.6。推荐下载安装版并按照安装向导完成安装；如不希望安装，也可以下载免安装版直接运行。
-
-- [下载安装版](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe)
-- [下载免安装版](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64.exe)
+Windows x64 版提供标准安装程序，无需解压 ZIP。默认启动已验证的兼容界面，确保不同 Windows 版本和高 DPI 设置下的布局保持一致；安装包同时包含可选的 WinUI 界面，可用 `DriveBatteryHealthViewer.exe --modern` 在 Windows 10 1809 及以上版本进行评估。部分硬件信息可能需要管理员权限；Windows 10 1809 及以上版本会启用受支持的原生存储接口，更早版本会自动使用兼容读取路径。
 
 ## 界面预览
 
@@ -54,7 +51,7 @@ Windows 当前最新版为 v1.0.6。推荐下载安装版并按照安装向导�
 
 - 查看硬盘型号、容量、连接方式、固件、序列号和系统提供的 S.M.A.R.T. 状态
 - 在硬件与系统允许时读取温度、工作时间、通电次数、总读取量和总写入量
-- 查看电池制造商、类型、设计容量、满充容量、健康度、电压、循环次数、电量和充电状态
+- 查看电池制造商、类型、设计容量、满充容量、健康度、电压和循环次数；Windows 版不显示实时电量与充电状态
 - 保存并浏览历史检测记录，支持多选、全选、批量导出和批量删除
 - 复制或导出 UTF-8 健康报告
 - 在界面、历史记录和导出报告中隐藏硬盘与电池序列号

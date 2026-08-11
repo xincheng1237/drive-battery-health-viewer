@@ -21,6 +21,17 @@ func formatBatteryCapacity(mwh int64) string {
 	return fmt.Sprintf("%d mWh / %.3f Wh", mwh, float64(mwh)/1000.0)
 }
 
+func formatBatteryCapacityWithVoltage(mwh, millivolts int64) string {
+	if mwh <= 0 {
+		return ""
+	}
+	if millivolts > 0 {
+		milliampHours := float64(mwh) * 1000 / float64(millivolts)
+		return fmt.Sprintf("%.0f mAh / %.3f Wh", milliampHours, float64(mwh)/1000.0)
+	}
+	return formatBatteryCapacity(mwh)
+}
+
 func hoursWithDaysLocalized(code, s string) string {
 	hours, err := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
 	if err != nil {
@@ -97,6 +108,50 @@ func renderReportWithOptions(result scanResult, code string, hideSerial bool) st
 			b.WriteString(tr(code, "mediaErrors") + ": " + trf(code, "times", h.MediaErrors) + "\r\n")
 			b.WriteString(tr(code, "errorLogEntries") + ": " + trf(code, "entries", h.ErrorLogEntries) + "\r\n")
 			b.WriteString(trf(code, "availableSpare", h.AvailableSpare, h.SpareThreshold) + "\r\n")
+		} else if d.Smartctl != nil {
+			s := d.Smartctl
+			healthText := tr(code, "notReported")
+			if s.SmartPassed != nil {
+				healthText = tr(code, "good")
+				if !*s.SmartPassed {
+					healthText = tr(code, "warning")
+				}
+			}
+			if (s.PercentageUsed != nil && *s.PercentageUsed >= 100) || (s.MediaErrors != nil && *s.MediaErrors > 0) {
+				healthText = tr(code, "warning")
+			}
+			b.WriteString(tr(code, "healthStatus") + ": " + healthText + " (smartctl)\r\n")
+			if s.PercentageUsed != nil {
+				remaining := 100 - int(*s.PercentageUsed)
+				if remaining < 0 {
+					remaining = 0
+				}
+				b.WriteString(trf(code, "remainingWindows", remaining, *s.PercentageUsed) + "\r\n")
+			}
+			if s.Temperature != nil {
+				b.WriteString(fmt.Sprintf("%s: %d \u00b0C\r\n", tr(code, "temperature"), *s.Temperature))
+			}
+			if s.PowerOnHours != nil {
+				b.WriteString(tr(code, "powerOnTime") + ": " + trf(code, "hoursDays", fmt.Sprintf("%d", *s.PowerOnHours), float64(*s.PowerOnHours)/24.0) + "\r\n")
+			}
+			if s.PowerCycles != nil {
+				b.WriteString(tr(code, "powerCycles") + ": " + trf(code, "times", fmt.Sprintf("%d", *s.PowerCycles)) + "\r\n")
+			}
+			if s.BytesWritten != nil {
+				b.WriteString(tr(code, "totalWritten") + ": " + formatDecimalTB(float64(*s.BytesWritten)/1e12) + "\r\n")
+			}
+			if s.BytesRead != nil {
+				b.WriteString(tr(code, "totalRead") + ": " + formatDecimalTB(float64(*s.BytesRead)/1e12) + "\r\n")
+			}
+			if s.UnsafeShutdowns != nil {
+				b.WriteString(tr(code, "unsafeShutdowns") + ": " + trf(code, "times", fmt.Sprintf("%d", *s.UnsafeShutdowns)) + "\r\n")
+			}
+			if s.MediaErrors != nil {
+				b.WriteString(tr(code, "mediaErrors") + ": " + trf(code, "times", fmt.Sprintf("%d", *s.MediaErrors)) + "\r\n")
+			}
+			if s.BytesRead == nil && s.BytesWritten == nil {
+				b.WriteString(tr(code, "totalRwUnavailable") + "\r\n")
+			}
 		} else if d.Reliability != nil {
 			r := d.Reliability
 			b.WriteString(tr(code, "healthStatus") + ": " + localizedHealthStatus(code, r.HealthStatus) + " (" + tr(code, "reliabilitySuffix") + ")\r\n")
@@ -153,12 +208,12 @@ func renderReportWithOptions(result scanResult, code string, hideSerial bool) st
 			b.WriteString(tr(code, "manufacturer") + ": " + valueOrUnknownLocalized(code, bat.Manufacturer) + "\r\n")
 			b.WriteString(tr(code, "chemistry") + ": " + valueOrUnknownLocalized(code, bat.Chemistry) + "\r\n")
 			if bat.DesignCapacityMWh > 0 {
-				b.WriteString(tr(code, "designCapacity") + ": " + formatBatteryCapacity(bat.DesignCapacityMWh) + "\r\n")
+				b.WriteString(tr(code, "designCapacity") + ": " + formatBatteryCapacityWithVoltage(bat.DesignCapacityMWh, bat.DesignVoltageMillivolts) + "\r\n")
 			} else {
 				b.WriteString(tr(code, "designCapacity") + ": " + tr(code, "notReported") + "\r\n")
 			}
 			if bat.FullChargeMWh > 0 {
-				b.WriteString(tr(code, "fullChargeCapacity") + ": " + formatBatteryCapacity(bat.FullChargeMWh) + "\r\n")
+				b.WriteString(tr(code, "fullChargeCapacity") + ": " + formatBatteryCapacityWithVoltage(bat.FullChargeMWh, bat.DesignVoltageMillivolts) + "\r\n")
 			} else {
 				b.WriteString(tr(code, "fullChargeCapacity") + ": " + tr(code, "notReported") + "\r\n")
 			}

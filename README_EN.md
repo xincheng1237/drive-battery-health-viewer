@@ -15,7 +15,7 @@ Current macOS version: **v1.1.0**; Windows version: **v1.0.6**. Visit [Releases]
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
 | macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
-| Windows | [`DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 SP1 or later |
+| Windows | [Installer](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 or later |
 
 ### Install on macOS
 
@@ -27,10 +27,7 @@ The current public macOS build uses an ad-hoc signature and has not been notariz
 
 ### Install on Windows
 
-The current Windows release is v1.0.6. The installer is recommended and guides you through setup. A portable edition is also available if you prefer to run the app without installing it.
-
-- [Download the installer](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe)
-- [Download the portable edition](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64.exe)
+The Windows x64 edition is distributed as a standard installer and does not require ZIP extraction. It launches the verified compatibility interface by default so the layout and high-DPI behavior stay consistent across supported Windows versions. The bundled WinUI interface can be evaluated explicitly with `DriveBatteryHealthViewer.exe --modern` on Windows 10 version 1809 or later. Administrator privileges may be needed for some hardware information; supported native storage interfaces are used where available and earlier versions automatically use compatibility readers.
 
 ## Screenshots
 
@@ -54,7 +51,7 @@ The current Windows release is v1.0.6. The installer is recommended and guides y
 
 - View drive model, capacity, connection, firmware, serial number, and system-provided S.M.A.R.T. status
 - Read temperature, operating time, power cycles, total reads, and total writes when exposed by the hardware and operating system
-- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, cycle count, charge level, and power state
+- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, and cycle count; the Windows edition does not show live charge level or charging state
 - Save and browse health history with multi-select, Select All, batch export, and batch deletion
 - Copy or export UTF-8 health reports
 - Hide drive and battery serial numbers from the interface, history, and exported reports
