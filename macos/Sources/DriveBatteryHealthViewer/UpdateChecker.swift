@@ -12,6 +12,39 @@ struct AvailableAppUpdate: Identifiable, Equatable, Sendable {
     let pageURL: URL
 }
 
+/// Decides whether a launch represents an installed app update that merits the
+/// one-time, nonmodal release-notes hint. The release identity includes both
+/// the public version and the internal build so same-version replacement builds
+/// are detected. A clean installation intentionally remains quiet.
+enum VersionUpdatePromptPolicy {
+    static func releaseIdentifier(version: String, build: String) -> String? {
+        guard AppVersion(version) != nil else { return nil }
+        let trimmedBuild = build.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBuild.isEmpty else { return nil }
+        return "\(version)#\(trimmedBuild)"
+    }
+
+    static func shouldPresent(
+        previousReleaseIdentifier: String?,
+        legacyPreviousVersion: String?,
+        currentVersion: String,
+        currentBuild: String,
+        hasExistingAppData: Bool
+    ) -> Bool {
+        guard let currentReleaseIdentifier = releaseIdentifier(
+            version: currentVersion,
+            build: currentBuild
+        ) else { return false }
+        if let previousReleaseIdentifier {
+            return previousReleaseIdentifier != currentReleaseIdentifier
+        }
+        // The previous implementation persisted only the public version. Its
+        // presence proves this is an upgrade, but cannot identify the old build,
+        // so migrate by showing the hint once and recording the full identity.
+        return legacyPreviousVersion != nil || hasExistingAppData
+    }
+}
+
 protocol AppReleaseChecking: Sendable {
     func latestStableRelease() async throws -> AppReleaseInfo
 }

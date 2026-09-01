@@ -4,17 +4,17 @@
 
 [简体中文](README.md) | English
 
-An open-source hardware health viewer for Windows and macOS. It reads drive status, battery health, and device information without modifying hardware, and includes history and batch management, report export, update checking, serial-number privacy protection, and seven interface languages.
+An open-source hardware health viewer for Windows and macOS. It displays drive status, battery health, and device information, and includes history and batch management, report export, update checking, serial-number privacy protection, and seven interface languages.
 
 The Windows edition is written in Go. The macOS edition uses native SwiftUI and ships as one Universal 2 application for both Apple silicon and Intel Macs.
 
 ## Download
 
-Current macOS version: **v1.0.6**; Windows version: **v1.0.4**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
+Current macOS version: **v1.1.0**; Windows version: **v1.0.4**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
 
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
-| macOS | [`DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
+| macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 or later |
 
 ### Install on macOS
@@ -52,7 +52,8 @@ The Windows x64 edition is a standalone executable. No installation is required.
 - Copy or export UTF-8 reports and check GitHub for the latest stable release from the application menu
 - Hide drive and battery serial numbers from the interface, history, and exported reports
 - Support Simplified Chinese, English, Russian, French, German, Korean, and Japanese
-- Read device information only: no benchmarks, writes, repairs, erases, or firmware updates
+- Keep drive, S.M.A.R.T., and health-data access read-only: no benchmarks, repairs, erases, or firmware updates
+- macOS v1.1.0 adds optional charge protection with menu-bar status and quick controls on supported Apple silicon Macs, plus privacy-friendly diagnostic-log export by time range
 
 ## Platform notes
 
@@ -65,6 +66,10 @@ The Windows x64 edition is a standalone executable. No installation is required.
 - One Universal 2 package runs natively on Apple silicon and Intel Macs
 - Bundled Universal 2 read-only `smartctl` can add drive details when macOS or an installed compatible driver exposes the low-level data
 - See [`macos/README.md`](macos/README.md) for implementation details, build steps, and hardware-data limitations
+
+On Apple silicon Macs, macOS 13 through 26.3 (except macOS 15.8) offers 80% / 85% / 90% / 95% / 100% after runtime capability detection succeeds. macOS 15.8 uses the native PowerUI OBC path: 80% enables the native limit, 100% turns charge protection off, and 85% / 90% / 95% remain visible but disabled. macOS 26.4 or later recommends the built-in system feature by default; users may explicitly choose software management and, after confirming the required system settings, use the same multi-level interface. Software control prefers adapter-preserving CHTE, then legacy CH0B+CH0C on older Apple silicon firmware. Adapter-isolating CHIE is never used as the normal fallback. Intel Macs do not expose this feature. The main app never runs as root, and a new app version verifies and completely replaces a mismatched installed helper on first launch.
+
+Diagnostic logs omit drive and battery serial numbers, report contents, usernames, and complete private paths by default. App logs are stored in `~/Library/Logs/DriveBatteryHealthViewer/`; helper logs are stored in `/Library/Logs/DriveBatteryHealthViewer/`. Logs are rotated at roughly 14 days and 20 MB.
 
 macOS does not natively provide generic USB/SCSI S.M.A.R.T. passthrough. The bundled reader installs no driver and does not probe bridge modes unsupported by the system; it adds details only when macOS, a Thunderbolt connection, or an installed compatible driver exposes the low-level device. Data may still be unavailable when an enclosure blocks passthrough, RAID exposes only a logical device, or macOS denies the interface. Unavailable values are shown as not reported.
 
@@ -107,6 +112,8 @@ swift test --disable-sandbox
 ## License
 
 This project is released under the [GNU General Public License v3.0](LICENSE). You may use, study, modify, and distribute it. Modified distributions must comply with GPL v3.0 and retain the original copyright and license notices.
+
+The macOS charge-control core adapts and refactors the AppleSMC, CHTE/CHIE, and fail-safe concepts from TY-teo’s [ChargeWatch](https://github.com/TY-teo/ChargeWatching), with compatibility for the legacy CH0B/CH0C control pair. ChargeWatch is MIT-licensed; its copyright, license, and source notice are retained in [`macos/Resources/ThirdParty/ChargeWatch/`](macos/Resources/ThirdParty/ChargeWatch/).
 
 ## Author
 

@@ -1,11 +1,35 @@
 import AppKit
+import ChargeProtectionCore
 import CNVMeSMART
 import Foundation
+import IOKit.ps
 import Testing
 @testable import DriveBatteryHealthViewer
+@testable import DriveBatteryChargeLimitAgent
 
 @Suite("Drive & Battery Health Viewer core")
 struct CoreTests {
+    @Test
+    func testOnlyReportCheckpointRefreshesMayAutomaticallySaveHistory() {
+        #expect(HardwareRefreshReason.userInitiated.permitsAutomaticHistorySave)
+        #expect(HardwareRefreshReason.coldLaunch.permitsAutomaticHistorySave)
+        #expect(HardwareRefreshReason.resumedAfterExtendedBackground.permitsAutomaticHistorySave)
+        #expect(!HardwareRefreshReason.lifecycleRecovery.permitsAutomaticHistorySave)
+    }
+
+    @Test
+    func testExtendedBackgroundCheckpointBeginsAtTwentyFourHours() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        #expect(!BackgroundRefreshPolicy.requiresCheckpoint(
+            backgroundedAt: now.addingTimeInterval(-(24 * 60 * 60) + 1),
+            now: now
+        ))
+        #expect(BackgroundRefreshPolicy.requiresCheckpoint(
+            backgroundedAt: now.addingTimeInterval(-(24 * 60 * 60)),
+            now: now
+        ))
+    }
+
     @Test
     func testHealthStateThresholdsAndSMARTStatus() {
         #expect(healthState(forPercent: 100) == .good)
@@ -237,6 +261,39 @@ struct CoreTests {
     }
 
     @Test
+    func testNVMeSmartctlErrorCountersAreParsedSeparately() throws {
+        let list = plist([
+            "AllDisksAndPartitions": [["DeviceIdentifier": "disk4", "Size": 1_000_000_000_000 as UInt64]]
+        ])
+        let info = plist([
+            "DeviceIdentifier": "disk4", "Whole": true, "VirtualOrPhysical": "Physical",
+            "MediaName": "External NVMe", "TotalSize": 1_000_000_000_000 as UInt64,
+            "BusProtocol": "Thunderbolt", "SolidState": true, "Internal": false
+        ])
+        let smart = json([
+            "model_name": "External NVMe",
+            "smart_status": ["passed": true],
+            "nvme_smart_health_information_log": [
+                "unsafe_shutdowns": 12,
+                "media_errors": 3,
+                "num_err_log_entries": 47
+            ]
+        ])
+        let runner = FixtureRunner(outputs: [
+            FixtureRunner.key("/usr/sbin/diskutil", ["list", "-plist", "physical"]): .success(list),
+            FixtureRunner.key("/usr/sbin/diskutil", ["info", "-plist", "disk4"]): .success(info),
+            FixtureRunner.key("/usr/sbin/system_profiler", storageProfilerTestArguments): .success(json([:])),
+            FixtureRunner.key("/usr/bin/true", ["--version"]): .success(Data()),
+            FixtureRunner.key("/usr/bin/true", ["-a", "-j", "/dev/disk4"]): .success(smart)
+        ])
+
+        let drive = try #require(HardwareScanner(runner: runner, smartctlPaths: ["/usr/bin/true"]).scanDrives().first)
+        #expect(drive.unsafeShutdowns == 12)
+        #expect(drive.mediaErrors == 3)
+        #expect(drive.errorLogEntries == 47)
+    }
+
+    @Test
     func testSmartctlUsesOnlyDarwinSupportedAutomaticMode() throws {
         let list = plist([
             "AllDisksAndPartitions": [["DeviceIdentifier": "disk4", "Size": 2_000_000_000_000 as UInt64]]
@@ -401,6 +458,8 @@ struct CoreTests {
         fresh.drives[0].temperatureCelsius = nil
         fresh.drives[0].bytesRead = nil
         fresh.drives[0].bytesWritten = nil
+        fresh.drives[0].unsafeShutdowns = nil
+        fresh.drives[0].errorLogEntries = nil
         fresh.batteries[0].manufacturer = nil
         fresh.batteries[0].serialNumber = nil
         fresh.batteries[0].chemistry = nil
@@ -413,6 +472,8 @@ struct CoreTests {
         #expect(merged.drives[0].temperatureCelsius == 35)
         #expect(merged.drives[0].bytesRead == 2_000_000_000)
         #expect(merged.drives[0].bytesWritten == 3_000_000_000)
+        #expect(merged.drives[0].unsafeShutdowns == 1)
+        #expect(merged.drives[0].errorLogEntries == 2)
         #expect(merged.batteries[0].manufacturer == "Apple")
         #expect(merged.batteries[0].serialNumber == "BATTERY-SERIAL")
         #expect(merged.batteries[0].chemistry == "Li-ion")
@@ -652,10 +713,11 @@ struct CoreTests {
         let plistData = try Data(contentsOf: macosRoot.appendingPathComponent("Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(plist["CFBundleVersion"] as? String == "7")
+        #expect(plist["CFBundleVersion"] as? String == "9")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
+            #expect(text.contains("bundle_build=\"9\""))
         }
     }
 
@@ -697,7 +759,7 @@ struct CoreTests {
             }
 
             let report = ReportRenderer.render(snapshot: sampleSnapshot(), language: language, hideSerials: true)
-            #expect(report.contains("v1.0.6"))
+            #expect(report.contains("v\(applicationVersion)"))
             #expect(report.contains("mAh /"))
             #expect(report.contains("••••••••"))
         }
@@ -705,6 +767,13 @@ struct CoreTests {
         #expect(L10n.text("driveWorkingTimeExplanation", .simplifiedChinese) == "硬盘工作时间由硬盘固件统计，可能不包含控制器处于低功耗状态的时间，不等同于电脑开机或实际使用时长。")
         #expect(L10n.text("batteryHealthExplanation", .simplifiedChinese) == "电池健康度以 macOS 校准后的最大容量为准，受温度、充电管理、系统校准和取整影响，它与“满充容量÷设计容量”的直接计算结果可能存在细微差异。")
         #expect(L10n.text("powerConnectedNotCharging", .simplifiedChinese) == "已连接电源；当前电池已充满，或 macOS 根据当前状态暂时采用直接供电。")
+        #expect(L10n.text("uninstallChargeHelper", .simplifiedChinese) == "停用并卸载充电辅助程序")
+        #expect(L10n.text("chargeHelperAuthorizationTitle", .simplifiedChinese) == "需要管理员授权")
+        #expect(L10n.text("continueAuthorization", .simplifiedChinese) == "继续")
+        #expect(L10n.text("chargeHelperInstallAuthorizationMessage", .simplifiedChinese).contains("密码仅由 macOS 验证"))
+        #expect(L10n.text("chargeHelperUninstallAuthorizationMessage", .simplifiedChinese).contains("本软件不会读取或保存"))
+        #expect(L10n.text("desktopMacPoweredTitle", .simplifiedChinese) == "插电即满血")
+        #expect(L10n.text("desktopMacMode", .simplifiedChinese) == "桌面 Mac 模式")
     }
 
     @Test @MainActor
@@ -900,38 +969,47 @@ struct CoreTests {
             "健康检测报告", "窗口", "帮助"
         ])
         #expect(menu.items[1].submenu?.items.filter { !$0.isSeparatorItem }.map(\.title) == ["导出当前报告", "打开报告文件夹", "关闭窗口"])
-        #expect(menu.items[5].submenu?.items.map(\.title) == ["项目主页", "反馈问题", "查看更新日志"])
+        #expect(menu.items[5].submenu?.items.filter { !$0.isSeparatorItem }.map(\.title) == ["项目主页", "反馈问题", "导出诊断日志…", "查看更新日志"])
     }
 
     @Test @MainActor
     func testChangelogMerges1051Into106WithoutChangingOlderReleases() {
         for language in AppLanguage.allCases {
             let releases = ChangelogRelease.localized(for: language)
-            #expect(releases.map(\.version) == ["1.0.6", "1.0.5", "1.0.4", "1.0.0"])
-            #expect(releases[0].sections.map(\.kind) == [.feature, .fix])
+            #expect(releases.map(\.version) == ["1.1.0", "1.0.6", "1.0.5", "1.0.4", "1.0.0"])
+            #expect(releases[0].sections.map(\.kind) == [.feature, .improvement])
             #expect(releases[0].sections[0].kind.symbol == "checkmark.circle.fill")
-            #expect(releases[0].sections[1].kind.symbol == "wrench.and.screwdriver.fill")
-            #expect(releases[0].sections[0].items.count == 2)
-            #expect(releases[0].sections[1].items.count == 5)
+            #expect(releases[0].sections[1].kind.symbol == "wand.and.stars")
+            #expect(releases[0].sections[0].items.count == 7)
+            #expect(releases[0].sections[1].items.count == 3)
             #expect(releases[0].sections.flatMap(\.items).allSatisfy { !$0.isEmpty })
             #expect(releases[1].sections.map(\.kind) == [.feature, .fix])
             #expect(releases[2].sections.map(\.kind) == [.feature, .fix])
-            #expect(releases[2].sections[0].items.count == 2)
-            #expect(releases[2].sections[1].items.count == 2)
-            #expect(releases[3].sections.map(\.kind) == [.historical])
+            #expect(releases[3].sections.map(\.kind) == [.feature, .fix])
+            #expect(releases[4].sections.map(\.kind) == [.historical])
         }
         let chinese = ChangelogRelease.localized(for: .simplifiedChinese)
-        #expect(chinese[0].sections[1].items.allSatisfy { $0.hasPrefix("修复了") && $0.hasSuffix("的问题。") })
-        #expect(chinese[0].sections[0].items.contains("增强外接 USB、Thunderbolt 以及支持 SAT 透传的硬盘详细信息读取能力。"))
-        #expect(chinese[0].sections[1].items.contains("修复了首次启动并跟随系统语言时，顶部应用菜单名称可能显示为英文的问题。"))
-        #expect(chinese[1].sections[0].items.contains("新增对 macOS 26 及以上版本 Liquid Glass 界面效果的支持。"))
-        #expect(chinese[1].sections[0].items.contains("新增检查更新功能。"))
+        #expect(chinese[0].sections[0].items[0] == "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及达到设定电量后的菜单栏快捷控制。")
+        #expect(chinese[0].sections[0].items[1] == "在 macOS 15.8 上新增 PowerUI 原生 80% 充电上限，仅开放系统实际支持的档位，并保持适配器供电。")
+        #expect(chinese[0].sections[0].items.contains("为 iMac、Mac mini、Mac Studio 等桌面设备的“电池”部分设计了新的界面显示。"))
+        #expect(chinese[0].sections[0].items.contains("新增概览中的非正常关机次数与错误日志条目显示。"))
+        #expect(chinese[0].sections[0].items.contains("新增“关于”页面中的检查更新入口，便于用户发现并使用更新功能。"))
+        #expect(chinese[0].sections[1].items.contains("优化了历史记录选择界面的按钮布局与多选操作体验。"))
+        #expect(chinese[0].sections[1].items.contains("为内置 SSD 的“工作时间”增加说明，便于理解固件统计值与 Mac 实际使用时间的差异。"))
+        #expect(!chinese[0].sections.flatMap(\.items).contains("修复升级应用后旧版充电辅助程序或菜单栏代理可能未被完整替换的问题。"))
+        #expect(!chinese[0].sections.flatMap(\.items).contains("修复 macOS 15.8 原生 80% 充电上限已经生效时仍可能误报“无法应用充电保护”的问题。"))
+        #expect(!chinese[0].sections.flatMap(\.items).contains("修复充电保护已启用时菜单栏图标可能不显示的问题，并增强睡眠唤醒、屏幕变化及代理更新后的自动恢复。"))
         #expect(chinese[1].sections[1].items.allSatisfy { $0.hasPrefix("修复了") && $0.hasSuffix("的问题。") })
-        #expect(chinese[2].sections[0].items == [
+        #expect(chinese[1].sections[0].items.contains("增强外接 USB、Thunderbolt 以及支持 SAT 透传的硬盘详细信息读取能力。"))
+        #expect(chinese[1].sections[1].items.contains("修复了首次启动并跟随系统语言时，顶部应用菜单名称可能显示为英文的问题。"))
+        #expect(chinese[2].sections[0].items.contains("新增对 macOS 26 及以上版本 Liquid Glass 界面效果的支持。"))
+        #expect(chinese[2].sections[0].items.contains("新增检查更新功能。"))
+        #expect(chinese[2].sections[1].items.allSatisfy { $0.hasPrefix("修复了") && $0.hasSuffix("的问题。") })
+        #expect(chinese[3].sections[0].items == [
             "电量、充电状态、电源连接状态以及硬盘与电池温度改为自动实时更新。",
             "统一硬盘与电池字段顺序，容量改用 mAh / Wh，并完善健康度说明。"
         ])
-        #expect(chinese[2].sections[1].items == [
+        #expect(chinese[3].sections[1].items == [
             "修复重复刷新后 NVMe S.M.A.R.T. 数据消失的问题。",
             "调整应用图标安全边距。"
         ])
@@ -943,7 +1021,7 @@ struct CoreTests {
         desktop.batteries = []
         for language in AppLanguage.allCases {
             let report = ReportRenderer.render(snapshot: desktop, language: language, hideSerials: true)
-            #expect(report.contains("v1.0.6"))
+            #expect(report.contains("v\(applicationVersion)"))
             #expect(report.contains(desktop.computerName))
         }
         let updated = desktop.updatingLiveHardwareState(LiveHardwareState(
@@ -979,8 +1057,8 @@ struct CoreTests {
         #expect(viewItems.map(\.title).contains("恢复默认文字大小"))
 
         let helpItems = menu.items[5].submenu?.items.filter { !$0.isSeparatorItem } ?? []
-        #expect(helpItems.map(\.title) == ["项目主页", "反馈问题", "查看更新日志"])
-        #expect(helpItems.map { $0.action.map(NSStringFromSelector) } == ["openProjectHome:", "openIssueFeedback:", "showChangelog:"])
+        #expect(helpItems.map(\.title) == ["项目主页", "反馈问题", "导出诊断日志…", "查看更新日志"])
+        #expect(helpItems.map { $0.action.map(NSStringFromSelector) } == ["openProjectHome:", "openIssueFeedback:", "exportDiagnosticLogs:", "showChangelog:"])
 
         let appItems = menu.items[0].submenu?.items.filter { !$0.isSeparatorItem } ?? []
         #expect(appItems.map(\.title).contains("检查更新…"))
@@ -1000,6 +1078,111 @@ struct CoreTests {
         let release = try GitHubReleaseChecker.decodeRelease(from: data)
         #expect(release.version == "1.0.6")
         #expect(release.pageURL.absoluteString.hasSuffix("/releases/tag/v1.0.6"))
+    }
+
+    @Test
+    func testVersionUpdatePromptDetectsPublicAndSameVersionBuildUpdates() {
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: nil,
+            legacyPreviousVersion: nil,
+            currentVersion: "1.1.0",
+            currentBuild: "9",
+            hasExistingAppData: false
+        ) == false)
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: nil,
+            legacyPreviousVersion: nil,
+            currentVersion: "1.1.0",
+            currentBuild: "9",
+            hasExistingAppData: true
+        ))
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: nil,
+            legacyPreviousVersion: "1.1.0",
+            currentVersion: "1.1.0",
+            currentBuild: "9",
+            hasExistingAppData: true
+        ))
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: "1.1.0#8",
+            legacyPreviousVersion: "1.1.0",
+            currentVersion: "1.1.0",
+            currentBuild: "9",
+            hasExistingAppData: true
+        ))
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: "1.0.6#42",
+            legacyPreviousVersion: "1.0.6",
+            currentVersion: "1.1.0",
+            currentBuild: "9",
+            hasExistingAppData: true
+        ))
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: "1.1.0#9",
+            legacyPreviousVersion: "1.1.0",
+            currentVersion: "1.1.0",
+            currentBuild: "9",
+            hasExistingAppData: true
+        ) == false)
+    }
+
+    @Test @MainActor
+    func testVersionUpdatePromptPersistsFullReleaseIdentityOncePerBuild() {
+        let suiteName = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let cleanInstall = AppModel(
+            defaults: defaults,
+            currentAppVersion: "1.1.0",
+            currentAppBuild: "9"
+        )
+        #expect(cleanInstall.showsVersionUpdatePrompt == false)
+
+        let sameBuildRelaunch = AppModel(
+            defaults: defaults,
+            currentAppVersion: "1.1.0",
+            currentAppBuild: "9"
+        )
+        #expect(sameBuildRelaunch.showsVersionUpdatePrompt == false)
+
+        let sameVersionReplacementBuild = AppModel(
+            defaults: defaults,
+            currentAppVersion: "1.1.0",
+            currentAppBuild: "10"
+        )
+        #expect(sameVersionReplacementBuild.showsVersionUpdatePrompt)
+
+        let replacementBuildRelaunch = AppModel(
+            defaults: defaults,
+            currentAppVersion: "1.1.0",
+            currentAppBuild: "10"
+        )
+        #expect(replacementBuildRelaunch.showsVersionUpdatePrompt == false)
+
+        #expect(VersionUpdatePromptPolicy.shouldPresent(
+            previousReleaseIdentifier: "1.1.0#10",
+            legacyPreviousVersion: "1.1.0",
+            currentVersion: "1.2.0",
+            currentBuild: "1",
+            hasExistingAppData: true
+        ))
+    }
+
+    @Test
+    func testAboutUpdateActionAndHistoryListUseStableNativeComponents() throws {
+        let sourceFile = URL(fileURLWithPath: #filePath)
+        let viewsURL = sourceFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/DriveBatteryHealthViewer/Views.swift")
+        let source = try String(contentsOf: viewsURL, encoding: .utf8)
+        #expect(source.contains("AboutButton(symbol: \"arrow.clockwise\", title: model.t(\"checkForUpdates\")) { model.checkForUpdates() }"))
+        #expect(source.contains(".listStyle(.plain)"))
+        #expect(source.contains("VersionUpdateTip()"))
+        #expect(source.contains("DetailItem(model.t(\"unsafeShutdowns\"), drive.unsafeShutdowns.map(String.init))"))
+        #expect(source.contains("DetailItem(model.t(\"errorLogEntries\"), drive.errorLogEntries.map(String.init))"))
     }
 
     @Test @MainActor
@@ -1069,6 +1252,12 @@ struct CoreTests {
 
         let model = AppModel(defaults: defaults)
         #expect(model.history.count == 2)
+        let rangeStart = try #require(model.history.first?.id)
+        let rangeEnd = try #require(model.history.last?.id)
+        model.toggleHistorySelection(rangeStart)
+        model.selectHistoryRange(from: rangeStart, through: rangeEnd)
+        #expect(model.selectedHistoryIDs == Set([rangeStart, rangeEnd]))
+        model.clearHistorySelection()
         model.selectAllHistory()
         #expect(model.selectedHistoryIDs.count == 2)
         model.exportSelectedHistory(to: destination)
@@ -1089,6 +1278,11 @@ struct CoreTests {
         guard let state = readBatteryLiveState() else { return }
         #expect((0...100).contains(state.chargePercent))
         #expect(state.temperatureCelsius.map { (-30...120).contains($0) } ?? true)
+        let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
+        let providingPower = IOPSGetProvidingPowerSourceType(snapshot).takeUnretainedValue() as String
+        if providingPower == kIOPSACPowerValue {
+            #expect(state.externalConnected)
+        }
     }
 
     @Test
@@ -1108,7 +1302,1104 @@ struct CoreTests {
         #expect(NSImage(systemSymbolName: "battery.75", accessibilityDescription: nil) != nil)
         #expect(NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil) != nil)
         #expect(NSImage(systemSymbolName: "powerplug.fill", accessibilityDescription: nil) != nil)
+        #expect(NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) != nil)
         #expect(NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil) != nil)
+    }
+
+    @Test
+    func testChargeProtectionSystemVersionBoundariesAndAllowedLimits() {
+        let macOS158 = OperatingSystemVersion(majorVersion: 15, minorVersion: 8, patchVersion: 0)
+        #expect(ChargeLimitCapabilityPolicy.isPowerUIEightyOnly(
+            isAppleSilicon: true,
+            operatingSystemVersion: macOS158
+        ))
+        #expect(ChargeLimitCapabilityPolicy.permits(
+            .eighty,
+            isAppleSilicon: true,
+            operatingSystemVersion: macOS158
+        ))
+        #expect(!ChargeLimitCapabilityPolicy.permits(
+            .eightyFive,
+            isAppleSilicon: true,
+            operatingSystemVersion: macOS158
+        ))
+        #expect(ChargeLimitCapabilityPolicy.permits(
+            .oneHundred,
+            isAppleSilicon: true,
+            operatingSystemVersion: macOS158
+        ))
+        #expect(ChargeLimitCapabilityPolicy.normalized(
+            .ninetyFive,
+            isAppleSilicon: true,
+            operatingSystemVersion: macOS158
+        ) == .eighty)
+        #expect(!ChargeLimitCapabilityPolicy.isPowerUIEightyOnly(
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 7, patchVersion: 6)
+        ))
+        let multiLevelVersions = [
+            OperatingSystemVersion(majorVersion: 13, minorVersion: 0, patchVersion: 0),
+            OperatingSystemVersion(majorVersion: 14, minorVersion: 7, patchVersion: 0),
+            OperatingSystemVersion(majorVersion: 15, minorVersion: 7, patchVersion: 6),
+            OperatingSystemVersion(majorVersion: 16, minorVersion: 0, patchVersion: 0),
+            OperatingSystemVersion(majorVersion: 26, minorVersion: 3, patchVersion: 9),
+            OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0)
+        ]
+        for version in multiLevelVersions {
+            #expect(!ChargeLimitCapabilityPolicy.isPowerUIEightyOnly(
+                isAppleSilicon: true,
+                operatingSystemVersion: version
+            ))
+            for limit in FixedChargeLimit.allCases {
+                #expect(ChargeLimitCapabilityPolicy.permits(
+                    limit,
+                    isAppleSilicon: true,
+                    operatingSystemVersion: version
+                ))
+            }
+        }
+        #expect(ChargeProtectionAvailability.evaluate(
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 3, patchVersion: 9)
+        ) == .softwareAvailable)
+        #expect(ChargeProtectionAvailability.evaluate(
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0)
+        ) == .systemPreferred)
+        #expect(ChargeProtectionAvailability.evaluate(
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 1),
+            userSelectedSoftwareManagement: true
+        ) == .softwareManaged)
+        #expect(ChargeProtectionAvailability.evaluate(
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)
+        ) == .systemPreferred)
+        #expect(ChargeProtectionAvailability.evaluate(
+            isAppleSilicon: false,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 7, patchVersion: 0)
+        ) == .unsupportedHardware)
+        #expect(ChargeProtectionAvailability.evaluate(
+            isAppleSilicon: false,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0),
+            userSelectedSoftwareManagement: true
+        ) == .unsupportedHardware)
+        #expect(FixedChargeLimit.allCases.map(\.rawValue) == [80, 85, 90, 95, 100])
+        #expect(FixedChargeLimit(validated: 80) == .eighty)
+        #expect(FixedChargeLimit(validated: 95) == .ninetyFive)
+        #expect(FixedChargeLimit(validated: 79) == nil)
+        #expect(FixedChargeLimit(validated: 100) == .oneHundred)
+        #expect(ChargeProtectionManager.requiresAdministratorAuthorizationForEnable(
+            isInstalled: false,
+            installedHelperMatchesBundledHelper: false
+        ))
+        #expect(ChargeProtectionManager.requiresAdministratorAuthorizationForEnable(
+            isInstalled: true,
+            installedHelperMatchesBundledHelper: false
+        ))
+        #expect(!ChargeProtectionManager.requiresAdministratorAuthorizationForEnable(
+            isInstalled: true,
+            installedHelperMatchesBundledHelper: true
+        ))
+    }
+
+    @Test @MainActor
+    func testMacOS158MainAppOffersNativeEightyOrNormalHundred() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbhv-main-158-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "dbhv-main-158-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(ChargeProtectionConfiguration(
+            enabled: true,
+            fixedLimit: .ninetyFive
+        )).write(to: root.appendingPathComponent("configuration.json"))
+
+        let manager = ChargeProtectionManager(
+            defaults: defaults,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 8, patchVersion: 0),
+            configurationDirectory: root
+        )
+        #expect(manager.isPowerUIEightyOnly)
+        #expect(manager.configuration.fixedLimit == .eighty)
+        #expect(manager.displayedLimitPercentage == 80)
+        #expect(manager.isLimitSelectable(80))
+        #expect(!manager.isLimitSelectable(85))
+        #expect(manager.isLimitSelectable(100))
+        manager.setLimit(.ninety)
+        #expect(manager.configuration.fixedLimit == .eighty)
+        manager.setLimit(.oneHundred)
+        #expect(manager.configuration.fixedLimit == .oneHundred)
+        #expect(!manager.configuration.enabled)
+        #expect(!manager.configuration.temporaryFullCharge)
+        #expect(manager.displayedLimitPercentage == 100)
+    }
+
+    @Test
+    func testChargeProtectionExactLimitAndTemporaryFullStateMachine() {
+        let machine = ChargeProtectionStateMachine()
+        var configuration = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty)
+        let atLimit = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 80, fullyCharged: false, adapterConnected: true),
+            holdingLimit: nil
+        )
+        #expect(atLimit.actuation == .holdCharging)
+        #expect(atLimit.holdingAfterDecision)
+        let belowLimit = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 79, fullyCharged: false, adapterConnected: true),
+            holdingLimit: .eighty
+        )
+        #expect(belowLimit.actuation == .allowCharging)
+        #expect(!belowLimit.holdingAfterDecision)
+        #expect(belowLimit.event == .resumedBelowLimit)
+        let atLimitStillHolds = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 80, fullyCharged: false, adapterConnected: true),
+            holdingLimit: .eighty
+        )
+        #expect(atLimitStillHolds.actuation == .unchanged)
+        #expect(atLimitStillHolds.holdingAfterDecision)
+
+        configuration.temporaryFullCharge = true
+        let override = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 80, fullyCharged: false, adapterConnected: true),
+            holdingLimit: .eighty
+        )
+        #expect(override.actuation == .allowCharging)
+        #expect(override.temporaryFullChargeAfterDecision)
+        let completed = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 100, fullyCharged: true, adapterConnected: true),
+            holdingLimit: nil
+        )
+        #expect(completed.event == .temporaryFullCompleted)
+        #expect(!completed.temporaryFullChargeAfterDecision)
+        #expect(completed.holdingAfterDecision)
+        #expect(completed.actuation == .holdCharging)
+    }
+
+    @Test
+    func testChargeControlCapabilitySelectionPrefersAdapterPreservingMethods() {
+        #expect(preferredChargeControlMethod(
+            chteSupported: true,
+            legacyCH0BCH0CSupported: true,
+            chieSupported: true
+        ) == .chte)
+        #expect(preferredChargeControlMethod(
+            chteSupported: false,
+            legacyCH0BCH0CSupported: true,
+            chieSupported: true
+        ) == .legacyCH0BCH0C)
+        #expect(preferredChargeControlMethod(
+            chteSupported: false,
+            legacyCH0BCH0CSupported: false,
+            chieSupported: true,
+        ) == .unavailable)
+        #expect(preferredChargeControlMethod(
+            chteSupported: false,
+            legacyCH0BCH0CSupported: false,
+            chieSupported: false
+        ) == .unavailable)
+    }
+
+    @Test
+    func testLegacyChargeControlMethodPersistsInHelperStatus() throws {
+        let status = ChargeProtectionStatus(
+            helperVersion: "1.1.0.13",
+            installed: true,
+            enabled: true,
+            fixedLimit: .eighty,
+            temporaryFullCharge: false,
+            holding: true,
+            adapterConnected: true,
+            batteryPercentage: 80,
+            controlMethod: .legacyCH0BCH0C
+        )
+        let data = try JSONEncoder().encode(status)
+        #expect(try JSONDecoder().decode(ChargeProtectionStatus.self, from: data) == status)
+    }
+
+    @Test
+    func testFreshHelperAdapterReadingCorrectsCHIEPublicBatteryState() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let configuration = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty)
+        let fresh = ChargeProtectionStatus(
+            helperVersion: "1.1.0",
+            timestamp: now.addingTimeInterval(-2),
+            installed: true,
+            enabled: true,
+            fixedLimit: .eighty,
+            temporaryFullCharge: false,
+            holding: true,
+            adapterConnected: true,
+            batteryPercentage: 83,
+            controlMethod: .chieFallback
+        )
+        #expect(resolvedExternalPowerConnection(
+            systemReportedConnection: false,
+            configuration: configuration,
+            status: fresh,
+            now: now
+        ))
+
+        var heartbeatFresh = fresh
+        heartbeatFresh.timestamp = now.addingTimeInterval(-15)
+        #expect(resolvedExternalPowerConnection(
+            systemReportedConnection: false,
+            configuration: configuration,
+            status: heartbeatFresh,
+            now: now
+        ))
+
+        var stale = fresh
+        stale.timestamp = now.addingTimeInterval(-21)
+        #expect(!resolvedExternalPowerConnection(
+            systemReportedConnection: false,
+            configuration: configuration,
+            status: stale,
+            now: now
+        ))
+
+        var disabled = configuration
+        disabled.enabled = false
+        #expect(!resolvedExternalPowerConnection(
+            systemReportedConnection: false,
+            configuration: disabled,
+            status: fresh,
+            now: now
+        ))
+    }
+
+    @Test
+    func testRaisingChargeLimitReleasesThePreviousHoldImmediately() {
+        let machine = ChargeProtectionStateMachine()
+        let raised = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eightyFive)
+        let decision = machine.decide(
+            configuration: raised,
+            battery: ChargeBatteryReading(percentage: 82, fullyCharged: false, adapterConnected: true),
+            holdingLimit: .eighty
+        )
+        #expect(decision.actuation == .allowCharging)
+        #expect(!decision.holdingAfterDecision)
+        #expect(decision.event == .resumedAfterLimitIncrease)
+
+        // A hold begun at 85% also resumes as soon as the reading is below
+        // that fixed limit.
+        let sameLimit = machine.decide(
+            configuration: raised,
+            battery: ChargeBatteryReading(percentage: 82, fullyCharged: false, adapterConnected: true),
+            holdingLimit: .eightyFive
+        )
+        #expect(sameLimit.actuation == .allowCharging)
+        #expect(!sameLimit.holdingAfterDecision)
+        #expect(sameLimit.event == .resumedBelowLimit)
+    }
+
+    @Test
+    func testPersistentOneHundredPercentLimitIsDistinctFromTemporaryFullCharge() {
+        let configuration = ChargeProtectionConfiguration(
+            enabled: true,
+            fixedLimit: .oneHundred,
+            temporaryFullCharge: false
+        )
+        let machine = ChargeProtectionStateMachine()
+        let below = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 99, fullyCharged: false, adapterConnected: true),
+            holdingLimit: nil
+        )
+        #expect(below.actuation == .unchanged)
+        #expect(!below.holdingAfterDecision)
+        let full = machine.decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(percentage: 100, fullyCharged: true, adapterConnected: true),
+            holdingLimit: nil
+        )
+        #expect(full.actuation == .holdCharging)
+        #expect(full.holdingAfterDecision)
+        #expect(!full.temporaryFullChargeAfterDecision)
+    }
+
+    @Test
+    func testLoweringChargeLimitKeepsSafeHoldWithoutForcingBatteryDischarge() {
+        let configuration = ChargeProtectionConfiguration(
+            enabled: true,
+            fixedLimit: .eighty
+        )
+        let decision = ChargeProtectionStateMachine().decide(
+            configuration: configuration,
+            battery: ChargeBatteryReading(
+                percentage: 90,
+                fullyCharged: false,
+                adapterConnected: true
+            ),
+            holdingLimit: .ninety
+        )
+
+        // CHTE stops battery charging while the adapter continues to power the
+        // Mac. Lowering a limit must never switch to forced battery discharge.
+        #expect(decision.actuation == .unchanged)
+        #expect(decision.holdingAfterDecision)
+        #expect(!decision.temporaryFullChargeAfterDecision)
+    }
+
+    @Test @MainActor
+    func testChargeProtectionDisclosureDefaultsAndPersistence() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eligibleSuiteName = "dbhv-tests-eligible-\(UUID().uuidString)"
+        let nativeSuiteName = "dbhv-tests-native-\(UUID().uuidString)"
+        let eligibleSuite = try #require(UserDefaults(suiteName: eligibleSuiteName))
+        let nativeSuite = try #require(UserDefaults(suiteName: nativeSuiteName))
+        defer {
+            eligibleSuite.removePersistentDomain(forName: eligibleSuiteName)
+            nativeSuite.removePersistentDomain(forName: nativeSuiteName)
+        }
+
+        let eligible = ChargeProtectionManager(
+            defaults: eligibleSuite,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs-eligible")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 3, patchVersion: 9),
+            configurationDirectory: root.appendingPathComponent("config-eligible")
+        )
+        #expect(eligible.isSectionExpanded)
+        #expect(eligible.displayedLimitPercentage == 100)
+        eligible.setSectionExpanded(false)
+
+        let eligibleRelaunch = ChargeProtectionManager(
+            defaults: eligibleSuite,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs-eligible-relaunch")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 3, patchVersion: 9),
+            configurationDirectory: root.appendingPathComponent("config-eligible")
+        )
+        #expect(!eligibleRelaunch.isSectionExpanded)
+
+        let native = ChargeProtectionManager(
+            defaults: nativeSuite,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs-native")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0),
+            configurationDirectory: root.appendingPathComponent("config-native")
+        )
+        #expect(!native.isSectionExpanded)
+        native.setSectionExpanded(true)
+
+        let nativeRelaunch = ChargeProtectionManager(
+            defaults: nativeSuite,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs-native-relaunch")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0),
+            configurationDirectory: root.appendingPathComponent("config-native")
+        )
+        #expect(nativeRelaunch.isSectionExpanded)
+
+        let intelSuiteName = "dbhv-tests-intel-\(UUID().uuidString)"
+        let intelSuite = try #require(UserDefaults(suiteName: intelSuiteName))
+        defer { intelSuite.removePersistentDomain(forName: intelSuiteName) }
+        let intel = ChargeProtectionManager(
+            defaults: intelSuite,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs-intel")),
+            isAppleSilicon: false,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 7, patchVersion: 0),
+            configurationDirectory: root.appendingPathComponent("config-intel")
+        )
+        #expect(!intel.isSectionExpanded)
+    }
+
+    @Test @MainActor
+    func testSystemPreferredRequiresConfirmationBeforeSoftwareManagedMode() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "dbhv-tests-mode-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let manager = ChargeProtectionManager(
+            defaults: defaults,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 2),
+            configurationDirectory: root.appendingPathComponent("config")
+        )
+
+        #expect(manager.availability == .systemPreferred)
+        #expect(!manager.configuration.enabled)
+        manager.beginSoftwareModePreparation()
+        manager.completeSoftwareModePreparation()
+        #expect(manager.availability == .systemPreferred)
+        manager.hasConfirmedSystemPreparation = true
+        manager.completeSoftwareModePreparation()
+        #expect(manager.availability == .softwareManaged)
+        #expect(manager.configuration.managementMode == .softwareManaged)
+        #expect(!manager.configuration.enabled)
+
+        manager.setLimit(.ninety)
+        manager.switchToSystemPreferred(openSettings: false)
+        #expect(manager.availability == .systemPreferred)
+        #expect(manager.configuration.managementMode == .systemPreferred)
+        #expect(!manager.configuration.enabled)
+        #expect(manager.configuration.fixedLimit == .ninety)
+    }
+
+    @Test @MainActor
+    func testUpgradeAcrossNativeLimitBoundaryStopsControlAndPromptsOnce() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "dbhv-tests-migration-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(false, forKey: ChargeProtectionManager.lastNativeLimitBoundaryDefaultsKey)
+        let configDirectory = root.appendingPathComponent("config", isDirectory: true)
+        try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
+        let configURL = configDirectory.appendingPathComponent("configuration.json")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(ChargeProtectionConfiguration(
+            enabled: true,
+            fixedLimit: .eightyFive,
+            managementMode: .softwareAvailable
+        )).write(to: configURL)
+
+        let manager = ChargeProtectionManager(
+            defaults: defaults,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0),
+            configurationDirectory: configDirectory
+        )
+        #expect(manager.showsUpgradeMigrationPrompt)
+        #expect(manager.availability == .systemPreferred)
+        #expect(!manager.configuration.enabled)
+        #expect(manager.configuration.fixedLimit == .eightyFive)
+        #expect(manager.configuration.managementMode == .systemPreferred)
+
+        let relaunched = ChargeProtectionManager(
+            defaults: defaults,
+            logger: DiagnosticLogger(directory: root.appendingPathComponent("logs-relaunch")),
+            isAppleSilicon: true,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0),
+            configurationDirectory: configDirectory
+        )
+        #expect(!relaunched.showsUpgradeMigrationPrompt)
+        #expect(relaunched.availability == .systemPreferred)
+    }
+
+    @Test
+    func testHelperPolicyRequiresExplicitSoftwareManagementOnNativeLimitSystems() {
+        let nativeOS = OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0)
+        let legacyOS = OperatingSystemVersion(majorVersion: 26, minorVersion: 3, patchVersion: 9)
+        let available = ChargeProtectionConfiguration(enabled: true, managementMode: .softwareAvailable)
+        let managed = ChargeProtectionConfiguration(enabled: true, managementMode: .softwareManaged)
+        let disabled = ChargeProtectionConfiguration(enabled: false, managementMode: .softwareManaged)
+        #expect(ChargeProtectionAvailability.helperMayControl(isAppleSilicon: true, operatingSystemVersion: legacyOS, configuration: available))
+        #expect(!ChargeProtectionAvailability.helperMayControl(isAppleSilicon: true, operatingSystemVersion: nativeOS, configuration: available))
+        #expect(ChargeProtectionAvailability.helperMayControl(isAppleSilicon: true, operatingSystemVersion: nativeOS, configuration: managed))
+        #expect(!ChargeProtectionAvailability.helperMayControl(isAppleSilicon: true, operatingSystemVersion: nativeOS, configuration: disabled))
+        #expect(!ChargeProtectionAvailability.helperMayControl(isAppleSilicon: false, operatingSystemVersion: legacyOS, configuration: managed))
+    }
+
+    @MainActor
+    @Test
+    func testChargeProtectionStatusItemUsesStateImagesAndVersionedPlacement() {
+        let image = ChargeLimitAgentStatusItemController.reachedLimitImage()
+        #expect(image != nil)
+        #expect(image?.isTemplate == true)
+        #expect(image?.size == NSSize(width: 24, height: 16))
+        let bitmap = image?.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))
+        let visiblePixelCount = (0..<(bitmap?.pixelsHigh ?? 0)).reduce(0) { count, y in
+            count + (0..<(bitmap?.pixelsWide ?? 0)).filter { x in
+                (bitmap?.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05
+            }.count
+        }
+        #expect(visiblePixelCount > 100)
+        // The E design is a complete framed battery rather than a partially
+        // filled charge gauge, so its silhouette must touch neither side.
+        if let bitmap {
+            let leftEdge = (0..<bitmap.pixelsHigh).filter {
+                (bitmap.colorAt(x: 0, y: $0)?.alphaComponent ?? 0) > 0.05
+            }
+            let rightEdge = (0..<bitmap.pixelsHigh).filter {
+                (bitmap.colorAt(x: bitmap.pixelsWide - 1, y: $0)?.alphaComponent ?? 0) > 0.05
+            }
+            #expect(leftEdge.isEmpty)
+            #expect(rightEdge.isEmpty)
+        }
+        #expect(!ChargeLimitAgentStatusItemController.statusItemAutosaveName.isEmpty)
+        #expect(
+            ChargeLimitAgentStatusItemController.statusItemAutosaveName !=
+                ChargeLimitAgentStatusItemController.legacyStatusItemAutosaveName
+        )
+        for state in [
+            ChargeLimitAgentPresentationState.protectionActive,
+            .limitReached,
+            .temporaryFullCharge,
+            .attentionRequired
+        ] {
+            let stateImage = ChargeLimitAgentStatusItemController.statusItemImage(for: state)
+            #expect(stateImage != nil)
+            #expect(stateImage?.isTemplate == true)
+            #expect(stateImage?.tiffRepresentation == image?.tiffRepresentation)
+        }
+        #expect(ChargeLimitAgentStatusItemController.recoveryInterval == 2)
+        #expect(ChargeLimitAgentStatusItemController.fadeDuration > 0)
+        #expect(ChargeLimitAgentStatusItemController.fadeDuration < 0.5)
+        #expect(ChargeLimitAgentStatusItemController.fadeFrameCount > 1)
+        #expect(ChargeLimitAgentStatusItemController.buttonAvailabilityRetryLimit >= 10)
+        #expect(
+            ChargeLimitAgentStatusItemController.preferredPositionDefaultsKey.contains(
+                ChargeLimitAgentStatusItemController.statusItemAutosaveName
+            )
+        )
+        #expect(
+            ChargeLimitAgentStatusItemController.rememberedPreferredPositionDefaultsKey.contains(
+                ChargeLimitAgentStatusItemController.statusItemAutosaveName
+            )
+        )
+        #expect(ChargeLimitAgentStatusItemController.fallbackPreferredPosition == 350)
+        #expect(ChargeLimitAgentStatusItemController.safePreferredPosition(for: nil) == 350)
+    }
+
+    @MainActor
+    @Test
+    func testEnabledProtectionKeepsMenuBarStatusItemVisibleWithoutReachedStatus() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbhv-agent-persistent-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ChargeLimitAgentModel(
+            configurationDirectory: root,
+            operatingSystemVersion: OperatingSystemVersion(
+                majorVersion: 15,
+                minorVersion: 7,
+                patchVersion: 6
+            )
+        )
+        #expect(!model.shouldShowStatusItem)
+        model.selectDisplayedLimit(85)
+        #expect(model.configuration.enabled)
+        #expect(model.shouldShowStatusItem)
+        model.setMenuBarStatusVisible(false)
+        #expect(!model.shouldShowStatusItem)
+    }
+
+    @Test
+    func testChargeLimitAgentPresentationStateTracksProtectionState() {
+        let configuration = ChargeProtectionConfiguration(
+            enabled: true,
+            fixedLimit: .eighty
+        )
+        #expect(
+            ChargeLimitAgentPresentationState.resolve(
+                configuration: configuration,
+                status: nil
+            ) == .protectionActive
+        )
+        let holding = ChargeProtectionStatus(
+            helperVersion: "test",
+            installed: true,
+            enabled: true,
+            fixedLimit: .eighty,
+            temporaryFullCharge: false,
+            holding: true,
+            adapterConnected: true,
+            batteryPercentage: 80,
+            controlMethod: .powerUIOptimized80
+        )
+        #expect(
+            ChargeLimitAgentPresentationState.resolve(
+                configuration: configuration,
+                status: holding
+            ) == .limitReached
+        )
+        var temporaryFull = configuration
+        temporaryFull.temporaryFullCharge = true
+        #expect(
+            ChargeLimitAgentPresentationState.resolve(
+                configuration: temporaryFull,
+                status: holding
+            ) == .temporaryFullCharge
+        )
+        var failed = holding
+        failed.lastError = "test error"
+        #expect(
+            ChargeLimitAgentPresentationState.resolve(
+                configuration: configuration,
+                status: failed
+            ) == .attentionRequired
+        )
+    }
+
+    @Test
+    func testChargeHelperKeepsKnownGoodControlOrdering() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let helperURL = macosRoot.appendingPathComponent("Sources/DriveBatteryChargeHelper/main.swift")
+        let source = try String(contentsOf: helperURL, encoding: .utf8)
+        #expect(source.contains("private let helperVersion = \"1.1.0.14\""))
+        #expect(!source.contains("st_mode & S_IFLNK"))
+        let markerStart = try #require(source.range(of: "private struct PowerUIOwnershipMarker: Codable"))
+        let markerEnd = try #require(source.range(of: "private func readBattery()", range: markerStart.upperBound..<source.endIndex))
+        let markerBody = source[markerStart.lowerBound..<markerEnd.lowerBound]
+        #expect(!markerBody.contains("createdAt"))
+        #expect(source.contains("output[resultOffset] == kOK"))
+        #expect(source.contains("return true"))
+        #expect(source.contains("private let hasCHTE"))
+        #expect(source.contains("private let hasCHIE"))
+        #expect(source.contains("static func writeLegacyCommand"))
+        #expect(source.contains("private static func keyInfoSizeWithRetry"))
+        #expect(source.contains("Self.keyInfoSizeWithRetry(\"CHTE\", expectedSize: 4)"))
+        #expect(source.contains("Self.keyInfoSizeWithRetry(\"CH0B\", expectedSize: 1)"))
+        #expect(source.contains("Self.keyInfoSizeWithRetry(\"CH0C\", expectedSize: 1)"))
+        #expect(source.contains("Self.keyInfoSizeWithRetry(\"CHIE\", expectedSize: 1)"))
+
+        #expect(source.contains("DBHVPowerUIEngageEighty"))
+        #expect(source.contains("powerui-owner.json"))
+        let holdStart = try #require(source.range(of: "func holdCharging(at batteryPercentage: Int) -> Bool"))
+        let holdEnd = try #require(source.range(of: "func isHoldApplied() -> Bool", range: holdStart.upperBound..<source.endIndex))
+        let holdBody = source[holdStart.lowerBound..<holdEnd.lowerBound]
+        #expect(holdBody.contains("case .chte: return SMC.write(\"CHTE\", value: chteHold)"))
+        #expect(holdBody.contains("case .legacyCH0BCH0C:"))
+        #expect(holdBody.contains("SMC.writeLegacyCommand(\"CH0B\", value: legacyHold)"))
+        #expect(holdBody.contains("SMC.writeLegacyCommand(\"CH0C\", value: legacyHold)"))
+        #expect(!holdBody.contains("SMC.write(\"CHIE\", value: chieConnect)"))
+    }
+
+    @Test
+    func testChargeLimitAgentInstallerUsesCurrentUserLaunchAgentWithoutRoot() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptURL = macosRoot.appendingPathComponent("Resources/ChargeProtection/install-charge-limit-agent.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+        #expect(script.contains("${HOME}/Library/LaunchAgents"))
+        #expect(script.contains("gui/${uid}"))
+        #expect(script.contains("KeepAlive bool true"))
+        #expect(script.contains("source.sha256"))
+        #expect(script.contains("source_fingerprint"))
+        #expect(!script.contains("cmp -s"))
+        #expect(script.contains("DriveBatteryChargeLimitAgent.app"))
+        #expect(script.contains("LSUIElement bool true"))
+        #expect(script.contains("pkill -TERM -f -u"))
+        #expect(script.contains("pkill -KILL -f -u"))
+        #expect(!script.contains("pkill -x -u"))
+        #expect(script.contains("running_count"))
+        #expect(script.contains("legacy_running_count"))
+        #expect(script.contains("The menu-bar agent did not start cleanly."))
+        #expect(script.contains("/bin/rm -rf \"${installation_directory}\""))
+        #expect(script.contains("The menu-bar charge Agent could not be removed completely."))
+        #expect(!script.contains("launchctl kickstart -k"))
+        let unloadIndex = try #require(script.range(of: "        unload\n"))
+        let removalIndex = try #require(script.range(of: "/bin/rm -rf \"${agent_app}\""))
+        #expect(unloadIndex.lowerBound < removalIndex.lowerBound)
+        #expect(!script.contains("sudo"))
+        #expect(!script.contains("0777"))
+        #expect(!script.contains("0666"))
+        let syntax = try SystemCommandRunner(timeout: 5).run("/bin/sh", arguments: ["-n", scriptURL.path])
+        #expect(syntax.status == 0)
+    }
+
+    @Test
+    func testChargeLimitAgentCreatesStatusItemOnlyAfterAppKitLaunch() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryChargeLimitAgent/main.swift"),
+            encoding: .utf8
+        )
+        let launchBody = try #require(
+            source.range(of: "func applicationDidFinishLaunching")
+        )
+        let controllerCreation = try #require(
+            source.range(of: "ChargeLimitAgentStatusItemController(model: model)")
+        )
+        #expect(controllerCreation.lowerBound > launchBody.lowerBound)
+        #expect(source.contains("application.delegate = delegate"))
+        #expect(source.contains("application.finishLaunching()"))
+        #expect(source.contains("delegate.startStatusItemIfNeeded()"))
+        #expect(source.contains("guard model == nil, statusItemController == nil else { return }"))
+        #expect(source.contains("flock(opened, LOCK_EX | LOCK_NB)"))
+
+        let controllerSource = try String(
+            contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryChargeLimitAgent/StatusItemController.swift"),
+            encoding: .utf8
+        )
+        let visible = try #require(controllerSource.range(of: "item.isVisible = true"))
+        let configure = try #require(
+            controllerSource.range(of: "configureButtonIfAvailable()", range: visible.upperBound..<controllerSource.endIndex)
+        )
+        #expect(configure.lowerBound > visible.lowerBound)
+        #expect(controllerSource.contains("NSApp.activate(ignoringOtherApps: true)"))
+        #expect(controllerSource.contains("view.window?.makeKey()"))
+        #expect(controllerSource.contains("override func acceptsFirstMouse"))
+        #expect(controllerSource.contains("created.autosaveName = Self.statusItemAutosaveName"))
+        #expect(controllerSource.contains("screen.auxiliaryTopRightArea"))
+        #expect(controllerSource.contains("recoverFromObscuredSafeAreaIfNeeded"))
+        #expect(controllerSource.contains("defaults.object(forKey: Self.preferredPositionDefaultsKey) == nil"))
+        #expect(controllerSource.contains("removeStatusItemForDisabledProtection"))
+        #expect(controllerSource.contains("rememberCurrentPreferredPosition"))
+        #expect(!controllerSource.contains("item.isVisible = false"))
+        #expect(!controllerSource.contains("defaults.set(0.0"))
+
+        let mainViewsSource = try String(
+            contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryHealthViewer/Views.swift"),
+            encoding: .utf8
+        )
+        #expect(mainViewsSource.contains(".frame(maxWidth: .infinity, minHeight: 34)"))
+        #expect(mainViewsSource.contains(".fixedSize(horizontal: false, vertical: true)"))
+        #expect(!mainViewsSource.contains(".allowsHitTesting(!manager.isPowerUIEightyOnly)"))
+        #expect(!mainViewsSource.contains("optionLabel(percentage)\n                                .allowsHitTesting(false)"))
+        #expect(mainViewsSource.contains("nextSelectableIndex(after:"))
+        #expect(mainViewsSource.contains("presentedIndex = Double(selectedIndex)"))
+        #expect(!mainViewsSource.contains("NSViewRepresentable"))
+        #expect(!mainViewsSource.contains(".onTapGesture { select(index: index) }"))
+
+        let agentViewsSource = try String(
+            contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryChargeLimitAgent/AgentViews.swift"),
+            encoding: .utf8
+        )
+        #expect(agentViewsSource.contains(".frame(maxWidth: .infinity, minHeight: 34)"))
+        #expect(!agentViewsSource.contains(".allowsHitTesting(!model.isPowerUIEightyOnly)"))
+        #expect(!agentViewsSource.contains("optionLabel(percentage)\n                                .allowsHitTesting(false)"))
+        #expect(agentViewsSource.contains("nextSelectableIndex(after:"))
+        #expect(agentViewsSource.contains("presentedIndex = Double(selectedIndex)"))
+        #expect(!agentViewsSource.contains("NSViewRepresentable"))
+        #expect(!agentViewsSource.contains(".onTapGesture { settle(on: index) }"))
+    }
+
+    @MainActor
+    @Test
+    func testChargeLimitAgentWritesOnlyValidatedPrivateConfiguration() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbhv-agent-config-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ChargeLimitAgentModel(
+            configurationDirectory: root,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 7, patchVersion: 6)
+        )
+        model.selectDisplayedLimit(90)
+        let file = root.appendingPathComponent("configuration.json")
+        let data = try Data(contentsOf: file)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let configuration = try decoder.decode(ChargeProtectionConfiguration.self, from: data)
+        #expect(configuration.enabled)
+        #expect(configuration.fixedLimit == .ninety)
+        let mode = try #require(
+            (try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions]) as? NSNumber
+        )
+        #expect(mode.intValue & 0o777 == 0o600)
+    }
+
+    @Test
+    func testLegacyChargeConfigurationDefaultsMenuBarStatusToVisible() throws {
+        let legacy = """
+        {
+          "schema": 1,
+          "enabled": true,
+          "fixedLimit": 85,
+          "temporaryFullCharge": false,
+          "updatedAt": "2026-08-13T12:00:00Z"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let configuration = try decoder.decode(
+            ChargeProtectionConfiguration.self,
+            from: Data(legacy.utf8)
+        )
+        #expect(configuration.showMenuBarStatus)
+    }
+
+    @MainActor
+    @Test
+    func testHiddenMenuBarPreferenceSuppressesReachedStatusItem() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbhv-agent-hidden-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ChargeLimitAgentModel(
+            configurationDirectory: root,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 7, patchVersion: 6)
+        )
+        model.selectDisplayedLimit(85)
+        model.setMenuBarStatusVisible(false)
+        #expect(!model.configuration.showMenuBarStatus)
+        #expect(!model.shouldShowStatusItem)
+    }
+
+    @MainActor
+    @Test
+    func testMacOS158AgentOffersNativeEightyOrNormalHundred() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbhv-agent-158-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ChargeLimitAgentModel(
+            configurationDirectory: root,
+            operatingSystemVersion: OperatingSystemVersion(majorVersion: 15, minorVersion: 8, patchVersion: 0)
+        )
+        #expect(model.isPowerUIEightyOnly)
+        #expect(model.isLimitSelectable(80))
+        #expect(!model.isLimitSelectable(85))
+        #expect(model.isLimitSelectable(100))
+        model.selectDisplayedLimit(95)
+        #expect(model.configuration.fixedLimit == .eighty)
+        model.selectDisplayedLimit(100)
+        #expect(!model.configuration.enabled)
+        #expect(model.configuration.fixedLimit == .oneHundred)
+        #expect(model.displayedLimitPercentage == 100)
+        model.selectDisplayedLimit(80)
+        #expect(model.configuration.enabled)
+        #expect(model.configuration.fixedLimit == .eighty)
+        #expect(model.displayedLimitPercentage == 80)
+        let shortNotice = AgentL10n.text("only80", language: .simplifiedChinese)
+        #expect(!shortNotice.contains("\n"))
+        #expect(shortNotice.count < 32)
+    }
+
+    @MainActor
+    @Test
+    func testAgentMatchesNativeSystemPreferredAndSoftwareManagedPolicies() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dbhv-agent-native-policy-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let nativeVersion = OperatingSystemVersion(majorVersion: 26, minorVersion: 4, patchVersion: 0)
+
+        let systemPreferred = ChargeLimitAgentModel(
+            configurationDirectory: root.appendingPathComponent("system"),
+            operatingSystemVersion: nativeVersion
+        )
+        #expect(systemPreferred.availability == .systemPreferred)
+        #expect(!systemPreferred.shouldShowStatusItem)
+        #expect(!systemPreferred.isLimitSelectable(80))
+        systemPreferred.selectDisplayedLimit(85)
+        systemPreferred.setMenuBarStatusVisible(false)
+        #expect(!systemPreferred.configuration.enabled)
+        #expect(systemPreferred.configuration.fixedLimit == .eighty)
+        #expect(systemPreferred.configuration.showMenuBarStatus)
+
+        let managedDirectory = root.appendingPathComponent("managed", isDirectory: true)
+        try FileManager.default.createDirectory(at: managedDirectory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let managedConfiguration = ChargeProtectionConfiguration(
+            managementMode: .softwareManaged
+        )
+        try encoder.encode(managedConfiguration).write(
+            to: managedDirectory.appendingPathComponent("configuration.json"),
+            options: .atomic
+        )
+        let softwareManaged = ChargeLimitAgentModel(
+            configurationDirectory: managedDirectory,
+            operatingSystemVersion: nativeVersion
+        )
+        #expect(softwareManaged.availability == .softwareManaged)
+        #expect(softwareManaged.isLimitSelectable(85))
+        softwareManaged.selectDisplayedLimit(85)
+        #expect(softwareManaged.configuration.enabled)
+        #expect(softwareManaged.configuration.fixedLimit == .eightyFive)
+    }
+
+    @Test
+    func testOverviewExportUsesDownloadStyleSymbol() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryHealthViewer/Views.swift"),
+            encoding: .utf8
+        )
+        #expect(source.contains("Label(model.t(\"exportReport\"), systemImage: \"square.and.arrow.down\")"))
+        #expect(source.contains("DesktopMacEmptyCard()"))
+        #expect(source.contains("desktopMacEmptyStateAnimationShown"))
+        #expect(source.contains("Image(systemName: \"powerplug.fill\")"))
+        #expect(source.contains("ChargeHelperUninstallButton(manager:"))
+        #expect(source.contains("model.t(\"uninstallChargeHelperConfirm\")"))
+        #expect(source.contains("model.t(\"chargeHelperAuthorizationTitle\")"))
+        #expect(source.contains("model.t(\"chargeHelperInstallAuthorizationMessage\")"))
+        #expect(source.contains("model.t(\"chargeHelperUninstallAuthorizationMessage\")"))
+    }
+
+    @Test
+    func testChargeHelperInstallerCreatesAValidPlistRootAndRollsBackFailure() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptURL = macosRoot.appendingPathComponent("Resources/ChargeProtection/install-charge-helper.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+        #expect(script.contains("/usr/bin/plutil -create xml1"))
+        #expect(!script.contains("PlistBuddy -c 'Clear dict'"))
+        #expect(script.contains("cleanup_install"))
+        #expect(script.contains("restore_charging"))
+        #expect(script.contains("restore_charging \"${fallback_config_path}\" \"${fallback_owner_uid}\""))
+        #expect(script.contains("${state_directory}/powerui-owner.json"))
+        #expect(script.contains("The charge helper launchd job is still registered."))
+        #expect(script.contains("The charge helper could not be removed completely."))
+        #expect(script.contains("launchctl bootout system/\"${identifier}\""))
+        #expect(script.contains("rm -f \"${plist_destination}\" \"${helper_destination}\""))
+        #expect(script.contains("cmp -s \"${helper_source}\" \"${helper_destination}\""))
+        #expect(script.contains("launchctl print system/\"${identifier}\""))
+        let syntax = try SystemCommandRunner(timeout: 5).run("/bin/sh", arguments: ["-n", scriptURL.path])
+        #expect(syntax.status == 0)
+    }
+
+    @Test
+    func testAdministratorCommandPreservesUnicodeSpacesAndQuotes() throws {
+        let macosRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let command = ChargeProtectionManager.administratorCommand(
+            script: "/tmp/充电保护/install helper.sh",
+            arguments: ["install", "/tmp/应用程序/Helper's Tool", "501"]
+        )
+        let output = try SystemCommandRunner(timeout: 5).run(
+            "/bin/sh",
+            arguments: ["-c", "set -- \(command); printf '%s\\n' \"$@\""]
+        )
+        #expect(output.status == 0)
+        #expect(String(data: output.data, encoding: .utf8) == """
+        /tmp/充电保护/install helper.sh
+        install
+        /tmp/应用程序/Helper's Tool
+        501
+
+        """)
+
+        let managerSourceURL = macosRoot
+            .appendingPathComponent("Sources/DriveBatteryHealthViewer/ChargeProtectionManager.swift")
+        let managerSource = try String(contentsOf: managerSourceURL, encoding: .utf8)
+        // The privileged AppleScript now receives one pre-built argument and
+        // never performs the locale-sensitive argv list slicing that produced
+        // error -1708 on a Chinese system.
+        #expect(!managerSource.contains("items 2 thru"))
+        #expect(!managerSource.contains("count argv"))
+    }
+
+    @Test
+    func testApplicationRemovalCleanupUsesGracePeriodAndRecoversDuringUpdates() {
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        var monitor = ApplicationRemovalMonitor(graceInterval: 180)
+        let firstMissing = monitor.shouldCleanUp(applicationExists: false, now: start)
+        let stillMissing = monitor.shouldCleanUp(applicationExists: false, now: start.addingTimeInterval(179))
+        let recovered = monitor.shouldCleanUp(applicationExists: true, now: start.addingTimeInterval(180))
+        let missingAgain = monitor.shouldCleanUp(applicationExists: false, now: start.addingTimeInterval(181))
+        let expired = monitor.shouldCleanUp(applicationExists: false, now: start.addingTimeInterval(361))
+        #expect(!firstMissing)
+        #expect(!stillMissing)
+        #expect(!recovered)
+        #expect(!missingAgain)
+        #expect(expired)
+    }
+
+    @Test
+    func testDiagnosticRangeFilteringMergeEmptySourceAndRedaction() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let app = root.appendingPathComponent("app", isDirectory: true)
+        let helper = root.appendingPathComponent("helper", isDirectory: true)
+        let destination = root.appendingPathComponent("diagnostic.log")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: helper, withIntermediateDirectories: true)
+        let base = Date(timeIntervalSince1970: 2_000_000_000)
+        let records = [
+            DiagnosticLogRecord(timestamp: base.addingTimeInterval(-10), severity: .info, subsystem: DiagnosticLogger.subsystem, category: "hardware", event: "old", message: "too old", source: "APP"),
+            DiagnosticLogRecord(timestamp: base.addingTimeInterval(10), severity: .warning, subsystem: DiagnosticLogger.subsystem, category: "smartctl", event: "timeout", message: "query timed out", source: "APP")
+        ]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let lines = try records.map { try encoder.encode($0) }.reduce(into: Data()) { data, line in data.append(line); data.append(0x0A) }
+        try lines.write(to: app.appendingPathComponent("app.jsonl"))
+        let exporter = DiagnosticLogExporter(appDirectory: app, helperDirectory: helper)
+        try exporter.export(
+            request: DiagnosticExportRequest(start: base, end: base.addingTimeInterval(20)),
+            context: DiagnosticExportContext(appVersion: "1.1.0", buildVersion: "8", selectedLanguage: "zh-Hans", helperInstalled: false, protectionEnabled: true, fixedLimit: 80),
+            destination: destination,
+            now: base.addingTimeInterval(20)
+        )
+        let output = try String(contentsOf: destination)
+        #expect(output.contains("[APP]"))
+        #expect(output.contains("query timed out"))
+        #expect(!output.contains("too old"))
+        #expect(output.contains("No matching helper log entries in the selected period."))
+        #expect(output.range(of: "too old") == nil)
+        #expect(DiagnosticLogger.redact("/Users/sample/Documents/a serial=SECRET") == "~/Documents/a serial=[REDACTED]")
+        #expect(throws: DiagnosticExportValidationError.startAfterEnd) {
+            try DiagnosticExportRequest(start: base.addingTimeInterval(2), end: base).validate(now: base.addingTimeInterval(10))
+        }
+        #expect(throws: DiagnosticExportValidationError.endTooFarInFuture) {
+            try DiagnosticExportRequest(start: base, end: base.addingTimeInterval(1)).validate(now: base)
+        }
+
+        let unreadableHelper = root.appendingPathComponent("helper-file")
+        try Data("not a directory".utf8).write(to: unreadableHelper)
+        let fallbackDestination = root.appendingPathComponent("fallback.log")
+        try DiagnosticLogExporter(appDirectory: app, helperDirectory: unreadableHelper).export(
+            request: DiagnosticExportRequest(start: base, end: base.addingTimeInterval(20)),
+            context: DiagnosticExportContext(appVersion: "1.1.0", buildVersion: "8", selectedLanguage: "en", helperInstalled: true, protectionEnabled: true, fixedLimit: 80),
+            destination: fallbackDestination,
+            now: base.addingTimeInterval(20)
+        )
+        let fallback = try String(contentsOf: fallbackDestination)
+        #expect(fallback.contains("[APP]"))
+        #expect(fallback.contains("[CHARGE-HELPER] Log source unavailable"))
+
+        let helperRecord = DiagnosticLogRecord(
+            timestamp: base.addingTimeInterval(11), severity: .error,
+            subsystem: DiagnosticLogger.subsystem, category: "charge", event: "sample",
+            message: "batterySerial=HELPER-SECRET /Users/private/Documents/file", source: "CHARGE-HELPER"
+        )
+        var helperLine = try encoder.encode(helperRecord)
+        helperLine.append(0x0A)
+        try helperLine.write(to: helper.appendingPathComponent("charge-helper.jsonl"))
+        let redactedDestination = root.appendingPathComponent("redacted-helper.log")
+        try exporter.export(
+            request: DiagnosticExportRequest(start: base, end: base.addingTimeInterval(20)),
+            context: DiagnosticExportContext(appVersion: "1.1.0", buildVersion: "8", selectedLanguage: "en", helperInstalled: true, protectionEnabled: true, fixedLimit: 80),
+            destination: redactedDestination,
+            now: base.addingTimeInterval(20)
+        )
+        let redactedOutput = try String(contentsOf: redactedDestination)
+        #expect(!redactedOutput.contains("HELPER-SECRET"))
+        #expect(!redactedOutput.contains("/Users/private"))
+        #expect(redactedOutput.contains("[REDACTED]"))
+    }
+
+    @Test
+    func testDiagnosticLoggerRotationAndSensitiveSerialRedaction() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let old = root.appendingPathComponent("app-old.jsonl")
+        try Data(repeating: 0x41, count: 2_000).write(to: old)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-20 * 86_400)], ofItemAtPath: old.path)
+        let logger = DiagnosticLogger(directory: root, retentionDays: 14, maximumBytes: 20 * 1_024 * 1_024, now: { now })
+        logger.log(.info, category: "privacy", event: "sample", message: "diskSerial=VERY-SECRET /Users/private/Documents/file")
+        logger.flush()
+        logger.cleanNow()
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        let current = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.pathExtension == "jsonl" }
+        let contents = try current.map { try String(contentsOf: $0) } ?? ""
+        #expect(!contents.contains("VERY-SECRET"))
+        #expect(!contents.contains("/Users/private"))
+        #expect(contents.contains("[REDACTED]"))
     }
 
     private func sampleSnapshot() -> HealthSnapshot {
@@ -1120,6 +2411,7 @@ struct CoreTests {
                 protocolName: "NVMe", capacityBytes: 1_000_000_000_000, smartStatus: "Verified", healthState: .good,
                 lifeRemainingPercent: 98, temperatureCelsius: 35, powerOnHours: 100, powerCycles: 20,
                 bytesRead: 2_000_000_000, bytesWritten: 3_000_000_000, unsafeShutdowns: 1, mediaErrors: 0,
+                errorLogEntries: 2,
                 isSolidState: true, isInternal: true, notes: []
             )],
             batteries: [BatteryInfo(

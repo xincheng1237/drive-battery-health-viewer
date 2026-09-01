@@ -1,6 +1,6 @@
 import Foundation
 
-let applicationVersion = "1.0.6"
+let applicationVersion = "1.1.0"
 
 enum HealthState: String, Codable, Sendable {
     case good
@@ -27,6 +27,7 @@ struct DriveInfo: Codable, Identifiable, Hashable, Sendable {
     var bytesWritten: UInt64?
     var unsafeShutdowns: UInt64?
     var mediaErrors: UInt64?
+    var errorLogEntries: UInt64? = nil
     var isSolidState: Bool?
     var isInternal: Bool?
     var notes: [String]
@@ -153,6 +154,7 @@ extension HealthSnapshot {
                 value.bytesWritten = value.bytesWritten ?? old.bytesWritten
                 value.unsafeShutdowns = value.unsafeShutdowns ?? old.unsafeShutdowns
                 value.mediaErrors = value.mediaErrors ?? old.mediaErrors
+                value.errorLogEntries = value.errorLogEntries ?? old.errorLogEntries
                 value.isSolidState = value.isSolidState ?? old.isSolidState
                 value.isInternal = value.isInternal ?? old.isInternal
                 return value

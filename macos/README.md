@@ -19,6 +19,9 @@
 - macOS 26 及以上版本适配 Liquid Glass 界面效果
 - 输出同时支持 Apple Silicon 与 Intel 的 Universal 2 应用
 - 内置 Universal 2 版只读 `smartctl` 7.5；当 macOS 或已安装的兼容驱动公开底层设备时补充读取详细信息，许可证和完整对应源代码随应用分发
+- Apple Silicon 充电保护：macOS 15.8 使用 PowerUI 原生 80% 路径；其他受支持组合提供 80% 至 100% 多档位，运行时检测 CHTE 或旧式 CH0B+CH0C，并保留“本次充满”
+- 充电保护启用期间持续显示菜单栏状态图标，并根据保护中、到达上限、本次充满或需要注意切换状态。普通用户 LaunchAgent 负责图标与快捷控制，因此主应用完全退出后仍可操作
+- 轻量 JSON Lines 诊断日志，支持从“帮助 → 导出诊断日志…”按时间范围合并导出主程序与 helper 日志
 
 ## 系统要求
 
@@ -36,8 +39,8 @@ swift test --disable-sandbox
 
 构建脚本生成：
 
-- `DriveBatteryHealthViewer_v1.0.6_macOS_Universal.zip`
-- `DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`
+- `DriveBatteryHealthViewer_v1.1.0_macOS_Universal.zip`
+- `DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`
 
 发布文件位于 `macos/dist/`。文件名包含版本、系统和 Universal 标识，便于在 GitHub Releases 中管理；DMG 提供“拖入应用程序”安装界面，安装后的应用始终为简洁的 `Drive & Battery Health Viewer.app`。
 
@@ -53,7 +56,7 @@ swift test --disable-sandbox
 
 ## macOS 数据限制
 
-本应用通过 macOS 自带的 `diskutil`、`system_profiler`、I/O Registry 以及随包提供的只读 `smartctl` 进行查询，不进行测速、写入、修复、擦除或固件更新。`smartctl` 的许可证、声明和完整对应源代码位于应用资源中的 `ThirdParty/smartmontools/`。
+硬盘、S.M.A.R.T. 与健康信息通过 macOS 自带的 `diskutil`、`system_profiler`、I/O Registry 以及随包提供的只读 `smartctl` 查询，不进行测速、修复、擦除或固件更新。`smartctl` 的许可证、声明和完整对应源代码位于应用资源中的 `ThirdParty/smartmontools/`。
 
 macOS 原生不提供通用的 USB/SCSI S.M.A.R.T. 透传。应用不会安装内核扩展，也不会尝试 Darwin 后端不支持的 SAT/SNT 桥接模式；USB 设备只有在系统或用户另行安装的兼容驱动已公开底层数据时，才能补充读取对应 S.M.A.R.T. 项目。
 
@@ -70,3 +73,25 @@ macOS 不会向普通第三方应用开放所有硬件底层数据，因此以�
 ## 隐私
 
 序列号隐藏默认开启。开启状态下，新保存的历史记录只写入脱敏值；复制或导出的报告也不会包含原始硬盘和电池序列号。
+
+## 电池充电保护（v1.1.0）
+
+- Apple Silicon + macOS 13 至 26.3（macOS 15.8 除外）在检测到 CHTE 或旧式 CH0B+CH0C 能力后，提供 80% / 85% / 90% / 95% / 100% 多档位。Intel Mac 不开放。
+- macOS 26.4 及以上默认折叠并优先推荐系统原生充电上限。用户仍可明确选择“继续使用本软件”；确认系统上限为 100% 并关闭“优化电池充电”后，再启用同样的 80% / 85% / 90% / 95% / 100% 多档位软件保护。在用户未明确完成该流程前，helper 不会控制充电。
+- 首次启用通过管理员授权把 arm64 helper 安装到 `/Library/PrivilegedHelperTools/com.chengxin.drivebatteryhealthviewer.chargehelper`，LaunchDaemon 位于 `/Library/LaunchDaemons/`。新版应用首次启动时也会比较包内与已安装 helper，并在不一致时完整替换旧版；主应用始终以普通用户身份运行。
+- 首次启用同时安装不提权的当前用户菜单栏代理到 `~/Library/Application Support/DriveBatteryHealthViewer/ChargeLimitAgent/`，LaunchAgent 位于 `~/Library/LaunchAgents/`；它只读取 helper 状态并写入经过校验的用户配置，不访问 SMC。
+- 配置位于用户的 `~/Library/Application Support/DriveBatteryHealthViewer/ChargeProtection/`（目录 `0700`、文件 `0600`）；helper、LaunchDaemon、状态和日志由 root 管理，普通用户可读日志但不可修改。
+- macOS 15.8 使用系统 PowerUI OBC：80% 用于启用原生上限，达到目标后保持适配器连接并停止电池充电；100% 用于关闭充电保护，85% / 90% / 95% 仍显示但置灰。其他支持的固件优先使用 CHTE，旧式 Apple Silicon 固件使用 CH0B+CH0C。CHIE 会隔离适配器，绝不作为普通限充 fallback。
+- “本次充满”仅是持久化的临时 override：达到 100%/FullyCharged 后自动结束并恢复原固定档位，不包含周期性自动充满逻辑。
+- 关闭保护或卸载 helper 前恢复正常充电；配置异常、电池读取失败、SMC 写入/校验失败和终止信号均触发优先恢复。
+
+该功能参考并重构 [ChargeWatch](https://github.com/TY-teo/ChargeWatching) 的 AppleSMC、CHTE/CHIE 与 fail-safe 思路，并补充旧式 CH0B/CH0C 兼容路径；没有复制整个 App，也没有加入其周期性充满逻辑。ChargeWatch 的 MIT License 与作者 TY-teo 版权保存在 `Resources/ThirdParty/ChargeWatch/` 并随 App 分发。实际控制能力取决于 Mac 型号、系统与固件，仍必须在真实受支持设备上验证。
+
+## 诊断日志
+
+- 主程序：`~/Library/Logs/DriveBatteryHealthViewer/`（用户目录 `0700`、文件 `0600`）。
+- 充电 helper：`/Library/Logs/DriveBatteryHealthViewer/`（root 写入、文件 `0644`，普通用户只读）。
+- JSON Lines 记录时间、级别、分类和事件；Release 不写高频 debug，也不会每 3 秒记录电量。
+- 默认不记录硬盘/电池序列号、报告正文、剪贴板、用户名、Apple ID 或完整私人路径；用户主目录统一脱敏为 `~`。
+- 启动/写入时清理约 14 天前的记录，并限制总容量约 20 MB。
+- “帮助 → 导出诊断日志…”默认最近 1 小时，可选择日期和时间；导出按时间排序合并 `[APP]` 与 `[CHARGE-HELPER]`，缺失来源会在文件中明确说明。

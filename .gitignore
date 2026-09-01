@@ -38,3 +38,8 @@ macos/dist/
 
 # macOS metadata
 .DS_Store
+
+# Local development handoff and release staging
+CODEX_HANDOFF.md
+V1.1.0_DEVELOPMENT_LOCATION.txt
+dist-v1.1.0/

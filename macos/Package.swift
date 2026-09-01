@@ -6,7 +6,9 @@ let package = Package(
     name: "DriveBatteryHealthViewer",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "DriveBatteryHealthViewer", targets: ["DriveBatteryHealthViewer"])
+        .executable(name: "DriveBatteryHealthViewer", targets: ["DriveBatteryHealthViewer"]),
+        .executable(name: "DriveBatteryChargeHelper", targets: ["DriveBatteryChargeHelper"]),
+        .executable(name: "DriveBatteryChargeLimitAgent", targets: ["DriveBatteryChargeLimitAgent"])
     ],
     targets: [
         .target(
@@ -18,14 +20,35 @@ let package = Package(
                 .linkedFramework("IOKit")
             ]
         ),
+        .target(
+            name: "ChargeProtectionCore",
+            path: "Sources/ChargeProtectionCore"
+        ),
+        .target(
+            name: "CPowerUIBridge",
+            path: "Sources/CPowerUIBridge",
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedFramework("Foundation")]
+        ),
         .executableTarget(
             name: "DriveBatteryHealthViewer",
-            dependencies: ["CNVMeSMART"],
+            dependencies: ["CNVMeSMART", "ChargeProtectionCore"],
             path: "Sources/DriveBatteryHealthViewer"
+        ),
+        .executableTarget(
+            name: "DriveBatteryChargeHelper",
+            dependencies: ["ChargeProtectionCore", "CPowerUIBridge"],
+            path: "Sources/DriveBatteryChargeHelper",
+            linkerSettings: [.linkedFramework("IOKit")]
+        ),
+        .executableTarget(
+            name: "DriveBatteryChargeLimitAgent",
+            dependencies: ["ChargeProtectionCore"],
+            path: "Sources/DriveBatteryChargeLimitAgent"
         ),
         .testTarget(
             name: "DriveBatteryHealthViewerTests",
-            dependencies: ["DriveBatteryHealthViewer"],
+            dependencies: ["DriveBatteryHealthViewer", "DriveBatteryChargeLimitAgent", "ChargeProtectionCore"],
             path: "Tests/DriveBatteryHealthViewerTests"
         )
     ],

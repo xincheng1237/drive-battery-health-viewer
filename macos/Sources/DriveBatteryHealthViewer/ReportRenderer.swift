@@ -27,6 +27,7 @@ enum ReportRenderer {
             append(&lines, L10n.text("totalWritten", language), drive.bytesWritten.map { $0.formattedStorage }, language)
             append(&lines, L10n.text("unsafeShutdowns", language), drive.unsafeShutdowns.map(String.init), language)
             append(&lines, L10n.text("mediaErrors", language), drive.mediaErrors.map(String.init), language)
+            append(&lines, L10n.text("errorLogEntries", language), drive.errorLogEntries.map(String.init), language)
         }
 
         lines.append("")

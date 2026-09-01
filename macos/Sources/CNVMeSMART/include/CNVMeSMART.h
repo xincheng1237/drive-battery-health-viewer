@@ -13,6 +13,7 @@ typedef struct DBHVNVMeSMARTData {
     uint64_t powerOnHours;
     uint64_t unsafeShutdowns;
     uint64_t mediaErrors;
+    uint64_t errorLogEntries;
 } DBHVNVMeSMARTData;
 
 /// Reads the public Apple NVMe SMART interface for the physical BSD disk name.

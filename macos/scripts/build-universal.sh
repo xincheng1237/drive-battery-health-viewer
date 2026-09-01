@@ -6,11 +6,13 @@ project_dir="${script_dir:h}"
 repo_dir="${project_dir:h}"
 dist_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
-version="1.0.6"
+version="1.1.0"
 app_name="Drive & Battery Health Viewer"
 artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 executable_name="DriveBatteryHealthViewer"
-bundle_build="7"
+bundle_build="9"
+charge_helper_name="DriveBatteryChargeHelper"
+charge_limit_agent_name="DriveBatteryChargeLimitAgent"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
 minimum_system="13.0"
 smartctl_sha256="5d8a03980cba1799a94f7f9740827a6d058062aa78805c8c29c22918b34257a8"
@@ -31,8 +33,43 @@ build_architecture() {
     SWIFTPM_MODULECACHE_OVERRIDE="${scratch_dir}/module-cache" \
     swift build \
         --package-path "${project_dir}" \
+        --product "${executable_name}" \
         -c release \
         --triple "${triple}" \
+        --disable-sandbox \
+        --cache-path "${scratch_dir}/cache" \
+        --config-path "${scratch_dir}/config" \
+        --security-path "${scratch_dir}/security" \
+        --scratch-path "${scratch_dir}"
+}
+
+build_charge_helper() {
+    local scratch_dir="${project_dir}/.build-charge-helper"
+    mkdir -p "${scratch_dir}/module-cache" "${scratch_dir}/cache" "${scratch_dir}/config" "${scratch_dir}/security"
+    CLANG_MODULE_CACHE_PATH="${scratch_dir}/module-cache" \
+    SWIFTPM_MODULECACHE_OVERRIDE="${scratch_dir}/module-cache" \
+    swift build \
+        --package-path "${project_dir}" \
+        --product "${charge_helper_name}" \
+        -c release \
+        --triple "arm64-apple-macosx13.0" \
+        --disable-sandbox \
+        --cache-path "${scratch_dir}/cache" \
+        --config-path "${scratch_dir}/config" \
+        --security-path "${scratch_dir}/security" \
+        --scratch-path "${scratch_dir}"
+}
+
+build_charge_limit_agent() {
+    local scratch_dir="${project_dir}/.build-charge-limit-agent"
+    mkdir -p "${scratch_dir}/module-cache" "${scratch_dir}/cache" "${scratch_dir}/config" "${scratch_dir}/security"
+    CLANG_MODULE_CACHE_PATH="${scratch_dir}/module-cache" \
+    SWIFTPM_MODULECACHE_OVERRIDE="${scratch_dir}/module-cache" \
+    swift build \
+        --package-path "${project_dir}" \
+        --product "${charge_limit_agent_name}" \
+        -c release \
+        --triple "arm64-apple-macosx13.0" \
         --disable-sandbox \
         --cache-path "${scratch_dir}/cache" \
         --config-path "${scratch_dir}/config" \
@@ -73,11 +110,17 @@ make_app_bundle() {
     mkdir -p \
         "${bundle_path}/Contents/MacOS" \
         "${bundle_path}/Contents/Helpers" \
-        "${bundle_path}/Contents/Resources/ThirdParty"
+        "${bundle_path}/Contents/Resources/ThirdParty" \
+        "${bundle_path}/Contents/Resources/ChargeProtection"
     cp "${project_dir}/Info.plist" "${bundle_path}/Contents/Info.plist"
     cp "${binary_file}" "${bundle_path}/Contents/MacOS/${executable_name}"
     cp "${project_dir}/Resources/Tools/smartctl" "${bundle_path}/Contents/Helpers/smartctl"
+    cp "${charge_helper_binary}" "${bundle_path}/Contents/Helpers/${charge_helper_name}"
+    cp "${charge_limit_agent_binary}" "${bundle_path}/Contents/Helpers/${charge_limit_agent_name}"
     cp -R "${project_dir}/Resources/ThirdParty/smartmontools" "${bundle_path}/Contents/Resources/ThirdParty/"
+    cp -R "${project_dir}/Resources/ThirdParty/ChargeWatch" "${bundle_path}/Contents/Resources/ThirdParty/"
+    cp "${project_dir}/Resources/ChargeProtection/install-charge-helper.sh" "${bundle_path}/Contents/Resources/ChargeProtection/"
+    cp "${project_dir}/Resources/ChargeProtection/install-charge-limit-agent.sh" "${bundle_path}/Contents/Resources/ChargeProtection/"
     cp "${staging_dir}/AppIcon.icns" "${bundle_path}/Contents/Resources/AppIcon.icns"
     local localization_dir
     for localization_dir in "${project_dir}"/Resources/*.lproj; do
@@ -85,11 +128,17 @@ make_app_bundle() {
     done
     chmod 755 \
         "${bundle_path}/Contents/MacOS/${executable_name}" \
-        "${bundle_path}/Contents/Helpers/smartctl"
+        "${bundle_path}/Contents/Helpers/smartctl" \
+        "${bundle_path}/Contents/Helpers/${charge_helper_name}" \
+        "${bundle_path}/Contents/Helpers/${charge_limit_agent_name}" \
+        "${bundle_path}/Contents/Resources/ChargeProtection/install-charge-helper.sh" \
+        "${bundle_path}/Contents/Resources/ChargeProtection/install-charge-limit-agent.sh"
     xattr -cr "${bundle_path}"
     xattr -d com.apple.FinderInfo "${bundle_path}" 2>/dev/null || true
     xattr -d 'com.apple.fileprovider.fpfs#P' "${bundle_path}" 2>/dev/null || true
     codesign --force --sign - "${bundle_path}/Contents/Helpers/smartctl"
+    codesign --force --sign - --identifier com.chengxin.drivebatteryhealthviewer.chargehelper "${bundle_path}/Contents/Helpers/${charge_helper_name}"
+    codesign --force --sign - --identifier com.chengxin.drivebatteryhealthviewer.chargelimitagent "${bundle_path}/Contents/Helpers/${charge_limit_agent_name}"
     codesign --force --sign - "${bundle_path}"
 }
 
@@ -127,11 +176,15 @@ if [[ "${smartctl_version}" != *"smartctl 7.5"* || "${smartctl_version}" != *"r5
 fi
 build_architecture arm64
 build_architecture x86_64
+build_charge_helper
+build_charge_limit_agent
 make_icon
 
 arm_binary="$(binary_path arm64)"
 intel_binary="$(binary_path x86_64)"
-if [[ -z "${arm_binary}" || -z "${intel_binary}" ]]; then
+charge_helper_binary="$(find "${project_dir}/.build-charge-helper" -type f -path "*/release/${charge_helper_name}" -perm -111 -print -quit)"
+charge_limit_agent_binary="$(find "${project_dir}/.build-charge-limit-agent" -type f -path "*/release/${charge_limit_agent_name}" -perm -111 -print -quit)"
+if [[ -z "${arm_binary}" || -z "${intel_binary}" || -z "${charge_helper_binary}" || -z "${charge_limit_agent_binary}" ]]; then
     print -u2 "Could not locate one or both release binaries."
     exit 1
 fi
@@ -152,6 +205,24 @@ for binary in \
         exit 1
     fi
 done
+if [[ "$(lipo -archs "${universal_app}/Contents/Helpers/${charge_helper_name}")" != "arm64" ]]; then
+    print -u2 "Charge helper must be arm64-only."
+    exit 1
+fi
+if [[ "$(lipo -archs "${universal_app}/Contents/Helpers/${charge_limit_agent_name}")" != "arm64" ]]; then
+    print -u2 "Charge-limit menu-bar agent must be arm64-only."
+    exit 1
+fi
+helper_identifier=$(/usr/bin/codesign -dv "${universal_app}/Contents/Helpers/${charge_helper_name}" 2>&1 | awk -F= '$1 == "Identifier" { print $2; exit }')
+if [[ "${helper_identifier}" != "com.chengxin.drivebatteryhealthviewer.chargehelper" ]]; then
+    print -u2 "Charge helper has an unexpected code-signing identifier."
+    exit 1
+fi
+agent_identifier=$(/usr/bin/codesign -dv "${universal_app}/Contents/Helpers/${charge_limit_agent_name}" 2>&1 | awk -F= '$1 == "Identifier" { print $2; exit }')
+if [[ "${agent_identifier}" != "com.chengxin.drivebatteryhealthviewer.chargelimitagent" ]]; then
+    print -u2 "Charge-limit menu-bar agent has an unexpected code-signing identifier."
+    exit 1
+fi
 verify_minimum_system "${universal_app}/Contents/MacOS/${executable_name}" arm64 "${minimum_system}"
 verify_minimum_system "${universal_app}/Contents/MacOS/${executable_name}" x86_64 "${minimum_system}"
 
@@ -163,12 +234,22 @@ fi
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${universal_app}/Contents/Info.plist")" != "${bundle_build}" ||
       "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${universal_app}/Contents/Info.plist")" != "${bundle_identifier}" ||
       "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "${universal_app}/Contents/Info.plist")" != "${minimum_system}" ]]; then
-    print -u2 "Bundle metadata does not match the 1.0.6 release manifest."
+    print -u2 "Bundle metadata does not match the 1.1.0 release manifest."
     exit 1
 fi
 
 archive="${dist_dir}/${artifact_name}.zip"
-ditto -c -k --sequesterRsrc --keepParent "${universal_app}" "${archive}"
+temporary_archive="${staging_dir}/${artifact_name}.zip"
+find "${universal_app}" -name '._*' -delete
+archive_staging="${staging_dir}/archive"
+mkdir -p "${archive_staging}"
+COPYFILE_DISABLE=1 cp -R -X "${universal_app}" "${archive_staging}/"
+find "${archive_staging}" -name '._*' -delete
+(
+    cd "${archive_staging}"
+    /usr/bin/zip -q -r -y "${temporary_archive}" "${app_name}.app"
+)
+mv -f "${temporary_archive}" "${archive}"
 (
     cd "${dist_dir}"
     /usr/bin/shasum -a 256 "${archive:t}" > "${archive:t}.sha256"
@@ -176,4 +257,8 @@ ditto -c -k --sequesterRsrc --keepParent "${universal_app}" "${archive}"
 
 lipo -info "${universal_app}/Contents/MacOS/${executable_name}"
 plutil -lint "${universal_app}/Contents/Info.plist"
+test -f "${universal_app}/Contents/Resources/ThirdParty/ChargeWatch/LICENSE"
+test -f "${universal_app}/Contents/Resources/ThirdParty/ChargeWatch/NOTICE.md"
+test -x "${universal_app}/Contents/Resources/ChargeProtection/install-charge-helper.sh"
+test -x "${universal_app}/Contents/Resources/ChargeProtection/install-charge-limit-agent.sh"
 print "Built macOS release artifacts in ${dist_dir}"

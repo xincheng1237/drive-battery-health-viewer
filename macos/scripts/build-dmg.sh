@@ -4,13 +4,13 @@ set -euo pipefail
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 dist_dir="${project_dir}/dist"
-version="1.0.6"
+version="1.1.0"
 app_name="Drive & Battery Health Viewer"
 artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 volume_name="Drive & Battery Health Viewer ${version}"
 archive="${dist_dir}/${artifact_name}.zip"
 output="${dist_dir}/${artifact_name}.dmg"
-bundle_build="7"
+bundle_build="9"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
 minimum_system="13.0"
 smartctl_source_sha256="690b83ca331378da9ea0d9d61008c4b22dde391387b9bbad7f29387f2595f76e"
@@ -116,11 +116,35 @@ for binary in \
         exit 1
     fi
 done
+if [[ "$(lipo -archs "${verified_app}/Contents/Helpers/DriveBatteryChargeHelper")" != "arm64" ]]; then
+    print -u2 "DMG charge helper must be arm64-only."
+    exit 1
+fi
+if [[ "$(lipo -archs "${verified_app}/Contents/Helpers/DriveBatteryChargeLimitAgent")" != "arm64" ]]; then
+    print -u2 "DMG charge-limit menu-bar agent must be arm64-only."
+    exit 1
+fi
+/usr/bin/codesign --verify --strict "${verified_app}/Contents/Helpers/DriveBatteryChargeHelper"
+/usr/bin/codesign --verify --strict "${verified_app}/Contents/Helpers/DriveBatteryChargeLimitAgent"
+helper_identifier=$(/usr/bin/codesign -dv "${verified_app}/Contents/Helpers/DriveBatteryChargeHelper" 2>&1 | awk -F= '$1 == "Identifier" { print $2; exit }')
+if [[ "${helper_identifier}" != "com.chengxin.drivebatteryhealthviewer.chargehelper" ]]; then
+    print -u2 "DMG charge helper has an unexpected code-signing identifier."
+    exit 1
+fi
+agent_identifier=$(/usr/bin/codesign -dv "${verified_app}/Contents/Helpers/DriveBatteryChargeLimitAgent" 2>&1 | awk -F= '$1 == "Identifier" { print $2; exit }')
+if [[ "${agent_identifier}" != "com.chengxin.drivebatteryhealthviewer.chargelimitagent" ]]; then
+    print -u2 "DMG charge-limit menu-bar agent has an unexpected code-signing identifier."
+    exit 1
+fi
 verify_minimum_system "${verified_app}/Contents/MacOS/DriveBatteryHealthViewer" arm64 "${minimum_system}"
 verify_minimum_system "${verified_app}/Contents/MacOS/DriveBatteryHealthViewer" x86_64 "${minimum_system}"
 test -f "${verified_app}/Contents/Resources/ThirdParty/smartmontools/COPYING"
 test -f "${verified_app}/Contents/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz"
 test -s "${verified_app}/Contents/Resources/ThirdParty/smartmontools/NOTICE.md"
+test -f "${verified_app}/Contents/Resources/ThirdParty/ChargeWatch/LICENSE"
+test -s "${verified_app}/Contents/Resources/ThirdParty/ChargeWatch/NOTICE.md"
+test -x "${verified_app}/Contents/Resources/ChargeProtection/install-charge-helper.sh"
+test -x "${verified_app}/Contents/Resources/ChargeProtection/install-charge-limit-agent.sh"
 gzip -t "${verified_app}/Contents/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz"
 if [[ "$(/usr/bin/shasum -a 256 "${verified_app}/Contents/Resources/ThirdParty/smartmontools/smartmontools-7.5.tar.gz" | awk '{print $1}')" != "${smartctl_source_sha256}" ||
       "$(/usr/bin/shasum -a 256 "${verified_app}/Contents/Resources/ThirdParty/smartmontools/COPYING" | awk '{print $1}')" != "${smartctl_copying_sha256}" ]]; then

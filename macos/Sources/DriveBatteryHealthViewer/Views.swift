@@ -1,4 +1,5 @@
 import AppKit
+import ChargeProtectionCore
 import SwiftUI
 
 struct RootView: View {
@@ -16,6 +17,13 @@ struct RootView: View {
         } detail: {
             destinationView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if model.showsVersionUpdatePrompt {
+                        VersionUpdateTip()
+                            .environmentObject(model)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
         }
         .navigationSplitViewStyle(.prominentDetail)
         .toolbar { toolbar }
@@ -26,6 +34,22 @@ struct RootView: View {
             Button(model.t("done"), role: .cancel) { model.alertMessage = nil }
         } message: {
             Text(model.alertMessage ?? "")
+        }
+        .alert(
+            model.t("chargeHelperAuthorizationTitle"),
+            isPresented: Binding(
+                get: { model.chargeProtection.showsHelperUpdateAuthorizationPrompt },
+                set: { model.chargeProtection.showsHelperUpdateAuthorizationPrompt = $0 }
+            )
+        ) {
+            Button(model.t("continueAuthorization")) {
+                model.chargeProtection.continueInstalledHelperUpdate()
+            }
+            Button(model.t("cancel"), role: .cancel) {
+                model.chargeProtection.showsHelperUpdateAuthorizationPrompt = false
+            }
+        } message: {
+            Text(model.t("chargeHelperInstallAuthorizationMessage"))
         }
         .overlay(alignment: .bottom) {
             if let message = model.transientMessage {
@@ -50,6 +74,11 @@ struct RootView: View {
             UpdateAvailableView(update: update)
                 .environmentObject(model)
         }
+        .sheet(isPresented: $model.showsDiagnosticExport) {
+            DiagnosticExportView()
+                .environmentObject(model)
+        }
+        .animation(.easeOut(duration: 0.22), value: model.showsVersionUpdatePrompt)
     }
 
     @ViewBuilder
@@ -67,14 +96,26 @@ struct RootView: View {
         if model.destination == .overview {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button(action: model.refresh) {
-                    Label(model.isScanning ? model.t("refreshing") : model.t("refresh"), systemImage: "arrow.clockwise")
+                    ZStack {
+                        Image(systemName: "arrow.clockwise")
+                            .opacity(model.isScanning ? 0 : 1)
+                        if model.isScanning {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    // Keep the idle icon and progress indicator in one fixed
+                    // toolbar slot so scrolling or window resizing cannot
+                    // make the spinner appear above or below the button.
+                    .frame(width: 16, height: 16, alignment: .center)
                 }
                 .id("refresh.\(model.language.rawValue)")
+                .accessibilityLabel(model.isScanning ? model.t("refreshing") : model.t("refresh"))
                 .help(model.t("refresh"))
                 .disabled(model.isScanning)
 
                 Button(action: model.presentExportCurrentReportPanel) {
-                    Label(model.t("exportReport"), systemImage: "square.and.arrow.up")
+                    Label(model.t("exportReport"), systemImage: "square.and.arrow.down")
                 }
                 .id("export.\(model.language.rawValue)")
                 .help(model.t("exportReport"))
@@ -104,6 +145,52 @@ struct RootView: View {
         }
     }
 
+}
+
+/// A compact, nonmodal in-app tip. It follows Apple's guidance to keep
+/// optional onboarding contextual and dismissible, and never steals focus or
+/// blocks the user's current work like a launch alert or sheet would.
+private struct VersionUpdateTip: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.format("versionUpdatePromptTitle", model.language, model.displayedAppVersion))
+                    .font(.headline)
+                Text(model.t("versionUpdatePromptMessage"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button(model.t("viewChangelog")) {
+                model.presentChangelogFromVersionUpdatePrompt()
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                model.dismissVersionUpdatePrompt()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(model.t("dismissVersionUpdatePrompt"))
+            .accessibilityLabel(model.t("dismissVersionUpdatePrompt"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .dbhvCardSurface(cornerRadius: 11)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
 }
 
 private struct UpdateAvailableView: View {
@@ -167,7 +254,11 @@ struct OverviewView: View {
                         }
                         hardwareSection(title: model.t("batteries"), count: snapshot.batteries.count, symbol: "battery.75percent") {
                             if snapshot.batteries.isEmpty {
-                                EmptyCard(text: model.t("noBattery"), symbol: "desktopcomputer")
+                                if snapshot.warnings.contains(where: { $0.hasPrefix("Battery information:") }) {
+                                    EmptyCard(text: model.t("noBattery"), symbol: "battery.0percent")
+                                } else {
+                                    DesktopMacEmptyCard()
+                                }
                             } else {
                                 ForEach(snapshot.batteries) { BatteryCard(battery: $0) }
                             }
@@ -222,7 +313,6 @@ struct OverviewView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if model.isScanning { ProgressView().controlSize(.small) }
         }
     }
 
@@ -273,10 +363,16 @@ struct DriveCard: View {
             DetailItem(model.t("temperature"), drive.temperatureCelsius.map { String(format: "%.1f °C", $0) }),
             DetailItem(model.t("firmware"), drive.firmware),
             DetailItem(model.t("smartStatus"), drive.smartStatus),
-            DetailItem(model.t("powerOnHours"), drive.powerOnHours.map { L10n.format("hours", model.language, $0) }),
+            DetailItem(
+                model.t("powerOnHours"),
+                drive.powerOnHours.map { L10n.format("hours", model.language, $0) },
+                helpText: drive.isInternal == true && drive.isSolidState == true ? model.t("driveWorkingTimeDetail") : nil
+            ),
             DetailItem(model.t("powerCycles"), drive.powerCycles.map(String.init)),
             DetailItem(model.t("totalRead"), drive.bytesRead.map { $0.formattedStorage }),
-            DetailItem(model.t("totalWritten"), drive.bytesWritten.map { $0.formattedStorage })
+            DetailItem(model.t("totalWritten"), drive.bytesWritten.map { $0.formattedStorage }),
+            DetailItem(model.t("unsafeShutdowns"), drive.unsafeShutdowns.map(String.init)),
+            DetailItem(model.t("errorLogEntries"), drive.errorLogEntries.map(String.init))
         ]
     }
 
@@ -321,6 +417,7 @@ struct BatteryCard: View {
                     }
                     Divider()
                     DetailGrid(items: batteryDetails)
+                    ChargeProtectionSection(manager: model.chargeProtection)
                 }
             }
             if showsPowerNotice {
@@ -369,6 +466,652 @@ struct BatteryCard: View {
             : .spring(response: 0.34, dampingFraction: 0.88)
     }
 
+}
+
+struct ChargeLimitPicker: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject var manager: ChargeProtectionManager
+    var onSelect: ((Int) -> Bool)?
+    @State private var draggingValue: Double?
+    @State private var presentedIndex: Double?
+
+    private let percentages = [80, 85, 90, 95, 100]
+
+    init(
+        manager: ChargeProtectionManager,
+        onSelect: ((Int) -> Bool)? = nil
+    ) {
+        self.manager = manager
+        self.onSelect = onSelect
+    }
+
+    var body: some View {
+        standardPicker
+        .onAppear {
+            if presentedIndex == nil { presentedIndex = Double(selectedIndex) }
+        }
+        .onChange(of: manager.displayedLimitPercentage) { _ in
+            guard draggingValue == nil else { return }
+            let target = Double(selectedIndex)
+            guard presentedIndex != target else { return }
+            if presentedIndex == nil {
+                presentedIndex = target
+            } else {
+                withAnimation(selectionAnimation) { presentedIndex = target }
+            }
+        }
+    }
+
+    private var standardPicker: some View {
+        VStack(spacing: 6) {
+            chargeLimitTrack
+
+            HStack(spacing: 0) {
+                ForEach(Array(percentages.enumerated()), id: \.offset) { index, percentage in
+                    Button { select(index: index) } label: {
+                        optionLabel(percentage)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!manager.isLimitSelectable(percentage))
+                    .help("\(percentage)%")
+                    .accessibilityLabel("\(model.t("fixedChargeLimit")) \(percentage)%")
+                    .opacity(manager.isLimitSelectable(percentage) ? 1 : 0.38)
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                }
+            }
+            .frame(height: 38)
+        }
+    }
+
+    private func optionLabel(_ percentage: Int) -> some View {
+        VStack(spacing: 2) {
+            ChargeLimitBatteryIcon(percent: percentage)
+            Text("\(percentage)%")
+                .font(.caption2.monospacedDigit())
+        }
+        .foregroundStyle(isSelected(percentage) ? Color.accentColor : Color.secondary)
+        .fontWeight(isSelected(percentage) ? .semibold : .regular)
+        .frame(maxWidth: .infinity, minHeight: 34)
+    }
+
+    private var selectedIndex: Int {
+        percentages.firstIndex(of: manager.displayedLimitPercentage) ?? percentages.count - 1
+    }
+
+    private var displayedValue: Double {
+        draggingValue ?? presentedIndex ?? Double(selectedIndex)
+    }
+
+    private var displayedIndex: Int {
+        min(percentages.count - 1, max(0, Int(displayedValue.rounded())))
+    }
+
+    private var chargeLimitTrack: some View {
+        GeometryReader { geometry in
+            let trackInset = trackInset(for: geometry.size.width)
+            let trackWidth = max(0, geometry.size.width - (trackInset * 2))
+            let thumbX = trackInset + trackWidth * CGFloat(displayedValue) /
+                CGFloat(percentages.count - 1)
+
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(Color(nsColor: .separatorColor))
+                    .frame(height: 4)
+                    .padding(.horizontal, trackInset)
+
+                Capsule(style: .continuous)
+                    .fill(Color.accentColor.opacity(0.72))
+                    .frame(width: max(0, thumbX - trackInset), height: 4)
+                    .offset(x: trackInset)
+
+                ForEach(percentages.indices, id: \.self) { index in
+                    let isSelectable = manager.isLimitSelectable(percentages[index])
+                    Circle()
+                        .fill(
+                            isSelectable && index <= displayedIndex
+                                ? Color.accentColor
+                                : Color(nsColor: .separatorColor)
+                        )
+                        .frame(width: 5, height: 5)
+                        .opacity(isSelectable ? 1 : 0.38)
+                        .position(x: labelPosition(for: index, width: geometry.size.width), y: 11)
+                }
+
+                Circle()
+                    .fill(.background)
+                    .frame(width: 16, height: 16)
+                    .overlay(Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.75))
+                    .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
+                    .position(x: thumbX, y: 11)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { gesture in
+                        let clampedX = min(
+                            geometry.size.width - trackInset,
+                            max(trackInset, gesture.location.x)
+                        )
+                        let continuousValue = Double(
+                            (clampedX - trackInset) / max(1, trackWidth)
+                        ) * Double(percentages.count - 1)
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) { draggingValue = continuousValue }
+                    }
+                    .onEnded { gesture in
+                        let clampedX = min(
+                            geometry.size.width - trackInset,
+                            max(trackInset, gesture.location.x)
+                        )
+                        let value = Double(
+                            (clampedX - trackInset) / max(1, trackWidth)
+                        ) * Double(percentages.count - 1)
+                        settle(on: Int(value.rounded()))
+                    }
+            )
+        }
+        .frame(height: 22)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(model.t("fixedChargeLimit"))
+        .accessibilityValue("\(percentages[displayedIndex])%")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: settle(on: nextSelectableIndex(after: displayedIndex))
+            case .decrement: settle(on: previousSelectableIndex(before: displayedIndex))
+            @unknown default: break
+            }
+        }
+    }
+
+    private func select(index: Int) {
+        settle(on: index)
+    }
+
+    private func settle(on index: Int) {
+        guard percentages.indices.contains(index),
+              manager.isLimitSelectable(percentages[index]) else {
+            withAnimation(selectionAnimation) {
+                draggingValue = nil
+                presentedIndex = Double(selectedIndex)
+            }
+            return
+        }
+        let accepted = commit(index: index)
+        withAnimation(selectionAnimation) {
+            draggingValue = nil
+            presentedIndex = accepted ? Double(index) : Double(selectedIndex)
+        }
+    }
+
+    private func commit(index: Int) -> Bool {
+        guard percentages.indices.contains(index) else { return false }
+        let percentage = percentages[index]
+        if let onSelect { return onSelect(percentage) }
+        manager.selectDisplayedLimit(percentage)
+        return true
+    }
+
+    private func nextSelectableIndex(after index: Int) -> Int {
+        percentages.indices.first {
+            $0 > index && manager.isLimitSelectable(percentages[$0])
+        } ?? index
+    }
+
+    private func previousSelectableIndex(before index: Int) -> Int {
+        percentages.indices.reversed().first {
+            $0 < index && manager.isLimitSelectable(percentages[$0])
+        } ?? index
+    }
+
+    private func isSelected(_ percentage: Int) -> Bool {
+        percentages[displayedIndex] == percentage
+    }
+
+    private func labelPosition(for index: Int, width: CGFloat) -> CGFloat {
+        guard !percentages.isEmpty else { return width / 2 }
+        return width * (CGFloat(index) + 0.5) / CGFloat(percentages.count)
+    }
+
+    private func trackInset(for width: CGFloat) -> CGFloat {
+        guard !percentages.isEmpty else { return 0 }
+        return width / (CGFloat(percentages.count) * 2)
+    }
+
+    private var selectionAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.28, dampingFraction: 0.86)
+    }
+}
+
+private struct ChargeLimitBatteryIcon: View {
+    let percent: Int
+
+    var body: some View {
+        BatteryStatusIcon(percent: percent, isCharging: false, externalConnected: false)
+    }
+}
+
+private enum PendingChargeAuthorizationAction {
+    case enable
+    case selectLimit(Int)
+}
+
+struct ChargeProtectionSection: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject var manager: ChargeProtectionManager
+    @State private var pendingAuthorizationAction: PendingChargeAuthorizationAction?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+            Label(model.t("chargeProtection"), systemImage: "battery.100percent.bolt")
+                .font(.subheadline.weight(.semibold))
+            if manager.isSectionExpanded {
+                Group {
+                    switch manager.availability {
+                    case .unsupportedHardware:
+                        intelManagedContent
+                    case .systemPreferred:
+                        systemPreferredContent
+                    case .softwareAvailable, .softwareManaged:
+                        eligibleControls
+                    }
+                }
+                .transition(disclosureTransition)
+            }
+
+            Button {
+                withAnimation(disclosureAnimation) {
+                    manager.toggleSectionExpanded()
+                }
+            } label: {
+                Image(systemName: manager.isSectionExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, minHeight: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(model.t(manager.isSectionExpanded ? "collapseChargeProtection" : "expandChargeProtection"))
+            .accessibilityLabel(model.t(manager.isSectionExpanded ? "collapseChargeProtection" : "expandChargeProtection"))
+        }
+        .animation(disclosureAnimation, value: manager.isSectionExpanded)
+        .alert(
+            model.t("chargeMigrationTitle"),
+            isPresented: Binding(
+                get: { manager.showsUpgradeMigrationPrompt },
+                set: { _ in }
+            )
+        ) {
+            Button(model.t("switchToSystemCharging")) {
+                manager.switchToSystemPreferred()
+            }
+            Button(model.t("continueSoftwareCharging")) {
+                manager.continueSoftwareAfterUpgrade()
+            }
+        } message: {
+            Text(model.t("chargeMigrationMessage"))
+        }
+        .alert(
+            model.t("chargeHelperAuthorizationTitle"),
+            isPresented: Binding(
+                get: { pendingAuthorizationAction != nil },
+                set: { if !$0 { pendingAuthorizationAction = nil } }
+            )
+        ) {
+            Button(model.t("continueAuthorization")) {
+                performPendingAuthorizationAction()
+            }
+            Button(model.t("cancel"), role: .cancel) {
+                pendingAuthorizationAction = nil
+            }
+        } message: {
+            Text(model.t("chargeHelperInstallAuthorizationMessage"))
+        }
+    }
+
+    private var intelManagedContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(model.t("intelChargingManagedTitle"), systemImage: "info.circle")
+                .font(.subheadline.weight(.medium))
+            Text(model.t("intelChargingManagedDetail"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button(model.t("openBatterySettings")) { manager.openSystemBatterySettings() }
+        }
+    }
+
+    @ViewBuilder
+    private var systemPreferredContent: some View {
+        if manager.isPreparingSoftwareMode {
+            VStack(alignment: .leading, spacing: 11) {
+                Text(model.t("softwareChargingPreparationTitle"))
+                    .font(.subheadline.weight(.semibold))
+                Text(model.t("softwareChargingPreparationIntro"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(model.t("softwareChargingPreparationStep1"))
+                    Text(model.t("softwareChargingPreparationStep2"))
+                }
+                .font(.footnote)
+                Text(model.t("softwareChargingPreparationReason"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button(model.t("openBatterySettings")) { manager.openSystemBatterySettings() }
+                    .buttonStyle(.borderedProminent)
+                Toggle(
+                    model.t("softwareChargingPreparationConfirmed"),
+                    isOn: $manager.hasConfirmedSystemPreparation
+                )
+                HStack {
+                    Button(model.t("cancel"), role: .cancel) { manager.cancelSoftwareModePreparation() }
+                    Button(model.t("continueSoftwareCharging")) { manager.completeSoftwareModePreparation() }
+                        .disabled(!manager.hasConfirmedSystemPreparation)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.t("nativeChargingAvailableTitle"))
+                    .font(.subheadline.weight(.semibold))
+                Text(model.t("nativeChargingAvailableDetail"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button(model.t("openBatterySettings")) { manager.openSystemBatterySettings() }
+                    .buttonStyle(.borderedProminent)
+                Divider()
+                Text(model.t("preferSoftwareChargingQuestion"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button(model.t("useSoftwareCharging")) { manager.beginSoftwareModePreparation() }
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var eligibleControls: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 12) {
+                Text(model.t("chargeProtectionEnabled"))
+                    .font(.body)
+                Toggle("", isOn: Binding(
+                    get: { manager.configuration.enabled },
+                    set: { requestEnabledState($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(.green)
+                .disabled(manager.isBusy)
+                if manager.isBusy { ProgressView().controlSize(.small) }
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(model.t("fixedChargeLimit"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if manager.isPowerUIEightyOnly {
+                    Label {
+                        Text(model.t("macOS158ChargeLimitNotice"))
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "lock.shield.fill")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .layoutPriority(1)
+                }
+                ChargeLimitPicker(manager: manager, onSelect: requestLimitSelection)
+                    .disabled(manager.isBusy)
+            }
+
+            if manager.configuration.enabled && manager.configuration.fixedLimit != .oneHundred {
+                HStack {
+                    if manager.configuration.temporaryFullCharge {
+                        Button(model.t("cancelFullCharge"), role: .cancel) {
+                            manager.cancelTemporaryFullCharge()
+                        }
+                    } else {
+                        Button(model.t("chargeToFullOnce")) {
+                            manager.beginTemporaryFullCharge()
+                        }
+                    }
+                    Spacer()
+                }
+                if manager.configuration.temporaryFullCharge {
+                    Label(model.t("temporaryFullInProgress"), systemImage: "battery.100percent.bolt")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else if !manager.isInstalled {
+                Text(model.t("chargeProtectionInstallNote"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if manager.availability == .softwareManaged {
+                Text(model.t("softwareManagedReminder"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button(model.t("switchToSystemCharging")) {
+                    manager.switchToSystemPreferred()
+                }
+                .buttonStyle(.link)
+            }
+            if manager.hasInstalledComponents && !manager.configuration.enabled {
+                ChargeHelperUninstallButton(manager: manager)
+            }
+            if manager.status?.controlMethod == .unavailable {
+                Label(model.t("chargeHelperUnavailable"), systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+            if let error = manager.errorMessage ?? manager.status?.lastError, !error.isEmpty {
+                Label(model.t("chargeOperationFailed"), systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var disclosureTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
+    }
+
+    private var disclosureAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 0.88)
+    }
+
+    private func requestEnabledState(_ enabled: Bool) {
+        guard enabled, manager.requiresAdministratorAuthorizationToEnable else {
+            manager.setEnabled(enabled)
+            return
+        }
+        pendingAuthorizationAction = .enable
+    }
+
+    private func requestLimitSelection(_ percentage: Int) -> Bool {
+        guard manager.requiresAdministratorAuthorizationToSelectLimit(percentage) else {
+            manager.selectDisplayedLimit(percentage)
+            return true
+        }
+        pendingAuthorizationAction = .selectLimit(percentage)
+        return false
+    }
+
+    private func performPendingAuthorizationAction() {
+        let action = pendingAuthorizationAction
+        pendingAuthorizationAction = nil
+        switch action {
+        case .enable:
+            manager.enable()
+        case .selectLimit(let percentage):
+            manager.selectDisplayedLimit(percentage)
+        case nil:
+            break
+        }
+    }
+}
+
+private struct ChargeHelperUninstallButton: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var manager: ChargeProtectionManager
+    @State private var showsConfirmation = false
+
+    var body: some View {
+        Button(model.t("uninstallChargeHelper"), role: .destructive) {
+            showsConfirmation = true
+        }
+        .disabled(manager.isBusy || !manager.hasInstalledComponents)
+        .help(model.t("uninstallChargeHelperDetail"))
+        .accessibilityHint(model.t("uninstallChargeHelperDetail"))
+        .confirmationDialog(
+            model.t("uninstallChargeHelperConfirm"),
+            isPresented: $showsConfirmation
+        ) {
+            Button(model.t("uninstallChargeHelper"), role: .destructive) {
+                manager.uninstall()
+            }
+            Button(model.t("cancel"), role: .cancel) { }
+        } message: {
+            Text(
+                model.t("uninstallChargeHelperDetail") + "\n\n" +
+                model.t("chargeHelperUninstallAuthorizationMessage")
+            )
+        }
+    }
+}
+
+struct ChargeLimitStatusPopoverView: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var manager: ChargeProtectionManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(
+                L10n.format("chargeLimitReached", model.language, manager.configuration.fixedLimit.rawValue),
+                systemImage: "battery.100percent"
+            )
+            .font(.headline)
+            if manager.configuration.fixedLimit != .oneHundred {
+                if manager.configuration.temporaryFullCharge {
+                    Button(model.t("cancelFullCharge"), role: .cancel) {
+                        manager.cancelTemporaryFullCharge()
+                    }
+                } else {
+                    Button(model.t("chargeToFullOnce")) {
+                        manager.beginTemporaryFullCharge()
+                    }
+                }
+            }
+            Divider()
+            Text(model.t("adjustFixedLimit"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ChargeLimitPicker(manager: manager)
+        }
+        .padding(16)
+        .frame(width: 330)
+    }
+}
+
+private struct DiagnosticExportView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var start = Date().addingTimeInterval(-3_600)
+    @State private var end = Date()
+    @State private var validationMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label(model.t("diagnosticExportTitle"), systemImage: "doc.text.magnifyingglass")
+                .font(.title2.weight(.semibold))
+            HStack {
+                quickButton("diagnosticLast15Minutes", interval: 900)
+                quickButton("diagnosticLastHour", interval: 3_600)
+                quickButton("diagnosticLast24Hours", interval: 86_400)
+            }
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
+                GridRow {
+                    Text(model.t("diagnosticStartTime"))
+                    DatePicker("", selection: $start, displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                        .datePickerStyle(.field)
+                        .controlSize(.regular)
+                        .frame(minHeight: 28, alignment: .center)
+                }
+                GridRow {
+                    Text(model.t("diagnosticEndTime"))
+                    DatePicker("", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                        .labelsHidden()
+                        .datePickerStyle(.field)
+                        .controlSize(.regular)
+                        .frame(minHeight: 28, alignment: .center)
+                }
+            }
+            Text(model.t("diagnosticPartialRange"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if let validationMessage {
+                Label(validationMessage, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button(model.t("cancel"), role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(model.t("diagnosticExport")) { chooseDestination() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+    }
+
+    private func quickButton(_ key: String, interval: TimeInterval) -> some View {
+        Button(model.t(key)) {
+            end = Date()
+            start = end.addingTimeInterval(-interval)
+            validationMessage = nil
+        }
+        .controlSize(.small)
+    }
+
+    private func chooseDestination() {
+        let request = DiagnosticExportRequest(start: start, end: end)
+        do {
+            try request.validate()
+        } catch DiagnosticExportValidationError.startAfterEnd {
+            validationMessage = model.t("diagnosticInvalidRange")
+            return
+        } catch {
+            validationMessage = model.t("diagnosticFutureEnd")
+            return
+        }
+        validationMessage = nil
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.plainText]
+        panel.canCreateDirectories = true
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        panel.nameFieldStringValue = "DriveBatteryHealthViewer_Diagnostic_\(formatter.string(from: Date())).log"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try model.exportDiagnostics(request: request, to: url)
+                dismiss()
+            } catch {
+                validationMessage = model.t("diagnosticExportFailed")
+            }
+        }
+    }
 }
 
 enum ControlCenterBatteryAssets {
@@ -519,14 +1262,20 @@ struct HealthBadge: View {
 }
 
 struct DetailItem: Identifiable {
-    let id = UUID()
+    var id: String { label }
     let label: String
     let value: String?
-    init(_ label: String, _ value: String?) { self.label = label; self.value = value }
+    let helpText: String?
+    init(_ label: String, _ value: String?, helpText: String? = nil) {
+        self.label = label
+        self.value = value
+        self.helpText = helpText
+    }
 }
 
 struct DetailGrid: View {
     @EnvironmentObject private var model: AppModel
+    @State private var presentedHelpID: String?
     let items: [DetailItem]
 
     var body: some View {
@@ -544,7 +1293,33 @@ struct DetailGrid: View {
 
     private func detail(_ item: DetailItem) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(item.label).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text(item.label)
+                if let helpText = item.helpText {
+                    Button {
+                        presentedHelpID = item.id
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(item.label)
+                    .accessibilityLabel(item.label)
+                    .popover(isPresented: helpBinding(for: item.id), arrowEdge: .bottom) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label(item.label, systemImage: "clock")
+                                .font(.headline)
+                            Text(helpText)
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(16)
+                        .frame(width: 380, alignment: .leading)
+                    }
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
             Text(item.value ?? model.t("unavailable"))
                 .font(.callout)
                 .foregroundStyle(item.value == nil ? Color.secondary : Color.primary)
@@ -552,12 +1327,23 @@ struct DetailGrid: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private func helpBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { presentedHelpID == id },
+            set: { isPresented in
+                if isPresented { presentedHelpID = id }
+                else if presentedHelpID == id { presentedHelpID = nil }
+            }
+        )
+    }
 }
 
 struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
     @State private var isSelecting = false
     @State private var showsDeleteConfirmation = false
+    @State private var selectionAnchorID: UUID?
 
     var body: some View {
         Group {
@@ -627,7 +1413,7 @@ struct HistoryView: View {
         if isSelecting {
             List(model.history) { record in
                 Button {
-                    model.toggleHistorySelection(record.id)
+                    selectHistoryRecord(record.id)
                 } label: {
                     historyRow(record, showsSelection: true)
                 }
@@ -638,6 +1424,7 @@ struct HistoryView: View {
                         : Color.clear
                 )
             }
+            .listStyle(.plain)
         } else {
             List(model.history, selection: $model.selectedHistoryID) { record in
                 historyRow(record, showsSelection: false)
@@ -670,9 +1457,9 @@ struct HistoryView: View {
             historySelectionControls(compact: false)
             historySelectionControls(compact: true)
         }
-        .controlSize(.small)
+        .controlSize(.regular)
         .padding(.horizontal, 12)
-        .frame(height: 44)
+        .frame(height: 48)
     }
 
     private func historySelectionControls(compact: Bool) -> some View {
@@ -709,21 +1496,23 @@ struct HistoryView: View {
 
                 Button {
                     isSelecting = false
+                    selectionAnchorID = nil
                     model.clearHistorySelection()
                 } label: {
                     if compact {
-                        Image(systemName: "checkmark")
+                        Image(systemName: "xmark")
                     } else {
-                        Text(model.t("done"))
+                        Text(model.t("cancel"))
                             .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-                .help(model.t("done"))
+                .help(model.t("cancel"))
                 .keyboardShortcut(.cancelAction)
             } else {
                 Spacer()
                 Button {
                     isSelecting = true
+                    selectionAnchorID = nil
                 } label: {
                     if compact {
                         Image(systemName: "checkmark.circle")
@@ -734,6 +1523,18 @@ struct HistoryView: View {
                 }
                 .help(model.t("select"))
             }
+        }
+    }
+
+    private func selectHistoryRecord(_ id: UUID) {
+        let isExtendingRange = NSApp.currentEvent?.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .contains(.shift) == true
+        if isExtendingRange, let anchor = selectionAnchorID {
+            model.selectHistoryRange(from: anchor, through: id)
+        } else {
+            model.toggleHistorySelection(id)
+            selectionAnchorID = id
         }
     }
 
@@ -755,6 +1556,8 @@ struct HistoryView: View {
 
 struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var showsApplicationUninstallConfirmation = false
+    @State private var deletesHistoryDuringUninstall = false
 
     var body: some View {
         Form {
@@ -788,9 +1591,39 @@ struct PreferencesView: View {
                 }
             }
 
+
+            if model.chargeProtection.availability.permitsSoftwareControls ||
+                model.chargeProtection.hasInstalledComponents {
+                Section(model.t("chargeProtection")) {
+                    if model.chargeProtection.availability.permitsSoftwareControls {
+                        Toggle(
+                            model.t("showChargeStatusInMenuBar"),
+                            isOn: Binding(
+                                get: { model.chargeProtection.configuration.showMenuBarStatus },
+                                set: { model.chargeProtection.setMenuBarStatusVisible($0) }
+                            )
+                        )
+                    }
+                    if model.chargeProtection.hasInstalledComponents {
+                        ChargeHelperUninstallButton(manager: model.chargeProtection)
+                    }
+                }
+            }
+
             Section(model.t("dataAccess")) {
                 Label(model.t("readOnlyNote"), systemImage: "checkmark.shield")
                 Label(model.t("permissionNote"), systemImage: "externaldrive.badge.questionmark")
+            }
+
+            Section {
+                Button(model.t("uninstallApplication"), role: .destructive) {
+                    showsApplicationUninstallConfirmation = true
+                }
+                .disabled(model.chargeProtection.isBusy)
+            } footer: {
+                Text(model.t("uninstallApplicationDetail"))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
             }
         }
         .formStyle(.grouped)
@@ -799,6 +1632,33 @@ struct PreferencesView: View {
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity, alignment: .top)
         .navigationTitle(model.t("settings"))
+        .sheet(isPresented: $showsApplicationUninstallConfirmation) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 12) {
+                    Image(systemName: "trash")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text(model.t("uninstallApplication"))
+                        .font(.title2.weight(.semibold))
+                }
+                Text(model.t("uninstallApplicationDetail"))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle(model.t("deleteAllHistoryOnUninstall"), isOn: $deletesHistoryDuringUninstall)
+                HStack {
+                    Spacer()
+                    Button(model.t("cancel"), role: .cancel) {
+                        showsApplicationUninstallConfirmation = false
+                    }
+                    Button(model.t("uninstallApplication"), role: .destructive) {
+                        model.uninstallApplication(deleteHistory: deletesHistoryDuringUninstall)
+                        showsApplicationUninstallConfirmation = false
+                    }
+                }
+            }
+            .padding(24)
+            .frame(width: 470)
+        }
     }
 
     private func chooseHistoryFolder() {
@@ -838,6 +1698,9 @@ struct AboutView: View {
                     AboutLink(symbol: "ladybug", title: model.t("issueFeedback"), url: project.appendingPathComponent("issues"))
                     Divider().padding(.leading, 46)
                     AboutButton(symbol: "sparkles", title: model.t("changelog")) { model.showsChangelog = true }
+                    Divider().padding(.leading, 46)
+                    AboutButton(symbol: "arrow.clockwise", title: model.t("checkForUpdates")) { model.checkForUpdates() }
+                        .disabled(model.isCheckingForUpdates)
                     Divider().padding(.leading, 46)
                     AboutLink(symbol: "doc.badge.gearshape", title: model.t("license"), url: project.appendingPathComponent("blob/main/LICENSE"))
                     Divider().padding(.leading, 46)
@@ -992,6 +1855,7 @@ struct ChangelogView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 14)
                 .textSelection(.enabled)
             }
         }
@@ -1009,6 +1873,19 @@ struct ChangelogRelease: Identifiable {
         switch L10n.effective(language) {
         case .simplifiedChinese:
             return releases(
+                currentFeatures: [
+                    "在 macOS 15.8 上新增 PowerUI 原生 80% 充电上限，仅开放系统实际支持的档位，并保持适配器供电。",
+                    "为 iMac、Mac mini、Mac Studio 等桌面设备的“电池”部分设计了新的界面显示。"
+                ],
+                currentFixes: [],
+                majorFeatures: [
+                    "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及启用保护期间持续可用的菜单栏状态与快捷控制。",
+                    "新增可按时间范围导出的隐私友好诊断日志。",
+                    "新增概览中的非正常关机次数与错误日志条目显示。",
+                    "新增版本更新后的非打扰式更新日志提示。",
+                    "新增“关于”页面中的检查更新入口，便于用户发现并使用更新功能。"
+                ],
+                majorImprovements: ["优化了概览中保存（导出）报告按钮的图标样式，使功能含义更加直观。", "优化了历史记录选择界面的按钮布局与多选操作体验。", "为内置 SSD 的“工作时间”增加说明，便于理解固件统计值与 Mac 实际使用时间的差异。"],
                 latestFeatures: [
                     "增强外接存储设备的信息识别与只读检测兼容性。"
                 ],
@@ -1048,6 +1925,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .russian:
             return releases(
+                currentFeatures: ["В macOS 15.8 добавлен системный предел PowerUI 80% с сохранением питания от адаптера; доступны только реально поддерживаемые системой уровни.", "Для раздела «Батарея» на настольных Mac, включая iMac, Mac mini и Mac Studio, создано новое оформление."],
+                currentFixes: [],
+                majorFeatures: ["Добавлена защита зарядки Apple Silicon Mac с фиксированными пределами от 80% до 100%, разовой полной зарядкой и быстрым управлением из строки меню при достижении заданного уровня.", "Добавлены конфиденциальные диагностические журналы с экспортом за выбранный период.", "В обзор накопителей добавлены значения небезопасных выключений и записей журнала ошибок.", "Добавлена ненавязчивая подсказка о журнале изменений после обновления приложения.", "На страницу «О программе» добавлена команда проверки обновлений, чтобы её было проще найти и использовать."],
+                majorImprovements: ["Улучшен значок сохранения (экспорта) отчёта в обзоре, чтобы назначение функции было понятнее.", "Улучшены кнопки и выбор диапазона в режиме выбора записей истории.", "Для «Времени работы» встроенного SSD добавлено пояснение отличия от фактического времени использования Mac."],
                 latestFeatures: ["Улучшены распознавание информации и совместимость диагностики внешних накопителей в режиме только для чтения."],
                 latestFixes: ["Исправлена проблема, из-за которой при горячем подключении, ошибках идентификации устройства или сопоставления полей S.M.A.R.T. могли отображаться неверные либо устаревшие данные.", "Исправлена проблема, из-за которой при отсутствии ответа оборудования, отмене чтения или повторном обновлении интерфейс мог зависнуть, применить устаревший результат либо потерять данные NVMe."],
                 patchFeatures: ["Расширено чтение подробных данных внешних дисков USB, Thunderbolt и устройств с поддержкой SAT passthrough."],
@@ -1059,6 +1940,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .french:
             return releases(
+                currentFeatures: ["Ajout de la limite native PowerUI de 80 % sous macOS 15.8, tout en conservant l’alimentation par l’adaptateur et en ne proposant que le niveau réellement pris en charge.", "Nouvelle présentation de la section Batterie pour les Mac de bureau tels que l’iMac, le Mac mini et le Mac Studio."],
+                currentFixes: [],
+                majorFeatures: ["Ajout de la protection de charge des Mac Apple Silicon avec des limites fixes de 80 % à 100 %, une charge complète temporaire et des commandes rapides dans la barre des menus lorsque le niveau défini est atteint.", "Ajout de journaux de diagnostic respectueux de la vie privée, exportables par période.", "Ajout des arrêts non sécurisés et des entrées du journal d’erreurs dans l’aperçu des disques.", "Ajout d’une invite discrète vers les notes de version après les mises à jour.", "Ajout de la recherche de mises à jour dans la page À propos afin de rendre cette fonction plus facile à trouver et à utiliser."],
+                majorImprovements: ["Amélioration de l’icône d’enregistrement (exportation) des rapports dans l’aperçu afin de mieux exprimer sa fonction.", "Amélioration des boutons et de la sélection par plage dans l’interface de sélection de l’historique.", "Ajout d’une explication au temps de fonctionnement du SSD interne afin de distinguer le comptage du micrologiciel du temps d’utilisation réel du Mac."],
                 latestFeatures: ["Amélioration de l’identification des informations et de la compatibilité du diagnostic en lecture seule des stockages externes."],
                 latestFixes: ["Correction d’un problème pouvant afficher des données erronées ou obsolètes après un branchement à chaud, une erreur d’identification du périphérique ou d’association des champs S.M.A.R.T.", "Correction d’un problème où une requête matérielle sans réponse, une lecture annulée ou des actualisations répétées pouvaient bloquer l’interface, appliquer un ancien résultat ou faire disparaître les données NVMe."],
                 patchFeatures: ["Amélioration de la lecture des informations détaillées des disques externes USB, Thunderbolt et compatibles avec le relais SAT."],
@@ -1070,6 +1955,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .german:
             return releases(
+                currentFeatures: ["Unter macOS 15.8 wurde die native PowerUI-Ladegrenze von 80 % ergänzt; das Netzteil bleibt verbunden und nur tatsächlich unterstützte Stufen sind auswählbar.", "Der Bereich „Batterie“ wurde für Desktop-Macs wie iMac, Mac mini und Mac Studio neu gestaltet."],
+                currentFixes: [],
+                majorFeatures: ["Batterieladeschutz für Apple-Silicon-Macs mit festen Grenzen von 80 % bis 100 %, einmaligem vollständigem Laden und Schnellsteuerung über die Menüleiste beim Erreichen des festgelegten Ladestands hinzugefügt.", "Datenschutzfreundliche Diagnoseprotokolle mit Zeitraumexport hinzugefügt.", "Unsichere Abschaltungen und Fehlerprotokolleinträge wurden zur Laufwerksübersicht hinzugefügt.", "Ein dezenter Hinweis auf die Versionshinweise nach App-Updates wurde hinzugefügt.", "Die Update-Suche wurde zur Info-Seite hinzugefügt, damit sie leichter zu finden und zu verwenden ist."],
+                majorImprovements: ["Das Symbol zum Speichern (Exportieren) von Berichten in der Übersicht wurde verständlicher gestaltet.", "Schaltflächen und Bereichsauswahl in der Verlaufsauswahl wurden verbessert.", "Für die Betriebszeit der internen SSD wurde eine Erläuterung zum Unterschied zwischen Firmware-Zählung und tatsächlicher Mac-Nutzungszeit ergänzt."],
                 latestFeatures: ["Die Informationserkennung und die Kompatibilität der schreibgeschützten Prüfung externer Speicher wurden verbessert."],
                 latestFixes: ["Ein Problem wurde behoben, durch das bei Hot-Plug-Vorgängen sowie Fehlern bei Geräteidentität oder S.M.A.R.T.-Feldzuordnung falsche oder veraltete Daten angezeigt werden konnten.", "Ein Problem wurde behoben, durch das nicht antwortende Hardwareabfragen, abgebrochene Lesevorgänge oder wiederholte Aktualisierungen die Oberfläche blockieren, alte Ergebnisse anwenden oder NVMe-Daten ausblenden konnten."],
                 patchFeatures: ["Das Auslesen detaillierter Informationen externer USB-, Thunderbolt- und SAT-Passthrough-Laufwerke wurde erweitert."],
@@ -1081,6 +1970,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .korean:
             return releases(
+                currentFeatures: ["macOS 15.8에서 어댑터 전원을 유지하는 PowerUI 기본 80% 충전 한도를 추가하고 실제 지원되는 단계만 선택할 수 있게 했습니다.", "iMac, Mac mini, Mac Studio 등 데스크톱 Mac의 ‘배터리’ 영역을 위한 새로운 UI를 추가했습니다."],
+                currentFixes: [],
+                majorFeatures: ["Apple Silicon Mac에 80%~100% 고정 충전 한도, 이번에 완전히 충전, 설정 전력 도달 시 메뉴 막대 빠른 제어를 지원하는 배터리 충전 보호를 추가했습니다.", "선택한 기간을 내보낼 수 있는 개인정보 보호 진단 로그를 추가했습니다.", "드라이브 개요에 비정상 종료 횟수와 오류 로그 항목을 추가했습니다.", "앱 업데이트 후 업데이트 기록을 안내하는 간결한 팁을 추가했습니다.", "업데이트 기능을 더 쉽게 찾고 사용할 수 있도록 정보 화면에 업데이트 확인 항목을 추가했습니다."],
+                majorImprovements: ["개요의 보고서 저장(내보내기) 아이콘을 기능이 더 명확하게 보이도록 개선했습니다.", "기록 선택 화면의 버튼과 범위 선택 조작을 개선했습니다.", "내장 SSD의 사용 시간에 펌웨어 집계값과 Mac의 실제 사용 시간의 차이를 설명하는 안내를 추가했습니다."],
                 latestFeatures: ["외장 저장 장치의 정보 식별과 읽기 전용 검사 호환성을 개선했습니다."],
                 latestFixes: ["핫 플러그, 장치 식별 또는 S.M.A.R.T. 필드 연결 오류로 잘못되거나 오래된 데이터가 표시될 수 있는 문제를 수정했습니다.", "하드웨어 조회 무응답, 읽기 취소 또는 반복 새로 고침 시 화면이 멈추거나 이전 결과가 반영되거나 NVMe 데이터가 사라질 수 있는 문제를 수정했습니다."],
                 patchFeatures: ["외장 USB·Thunderbolt 드라이브와 SAT 패스스루 지원 드라이브의 상세 정보 읽기 기능을 강화했습니다."],
@@ -1092,6 +1985,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .japanese:
             return releases(
+                currentFeatures: ["macOS 15.8 で、電源アダプタ接続を維持する PowerUI ネイティブ 80% 上限を追加し、実際に対応する段階のみ選択可能にしました。", "iMac、Mac mini、Mac Studio などのデスクトップ Mac 向けに、「バッテリー」セクションの新しい表示を追加しました。"],
+                currentFixes: [],
+                majorFeatures: ["Apple Silicon Mac に、80%～100% の固定充電上限、今回だけ満充電、設定した残量に達したときのメニューバーからのクイック操作を備えた充電保護を追加しました。", "期間を指定して書き出せるプライバシー配慮型の診断ログを追加しました。", "ドライブの概要に、安全でないシャットダウン回数とエラーログエントリを追加しました。", "アプリ更新後に更新履歴を案内する控えめなヒントを追加しました。", "アップデート機能を見つけて使いやすくするため、このアプリについて画面にアップデート確認を追加しました。"],
+                majorImprovements: ["概要のレポート保存（書き出し）アイコンを、機能がより明確に伝わるよう改善しました。", "履歴選択画面のボタンと範囲選択の操作性を改善しました。", "内蔵 SSD の「使用時間」に、ファームウェアの集計値と Mac の実際の使用時間の違いを示す説明を追加しました。"],
                 latestFeatures: ["外付けストレージの情報識別と読み取り専用検査の互換性を改善しました。"],
                 latestFixes: ["ホットプラグ、デバイス識別、または S.M.A.R.T. フィールドの対応に問題がある場合、誤ったデータや古いデータが表示されることがある問題を修正しました。", "ハードウェア照会の無応答、読み取りのキャンセル、または再更新時に、画面が停止する、古い結果が反映される、または NVMe データが消えることがある問題を修正しました。"],
                 patchFeatures: ["外付け USB・Thunderbolt ドライブおよび SAT パススルー対応ドライブの詳細情報取得を強化しました。"],
@@ -1103,6 +2000,10 @@ struct ChangelogRelease: Identifiable {
             )
         case .english, .system:
             return releases(
+                currentFeatures: ["Added the native PowerUI 80% limit on macOS 15.8 while keeping adapter power available and allowing only the level the system can enforce.", "Added a new Battery-section design for desktop Macs such as iMac, Mac mini, and Mac Studio."],
+                currentFixes: [],
+                majorFeatures: ["Added Apple Silicon Mac charge protection with fixed limits from 80% to 100%, a one-time full-charge override, and quick menu-bar controls when the set level is reached.", "Added privacy-friendly diagnostic logs with time-range export.", "Added unsafe-shutdown and error-log-entry values to the drive overview.", "Added a quiet release-notes prompt after app updates.", "Added a Check for Updates entry to the About page so the update feature is easier to find and use."],
+                majorImprovements: ["Improved the icon for saving (exporting) reports in Overview so its purpose is clearer.", "Improved button sizing and range selection in the history selection interface.", "Added an explanation for internal SSD operating time to clarify the difference between firmware accounting and the Mac’s actual usage time."],
                 latestFeatures: ["Improved information identification and read-only diagnostic compatibility for external storage."],
                 latestFixes: ["Fixed an issue where hot-plugging or mismatched device identity or S.M.A.R.T. fields could display incorrect or stale data.", "Fixed an issue where unresponsive hardware queries, canceled reads, or repeated refreshes could stall the interface, apply stale results, or hide NVMe data."],
                 patchFeatures: ["Expanded detailed information reading for external USB and Thunderbolt drives and drives with SAT pass-through support."],
@@ -1116,6 +2017,10 @@ struct ChangelogRelease: Identifiable {
     }
 
     private static func releases(
+        currentFeatures: [String],
+        currentFixes: [String],
+        majorFeatures: [String],
+        majorImprovements: [String],
         latestFeatures: [String],
         latestFixes: [String],
         patchFeatures: [String],
@@ -1127,7 +2032,20 @@ struct ChangelogRelease: Identifiable {
     ) -> [ChangelogRelease] {
         let previousFeatures = previous.indices.contains(2) ? [previous[1], previous[2]] : []
         let previousFixes = previous.indices.contains(3) ? [previous[0], previous[3]] : previous
+        let headlineFeatures = majorFeatures.first.map { [$0] } ?? []
+        let remainingMajorFeatures = Array(majorFeatures.dropFirst())
+        var currentSections = [
+            ChangelogSection(
+                kind: .feature,
+                items: headlineFeatures + currentFeatures + remainingMajorFeatures
+            ),
+            ChangelogSection(kind: .improvement, items: majorImprovements)
+        ]
+        if !currentFixes.isEmpty {
+            currentSections.append(ChangelogSection(kind: .fix, items: currentFixes))
+        }
         return [
+            ChangelogRelease(version: "1.1.0", sections: currentSections),
             ChangelogRelease(version: "1.0.6", sections: [
                 ChangelogSection(kind: .feature, items: patchFeatures + latestFeatures),
                 ChangelogSection(kind: .fix, items: patchFixes + latestFixes)
@@ -1154,12 +2072,14 @@ struct ChangelogSection: Identifiable {
 enum ChangelogItemKind: String, Identifiable {
     var id: String { rawValue }
     case feature
+    case improvement
     case fix
     case historical
 
     var symbol: String {
         switch self {
         case .feature: return "checkmark.circle.fill"
+        case .improvement: return "wand.and.stars"
         case .fix: return "wrench.and.screwdriver.fill"
         case .historical: return "checkmark.circle.fill"
         }
@@ -1168,6 +2088,7 @@ enum ChangelogItemKind: String, Identifiable {
     var color: Color {
         switch self {
         case .feature: return .green
+        case .improvement: return .blue
         case .fix: return .orange
         case .historical: return .green
         }
@@ -1176,18 +2097,25 @@ enum ChangelogItemKind: String, Identifiable {
     func title(for language: AppLanguage) -> String {
         switch (self, L10n.effective(language)) {
         case (.feature, .simplifiedChinese): return "新增功能"
+        case (.improvement, .simplifiedChinese): return "优化改进"
         case (.fix, .simplifiedChinese): return "问题修复"
         case (.feature, .russian): return "Новые функции"
+        case (.improvement, .russian): return "Улучшения"
         case (.fix, .russian): return "Исправления"
         case (.feature, .french): return "Nouveautés"
+        case (.improvement, .french): return "Améliorations"
         case (.fix, .french): return "Correctifs"
         case (.feature, .german): return "Neue Funktionen"
+        case (.improvement, .german): return "Verbesserungen"
         case (.fix, .german): return "Fehlerbehebungen"
         case (.feature, .korean): return "새로운 기능"
+        case (.improvement, .korean): return "개선 사항"
         case (.fix, .korean): return "문제 수정"
         case (.feature, .japanese): return "新機能"
+        case (.improvement, .japanese): return "改善"
         case (.fix, .japanese): return "修正"
         case (.feature, .english), (.feature, .system): return "New Features"
+        case (.improvement, .english), (.improvement, .system): return "Improvements"
         case (.fix, .english), (.fix, .system): return "Fixes"
         case (.historical, _): return ""
         }
@@ -1202,6 +2130,73 @@ struct EmptyCard: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .cardStyle()
+    }
+}
+
+struct DesktopMacEmptyCard: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("desktopMacEmptyStateAnimationShown") private var hasShownAnimation = false
+    @State private var highlightsPower = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: "desktopcomputer")
+                    .font(.system(size: 38, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "powerplug.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(5)
+                    .background(.background, in: Circle())
+                    .offset(x: 7, y: highlightsPower ? 3 : 7)
+                    .scaleEffect(highlightsPower ? 1.08 : 1)
+            }
+            .frame(width: 62, height: 52)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label(model.t("desktopMacMode"), systemImage: "bolt.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.11), in: Capsule())
+                Text(model.t("desktopMacPoweredTitle"))
+                    .font(.headline)
+                Text(model.t("noBattery"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(model.t("desktopMacPoweredDetail"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(model.t("desktopMacMode")). \(model.t("desktopMacPoweredTitle")). " +
+            "\(model.t("noBattery")) \(model.t("desktopMacPoweredDetail"))"
+        )
+        .onAppear(perform: playAnimationOnce)
+    }
+
+    private func playAnimationOnce() {
+        guard !hasShownAnimation else { return }
+        hasShownAnimation = true
+        guard !reduceMotion else { return }
+        withAnimation(.spring(response: 0.36, dampingFraction: 0.72)) {
+            highlightsPower = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+            withAnimation(.easeOut(duration: 0.22)) {
+                highlightsPower = false
+            }
+        }
     }
 }
 
@@ -1233,13 +2228,25 @@ private extension View {
             .dbhvCardSurface(cornerRadius: 13)
     }
 
-    /// macOS 13–15 keeps the existing opaque card treatment.  Newer systems
-    /// get a restrained material/highlight treatment that follows the Liquid
-    /// Glass visual direction without requiring APIs unavailable to the
-    /// macOS 13 deployment target.
+    /// macOS 13–15 keeps the existing opaque card treatment. Builds made with
+    /// the macOS 26 SDK use native Liquid Glass on newer systems; older SDKs
+    /// retain a compatible system-material treatment without private APIs.
     @ViewBuilder
     func dbhvCardSurface(cornerRadius: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+#if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            self
+                .glassEffect(.regular, in: shape)
+                .overlay(shape.stroke(.white.opacity(0.24), lineWidth: 0.65))
+                .shadow(color: .black.opacity(0.08), radius: 14, y: 5)
+        } else {
+            self
+                .background(.background, in: shape)
+                .overlay(shape.stroke(Color.secondary.opacity(0.16)))
+                .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
+        }
+#else
         if #available(macOS 26.0, *) {
             self
                 .background(.regularMaterial, in: shape)
@@ -1252,6 +2259,7 @@ private extension View {
                 .overlay(shape.stroke(Color.secondary.opacity(0.16)))
                 .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
         }
+#endif
     }
 }
 

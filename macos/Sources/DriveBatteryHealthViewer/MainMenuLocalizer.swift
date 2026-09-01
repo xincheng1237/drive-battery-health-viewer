@@ -249,6 +249,9 @@ enum MainMenuLocalizer {
         let help = submenu(.helpMenu, [
             command(.projectHome, action: #selector(MenuActionRouter.openProjectHome(_:)), target: router),
             command(.issueFeedback, action: #selector(MenuActionRouter.openIssueFeedback(_:)), target: router),
+            .separator(),
+            command(.exportDiagnosticLogs, action: #selector(MenuActionRouter.exportDiagnosticLogs(_:)), target: router),
+            .separator(),
             command(.changelog, action: #selector(MenuActionRouter.showChangelog(_:)), target: router)
         ])
 
@@ -371,6 +374,7 @@ enum MainMenuLocalizer {
         case "openIssueFeedback:": return .issueFeedback
         case "showChangelog:": return .changelog
         case "checkForUpdates:": return .checkForUpdates
+        case "exportDiagnosticLogs:": return .exportDiagnosticLogs
         default: return nil
         }
     }
@@ -441,6 +445,7 @@ enum MainMenuLocalizer {
         case .issueFeedback: return L10n.text("menuFeedback", language)
         case .changelog: return L10n.text("viewChangelog", language)
         case .checkForUpdates: return L10n.text("checkForUpdates", language)
+        case .exportDiagnosticLogs: return L10n.text("exportDiagnosticLogs", language)
         case .about:
             switch effective {
             case .simplifiedChinese: return "关于“\(appName)”"
@@ -610,6 +615,7 @@ private final class MenuActionRouter: NSObject, NSMenuItemValidation {
     @objc func decreaseReportText(_ sender: Any?) { model?.decreaseReportTextSize() }
     @objc func resetReportText(_ sender: Any?) { model?.resetReportTextSize() }
     @objc func checkForUpdates(_ sender: Any?) { model?.checkForUpdates() }
+    @objc func exportDiagnosticLogs(_ sender: Any?) { model?.presentDiagnosticExport() }
 
     @objc func toggleSidebar(_ sender: Any?) {
         NSApp.sendAction(NSSelectorFromString("toggleSidebar:"), to: nil, from: sender)
@@ -685,7 +691,7 @@ private enum MenuRole: String {
     case refresh, copyReport
     case minimize, zoom, fill, center, moveResize, fullScreenTile, removeWindowSet, bringAllToFront
     case left, right, top, bottom, topLeft, topRight, bottomLeft, bottomRight, returnPreviousSize, leftOfScreen, rightOfScreen
-    case appHelp, projectHome, issueFeedback, changelog
+    case appHelp, projectHome, issueFeedback, exportDiagnosticLogs, changelog
 
     var isTopLevel: Bool { Self.topLevel.contains(self) }
     var isStateDependent: Bool {
@@ -710,6 +716,7 @@ private enum MenuRole: String {
         case .issueFeedback: return "menuFeedback"
         case .changelog: return "viewChangelog"
         case .checkForUpdates: return "checkForUpdates"
+        case .exportDiagnosticLogs: return "exportDiagnosticLogs"
         default: return nil
         }
     }
@@ -743,7 +750,7 @@ private enum MenuRole: String {
         case .fullScreenTile:
             return [.leftOfScreen, .rightOfScreen, .top, .bottom, .topLeft, .topRight, .bottomLeft, .bottomRight]
         case .helpMenu:
-            return [.projectHome, .issueFeedback, .changelog]
+            return [.projectHome, .issueFeedback, .exportDiagnosticLogs, .changelog]
         default:
             return []
         }

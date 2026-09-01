@@ -202,6 +202,7 @@ int32_t DBHVReadNVMeSMART(const char *bsdName, DBHVNVMeSMARTData *result) {
     result->powerOnHours = DBHVLowUInt64(data.POWER_ON_HOURS);
     result->unsafeShutdowns = DBHVLowUInt64(data.UNSAFE_SHUTDOWNS);
     result->mediaErrors = DBHVLowUInt64(data.MEDIA_ERRORS);
+    result->errorLogEntries = DBHVLowUInt64(data.NUM_ERROR_INFO_LOG_ENTRIES);
     return 1;
 }
 
@@ -276,6 +277,66 @@ int32_t DBHVReadBatteryLiveStatus(DBHVBatteryLiveStatus *result) {
         result->externalConnected = state != NULL
             && CFGetTypeID(state) == CFStringGetTypeID()
             && CFStringCompare((CFStringRef)state, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo;
+
+        CFStringRef providingPower = IOPSGetProvidingPowerSourceType(snapshot);
+        if (providingPower != NULL
+            && CFStringCompare(providingPower, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo) {
+            result->externalConnected = 1;
+        }
+
+        // CHTE intentionally closes the battery charge path. On some Apple
+        // silicon firmware versions that also makes AppleSmartBattery's
+        // ExternalConnected property read false even though the Mac is still
+        // powered by its adapter. The public adapter API represents the
+        // physical connection and must therefore remain independent from the
+        // battery's charging state.
+        CFDictionaryRef adapter = IOPSCopyExternalPowerAdapterDetails();
+        if (adapter != NULL) {
+            result->externalConnected = 1;
+            CFRelease(adapter);
+        }
+
+        // IOPowerSources can briefly lag behind AppleSmartBattery around an
+        // adapter transition. A positive registry value can confirm a physical
+        // connection, but a negative value must not override AC/adapter data:
+        // CHTE can make this property false while external power is present.
+        CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
+        io_service_t batteryService = matching == NULL
+            ? IO_OBJECT_NULL
+            : IOServiceGetMatchingService(kIOMainPortDefault, matching);
+        if (batteryService != IO_OBJECT_NULL) {
+            CFTypeRef external = IORegistryEntryCreateCFProperty(
+                batteryService, CFSTR("ExternalConnected"), kCFAllocatorDefault, 0
+            );
+            if (external == NULL) {
+                external = IORegistryEntryCreateCFProperty(
+                    batteryService, CFSTR("AppleRawExternalConnected"), kCFAllocatorDefault, 0
+                );
+            }
+            if (external != NULL && CFGetTypeID(external) == CFBooleanGetTypeID()) {
+                if (CFBooleanGetValue((CFBooleanRef)external)) {
+                    result->externalConnected = 1;
+                }
+            } else if (external != NULL && CFGetTypeID(external) == CFNumberGetTypeID()) {
+                int32_t value = 0;
+                CFNumberGetValue((CFNumberRef)external, kCFNumberSInt32Type, &value);
+                if (value != 0) { result->externalConnected = 1; }
+            }
+            if (external != NULL) { CFRelease(external); }
+
+            CFTypeRef charging = IORegistryEntryCreateCFProperty(
+                batteryService, CFSTR("IsCharging"), kCFAllocatorDefault, 0
+            );
+            if (charging != NULL && CFGetTypeID(charging) == CFBooleanGetTypeID()) {
+                result->isCharging = CFBooleanGetValue((CFBooleanRef)charging);
+            } else if (charging != NULL && CFGetTypeID(charging) == CFNumberGetTypeID()) {
+                int32_t value = 0;
+                CFNumberGetValue((CFNumberRef)charging, kCFNumberSInt32Type, &value);
+                result->isCharging = value != 0;
+            }
+            if (charging != NULL) { CFRelease(charging); }
+            IOObjectRelease(batteryService);
+        }
         success = 1;
         break;
     }

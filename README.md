@@ -4,17 +4,17 @@
 
 简体中文 | [English](README_EN.md)
 
-一款面向 Windows 与 macOS 的开源硬件健康查看工具。它以只读方式展示硬盘状态、电池健康度与设备信息，并支持历史记录、批量管理、报告导出、序列号隐私保护和七种界面语言。
+一款面向 Windows 与 macOS 的开源硬件健康查看工具。它展示硬盘状态、电池健康度与设备信息，并支持历史记录、批量管理、报告导出、序列号隐私保护和七种界面语言。
 
 Windows 版使用 Go 开发；macOS 版采用原生 SwiftUI，提供同时兼容 Apple 芯片与 Intel Mac 的 Universal 2 应用。
 
 ## 下载
 
-macOS 当前版本：**v1.0.6**；Windows 当前版本：**v1.0.4**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
+macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.4**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
-| macOS | [`DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
+| macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
 | Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 或更高版本 |
 
 ### macOS 安装
@@ -52,7 +52,8 @@ Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行
 - 复制或导出 UTF-8 健康报告，并可从应用菜单检查 GitHub 最新正式版本
 - 在界面、历史记录和导出报告中隐藏硬盘与电池序列号
 - 支持简体中文、英语、俄语、法语、德语、韩语和日语
-- 只读获取设备信息，不进行测速、写入、修复、擦除或固件更新
+- 硬盘、S.M.A.R.T. 与健康信息保持只读，不进行测速、修复、擦除或固件更新
+- macOS v1.1.0 为受支持的 Apple Silicon Mac 提供可选充电保护、菜单栏状态与快捷控制，并支持按时间范围导出隐私友好的诊断日志
 
 ## 平台说明
 
@@ -65,6 +66,10 @@ Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行
 - 使用一个 Universal 2 安装包原生支持 Apple 芯片和 Intel Mac
 - 内置 Universal 2 版只读 `smartctl`；当 macOS 或已安装的兼容驱动公开底层数据时，可补充读取更多硬盘详情
 - 详细功能、构建方式与数据限制见 [`macos/README.md`](macos/README.md)
+
+在 Apple Silicon Mac 上，macOS 13 至 26.3（macOS 15.8 除外）会在运行时检测到受支持的控制能力后提供 80% / 85% / 90% / 95% / 100% 多档位。macOS 15.8 使用系统 PowerUI 原生 OBC 路径：80% 用于启用原生上限，100% 用于关闭充电保护，85% / 90% / 95% 保留显示但置灰。macOS 26.4 及以上默认推荐系统原生功能；用户仍可明确选择由本软件管理，完成系统设置确认后使用同样的多档位界面。软件控制优先使用保持适配器连接的 CHTE，旧式 Apple Silicon 固件使用 CH0B+CH0C；绝不把会隔离适配器的 CHIE 作为普通限充兜底。Intel Mac 不开放此功能。独立 privileged helper 只修改充电控制状态，主应用不会以 root 身份运行；新版应用首次启动时会校验并完整替换不一致的旧 helper。
+
+诊断日志默认不记录硬盘/电池序列号、报告正文、用户名或完整私人路径；应用日志保存在 `~/Library/Logs/DriveBatteryHealthViewer/`，充电 helper 日志保存在 `/Library/Logs/DriveBatteryHealthViewer/`，并按约 14 天与约 20 MB 的上限滚动清理。
 
 macOS 原生不提供通用的 USB/SCSI S.M.A.R.T. 透传。内置检测组件不会安装驱动，也不会尝试系统不支持的桥接命令；只有在 macOS、Thunderbolt 连接或用户已安装的兼容驱动公开底层数据时，才会补充读取。硬盘盒不透传、RAID 只暴露逻辑卷或系统拒绝底层接口时，相关数据仍可能不可用。无法读取的数据会显示为系统未报告。
 
@@ -107,6 +112,8 @@ swift test --disable-sandbox
 ## 开源许可证
 
 本项目依据 [GNU General Public License v3.0](LICENSE) 开源发布。你可以自由使用、研究、修改和分发本项目；发布修改版本时请遵守 GPL v3.0 并保留原有版权与许可证声明。
+
+macOS 充电控制核心参考并重构了 TY-teo 的 [ChargeWatch](https://github.com/TY-teo/ChargeWatching) 中 AppleSMC、CHTE/CHIE 与安全恢复思路，并兼容旧式 CH0B/CH0C 控制键。原项目采用 MIT License，其版权、许可证和来源说明保存在 [`macos/Resources/ThirdParty/ChargeWatch/`](macos/Resources/ThirdParty/ChargeWatch/)。
 
 ## 作者
 

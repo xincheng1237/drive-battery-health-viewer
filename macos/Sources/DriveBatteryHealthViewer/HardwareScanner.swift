@@ -179,10 +179,16 @@ private final class BoundedPipeDrain: @unchecked Sendable {
 struct HardwareScanner: Sendable {
     private let runner: CommandRunning
     private let smartctlPaths: [String]?
+    private let logger: any DiagnosticLogging
 
-    init(runner: CommandRunning = SystemCommandRunner(), smartctlPaths: [String]? = nil) {
+    init(
+        runner: CommandRunning = SystemCommandRunner(),
+        smartctlPaths: [String]? = nil,
+        logger: any DiagnosticLogging = DiagnosticLogger.shared
+    ) {
         self.runner = runner
         self.smartctlPaths = smartctlPaths
+        self.logger = logger
     }
 
     func scan() async -> HealthSnapshot {
@@ -219,6 +225,36 @@ struct HardwareScanner: Sendable {
         }
     }
 
+    func readLiveBatteryState() async -> BatteryLiveState? {
+        let task = Task<BatteryLiveState?, Never>.detached(priority: .utility) {
+            guard !Task.isCancelled else { return nil }
+            return readBatteryLiveState()
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    func readLiveDriveTemperatures(driveIdentifiers: [String]) async -> [String: Double] {
+        let task = Task.detached(priority: .utility) {
+            var temperatures: [String: Double] = [:]
+            for identifier in driveIdentifiers {
+                guard !Task.isCancelled else { break }
+                if let temperature = nativeNVMeSMART(for: identifier)?.temperatureCelsius {
+                    temperatures[identifier] = temperature
+                }
+            }
+            return temperatures
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
     func scanSynchronously() -> HealthSnapshot {
         if Task.isCancelled { return cancelledSnapshot() }
         var warnings: [String] = []
@@ -230,6 +266,7 @@ struct HardwareScanner: Sendable {
         } catch {
             drives = []
             warnings.append("Drive information: \(error.localizedDescription)")
+            logger.log(.error, category: "hardware", event: "drive_scan_failed", message: "A system storage interface failed: \(error.localizedDescription)")
         }
 
         if Task.isCancelled { return cancelledSnapshot() }
@@ -243,6 +280,7 @@ struct HardwareScanner: Sendable {
             // Desktop Macs legitimately have no battery. Only surface a real command error.
             if !error.localizedDescription.localizedCaseInsensitiveContains("no battery") {
                 warnings.append("Battery information: \(error.localizedDescription)")
+                logger.log(.error, category: "hardware", event: "battery_scan_failed", message: "The system battery interface failed: \(error.localizedDescription)")
             }
         }
 
@@ -305,6 +343,7 @@ struct HardwareScanner: Sendable {
                 bytesWritten: nil,
                 unsafeShutdowns: nil,
                 mediaErrors: nil,
+                errorLogEntries: nil,
                 isSolidState: bool(info, ["SolidState"]),
                 isInternal: bool(info, ["Internal"]),
                 notes: []
@@ -425,6 +464,7 @@ struct HardwareScanner: Sendable {
            let object = try? JSONSerialization.jsonObject(with: output.data) {
             collectProfiles(object, inherited: [:], into: &profiles)
         } else if profilerOutput?.status != 124 {
+            logger.log(.warning, category: "hardware", event: "system_profiler_failed", message: "The combined storage profiler request failed; individual read-only data types will be tried.")
             // Some macOS releases or hardware combinations reject a combined
             // profiler request when one data type is unavailable. Querying
             // each read-only data type separately recovers the remaining data.
@@ -441,6 +481,8 @@ struct HardwareScanner: Sendable {
                     }
                 }
             }
+        } else {
+            logger.log(.warning, category: "hardware", event: "system_profiler_timeout", message: "The storage profiler request timed out.")
         }
 
         // Some Macs expose extra model, firmware, serial, or telemetry values
@@ -455,6 +497,7 @@ struct HardwareScanner: Sendable {
                 let object = try plistCommand("/usr/sbin/ioreg", ["-r", "-c", className, "-a"])
                 collectProfiles(object, inherited: [:], into: &profiles)
             } catch {
+                logger.log(.warning, category: "hardware", event: "ioreg_read_failed", message: "An IOKit storage registry class could not be read.")
                 if error.localizedDescription.localizedCaseInsensitiveContains("timed out") { break }
             }
         }
@@ -508,6 +551,7 @@ struct HardwareScanner: Sendable {
             value.bytesWritten = nvmeDataUnitsToBytes(metrics.dataUnitsWritten)
             value.unsafeShutdowns = metrics.unsafeShutdowns
             value.mediaErrors = metrics.mediaErrors
+            value.errorLogEntries = metrics.errorLogEntries
             value.healthState = combinedDriveHealthState(
                 smartState: value.healthState,
                 lifeRemainingPercent: value.lifeRemainingPercent
@@ -544,9 +588,26 @@ struct HardwareScanner: Sendable {
                 var arguments = ["-a", "-j"]
                 if let type { arguments.append(contentsOf: ["-d", type]) }
                 arguments.append(devicePath)
-                guard let output = try? runner.run(executable, arguments: arguments),
-                      !output.data.isEmpty,
-                      let object = try? JSONSerialization.jsonObject(with: output.data) else { continue }
+                let output: CommandOutput
+                do {
+                    output = try runner.run(executable, arguments: arguments)
+                } catch {
+                    logger.log(.warning, category: "smartctl", event: "invocation_failed", message: "The bundled read-only smartctl process could not be started.")
+                    continue
+                }
+                if output.status == 124 {
+                    logger.log(.warning, category: "smartctl", event: "timeout", message: "A read-only smartctl query timed out.")
+                    continue
+                }
+                guard !output.data.isEmpty,
+                      let object = try? JSONSerialization.jsonObject(with: output.data) else {
+                    if output.status != 0 {
+                        logger.log(.warning, category: "smartctl", event: "query_failed", message: "A read-only smartctl query returned no usable data.")
+                    } else {
+                        logger.log(.warning, category: "smartctl", event: "invalid_json", message: "A smartctl response could not be parsed.")
+                    }
+                    continue
+                }
                 let score = smartctlPayloadScore(object)
                 if score > bestScore {
                     bestScore = score
@@ -603,6 +664,7 @@ struct HardwareScanner: Sendable {
         }
         value.unsafeShutdowns = deepUInt64(nvme, ["unsafe_shutdowns"]) ?? value.unsafeShutdowns
         value.mediaErrors = deepUInt64(nvme, ["media_errors"]) ?? value.mediaErrors
+        value.errorLogEntries = deepUInt64(nvme, ["num_err_log_entries"]) ?? value.errorLogEntries
 
         // ATA raw values are vendor-defined. They are a last-resort fallback
         // and must never overwrite smartctl's normalized top-level fields.
@@ -813,6 +875,7 @@ struct NativeNVMeSMART: Sendable, Equatable {
     let powerOnHours: UInt64
     let unsafeShutdowns: UInt64
     let mediaErrors: UInt64
+    let errorLogEntries: UInt64
 }
 
 func nativeNVMeSMART(for bsdName: String) -> NativeNVMeSMART? {
@@ -825,7 +888,8 @@ func nativeNVMeSMART(for bsdName: String) -> NativeNVMeSMART? {
         powerCycles: 0,
         powerOnHours: 0,
         unsafeShutdowns: 0,
-        mediaErrors: 0
+        mediaErrors: 0,
+        errorLogEntries: 0
     )
     let succeeded = bsdName.withCString { DBHVReadNVMeSMART($0, &raw) }
     guard succeeded == 1 else { return nil }
@@ -839,7 +903,8 @@ func nativeNVMeSMART(for bsdName: String) -> NativeNVMeSMART? {
         powerCycles: raw.powerCycles,
         powerOnHours: raw.powerOnHours,
         unsafeShutdowns: raw.unsafeShutdowns,
-        mediaErrors: raw.mediaErrors
+        mediaErrors: raw.mediaErrors,
+        errorLogEntries: raw.errorLogEntries
     )
 }
 

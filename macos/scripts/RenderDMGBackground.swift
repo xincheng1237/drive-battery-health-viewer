@@ -90,9 +90,9 @@ func render(scale: Int, to destination: URL) throws {
         color: color(91, 103, 121)
     )
     centeredText(
-        "安装后，请从“应用程序”文件夹或 Spotlight 中打开。",
+        "替换旧版本前请先退出应用；安装后可从“应用程序”或 Spotlight 打开。",
         rect: NSRect(x: 70, y: 320, width: 580, height: 22),
-        font: .systemFont(ofSize: 13, weight: .regular),
+        font: .systemFont(ofSize: 12.5, weight: .regular),
         color: color(91, 103, 121)
     )
 
