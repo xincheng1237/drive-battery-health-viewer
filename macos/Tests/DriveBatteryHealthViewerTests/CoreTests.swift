@@ -989,7 +989,7 @@ struct CoreTests {
             #expect(releases[4].sections.map(\.kind) == [.historical])
         }
         let chinese = ChangelogRelease.localized(for: .simplifiedChinese)
-        #expect(chinese[0].sections[0].items[0] == "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及达到设定电量后的菜单栏快捷控制。")
+        #expect(chinese[0].sections[0].items[0] == "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及启用保护期间持续可用的菜单栏状态与快捷控制。")
         #expect(chinese[0].sections[0].items[1] == "在 macOS 15.8 上新增 PowerUI 原生 80% 充电上限，仅开放系统实际支持的档位，并保持适配器供电。")
         #expect(chinese[0].sections[0].items.contains("为 iMac、Mac mini、Mac Studio 等桌面设备的“电池”部分设计了新的界面显示。"))
         #expect(chinese[0].sections[0].items.contains("新增概览中的非正常关机次数与错误日志条目显示。"))
