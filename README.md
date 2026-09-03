@@ -40,7 +40,7 @@ Windows 当前最新版为 v1.0.6。推荐下载安装版并按照安装向导�
 
 ![macOS 历史记录界面](docs/screenshots/macos-history-zh.png)
 
-![macOS 菜单栏充电保护](docs/screenshots/macos-charge-protection-menu-zh.png)
+<img src="docs/screenshots/macos-charge-protection-menu-zh.png" alt="macOS 菜单栏充电保护" width="480">
 
 ### Windows 主界面
 

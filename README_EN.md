@@ -40,7 +40,7 @@ The current Windows release is v1.0.6. The installer is recommended and guides y
 
 ![macOS History](docs/screenshots/macos-history-zh.png)
 
-![macOS menu-bar charge protection](docs/screenshots/macos-charge-protection-menu-zh.png)
+<img src="docs/screenshots/macos-charge-protection-menu-zh.png" alt="macOS menu-bar charge protection" width="480">
 
 ### Windows main window
 
