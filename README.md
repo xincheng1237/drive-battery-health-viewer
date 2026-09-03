@@ -10,12 +10,12 @@ Windows 版使用 Go 开发；macOS 版采用原生 SwiftUI，提供同时兼容
 
 ## 下载
 
-macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.4**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
+macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.6**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
 | macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
-| Windows | [`DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe`](../../releases/download/v1.0.4/DriveBatteryHealthViewer_v1.0.4_Windows_x64.exe) | x64 | Windows 7 或更高版本 |
+| Windows | [`DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe`](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 SP1 或更高版本 |
 
 ### macOS 安装
 
@@ -23,17 +23,24 @@ macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.4**。请前往 
 2. 将“硬盘与电池健康查看器”拖入“应用程序”文件夹。
 3. 从“应用程序”中启动软件。
 
-当前 macOS 公开构建采用 ad-hoc 签名，尚未经过 Apple 公证。如果首次启动被系统阻止，请在访达中右键应用并选择“打开”，或前往“系统设置 → 隐私与安全性”确认打开。项目不会要求关闭系统安全功能。
+当前 macOS 公开构建采用 ad-hoc 签名，尚未经过 Apple 公证。
 
-### Windows 使用
+### Windows 安装
 
-Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行。部分硬件信息可能需要管理员权限。
+Windows 当前最新版为 v1.0.6。推荐下载安装版并按照安装向导完成安装；如不希望安装，也可以下载免安装版直接运行。
+
+- [下载安装版](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe)
+- [下载免安装版](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64.exe)
 
 ## 界面预览
 
 ### macOS 原生界面
 
-<img width="3024" height="1858" alt="7243944a-34be-42f5-b69c-daf12e96db4a" src="https://github.com/user-attachments/assets/625fab37-61f6-4f62-b803-3cf84559d10e" />
+![macOS 概览界面](docs/screenshots/macos-overview-zh.png)
+
+![macOS 菜单栏充电保护](docs/screenshots/macos-charge-protection-menu-zh.png)
+
+![macOS 历史记录界面](docs/screenshots/macos-history-zh.png)
 
 ### Windows 主界面
 
@@ -49,7 +56,7 @@ Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行
 - 在硬件与系统允许时读取温度、工作时间、通电次数、总读取量和总写入量
 - 查看电池制造商、类型、设计容量、满充容量、健康度、电压、循环次数、电量和充电状态
 - 保存并浏览历史检测记录，支持多选、全选、批量导出和批量删除
-- 复制或导出 UTF-8 健康报告，并可从应用菜单检查 GitHub 最新正式版本
+- 复制或导出 UTF-8 健康报告
 - 在界面、历史记录和导出报告中隐藏硬盘与电池序列号
 - 支持简体中文、英语、俄语、法语、德语、韩语和日语
 - 硬盘、S.M.A.R.T. 与健康信息保持只读，不进行测速、修复、擦除或固件更新
@@ -59,21 +66,26 @@ Windows x64 版本为单文件程序，无需安装，下载 EXE 后即可运行
 
 ### macOS
 
-- 原生 SwiftUI 界面，支持深色模式、系统强调色、键盘操作与 VoiceOver 语义
-- macOS 26 及以上版本适配 Liquid Glass 界面效果
-- 电池电量、充电/供电状态以及可读取的硬盘与电池温度自动实时更新
-- 刷新其他硬件数据时可自动保存历史报告
-- 使用一个 Universal 2 安装包原生支持 Apple 芯片和 Intel Mac
-- 内置 Universal 2 版只读 `smartctl`；当 macOS 或已安装的兼容驱动公开底层数据时，可补充读取更多硬盘详情
-- 详细功能、构建方式与数据限制见 [`macos/README.md`](macos/README.md)
+- 原生 SwiftUI 界面，使用一个 Universal 2 安装包支持 Apple 芯片与 Intel Mac
+- 支持 macOS 13 及以上版本，并适配深色模式、系统强调色、键盘操作和 VoiceOver
+- 实时显示电池电量、充电状态，以及系统能够读取的硬盘和电池温度
+- 支持历史记录、报告导出、序列号隐藏和隐私友好的诊断日志
+- 内置只读 `smartctl`，不会测速、修复、擦除硬盘或更新固件
 
-在 Apple Silicon Mac 上，macOS 13 至 26.3（macOS 15.8 除外）会在运行时检测到受支持的控制能力后提供 80% / 85% / 90% / 95% / 100% 多档位。macOS 15.8 使用系统 PowerUI 原生 OBC 路径：80% 用于启用原生上限，100% 用于关闭充电保护，85% / 90% / 95% 保留显示但置灰。macOS 26.4 及以上默认推荐系统原生功能；用户仍可明确选择由本软件管理，完成系统设置确认后使用同样的多档位界面。软件控制优先使用保持适配器连接的 CHTE，旧式 Apple Silicon 固件使用 CH0B+CH0C；绝不把会隔离适配器的 CHIE 作为普通限充兜底。Intel Mac 不开放此功能。独立 privileged helper 只修改充电控制状态，主应用不会以 root 身份运行；新版应用首次启动时会校验并完整替换不一致的旧 helper。
+#### 充电保护兼容性
 
-诊断日志默认不记录硬盘/电池序列号、报告正文、用户名或完整私人路径；应用日志保存在 `~/Library/Logs/DriveBatteryHealthViewer/`，充电 helper 日志保存在 `/Library/Logs/DriveBatteryHealthViewer/`，并按约 14 天与约 20 MB 的上限滚动清理。
+| 设备与系统 | 可用方式 |
+| --- | --- |
+| Apple Silicon + macOS 13 至 26.3（macOS 15.8 除外） | 支持 80% / 85% / 90% / 95% / 100% 多档充电上限 |
+| Apple Silicon + macOS 15.8 | 使用 Apple 原生 80% 充电上限；选择 100% 可关闭充电保护 |
+| Apple Silicon + macOS 26.4 及以上 | 优先推荐 macOS 原生功能，也可由用户明确选择使用本软件管理 |
+| Intel Mac | 电池充电由 macOS 管理，不提供软件充电保护 |
 
-macOS 原生不提供通用的 USB/SCSI S.M.A.R.T. 透传。内置检测组件不会安装驱动，也不会尝试系统不支持的桥接命令；只有在 macOS、Thunderbolt 连接或用户已安装的兼容驱动公开底层数据时，才会补充读取。硬盘盒不透传、RAID 只暴露逻辑卷或系统拒绝底层接口时，相关数据仍可能不可用。无法读取的数据会显示为系统未报告。
+充电保护默认关闭，仅在用户主动启用后工作。应用更新时会自动检查充电辅助程序版本，并在需要时完整替换旧版本。
 
-“硬盘工作时间”由硬盘固件统计，可能不包含控制器处于低功耗状态的时间，不等同于电脑开机或实际使用时长。
+外接硬盘能够显示的信息取决于 macOS、连接方式、硬盘盒和驱动是否提供底层数据。系统没有报告的项目会保持为空，不会估算或虚构。
+
+“硬盘工作时间”由硬盘固件统计，不等同于电脑开机时间或实际使用时长。更详细的技术说明见 [`macos/README.md`](macos/README.md)。
 
 ### Windows
 
