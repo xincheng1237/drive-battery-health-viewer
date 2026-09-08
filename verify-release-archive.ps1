@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$ArchiveRoot = (Join-Path $PSScriptRoot 'release-archive')
+    [string]$ArchiveRoot = (Join-Path $PSScriptRoot 'release-archive'),
+    [switch]$RequirePayloads
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,7 @@ if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
 
 $catalog = (Get-Content -LiteralPath $catalogPath -Raw -Encoding UTF8) | ConvertFrom-Json
 $checked = 0
+$recordOnly = 0
 $failures = New-Object System.Collections.Generic.List[string]
 
 foreach ($entry in @($catalog.entries)) {
@@ -22,18 +24,48 @@ foreach ($entry in @($catalog.entries)) {
     }
 
     $artifactPath = Join-Path $archiveRootFullPath ($entry.archivePath -replace '/', '\')
+    $metadataPath = Join-Path (Split-Path -Parent $artifactPath) 'artifact.json'
+    $sidecarPath = $artifactPath + '.sha256'
+    $expectedHash = ([string]$entry.sha256).ToUpperInvariant()
     if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
-        [void]$failures.Add("$($entry.id): file is missing at $artifactPath")
+        if ($RequirePayloads) {
+            [void]$failures.Add("$($entry.id): file is missing at $artifactPath")
+            continue
+        }
+
+        # Binary payloads are intentionally excluded from Git.  A clean clone
+        # can still validate the committed metadata and checksum sidecar.
+        $recordOnly++
+        if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
+            [void]$failures.Add("$($entry.id): artifact.json is missing")
+        }
+        else {
+            $metadata = (Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8) | ConvertFrom-Json
+            if (([string]$metadata.sha256).ToUpperInvariant() -ne $expectedHash) {
+                [void]$failures.Add("$($entry.id): artifact.json SHA-256 does not match catalog.json")
+            }
+            if ([string]$metadata.artifact -ne [string]$entry.artifact) {
+                [void]$failures.Add("$($entry.id): artifact.json file name does not match catalog.json")
+            }
+        }
+        if (-not (Test-Path -LiteralPath $sidecarPath -PathType Leaf)) {
+            [void]$failures.Add("$($entry.id): SHA-256 sidecar is missing")
+        }
+        else {
+            $sidecarText = (Get-Content -LiteralPath $sidecarPath -Raw -Encoding ASCII).Trim()
+            if ($sidecarText -notmatch ('^' + [Regex]::Escape($expectedHash) + '\s+')) {
+                [void]$failures.Add("$($entry.id): SHA-256 sidecar does not match catalog.json")
+            }
+        }
         continue
     }
 
     $checked++
     $actualHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToUpperInvariant()
-    if ($actualHash -ne ([string]$entry.sha256).ToUpperInvariant()) {
+    if ($actualHash -ne $expectedHash) {
         [void]$failures.Add("$($entry.id): expected $($entry.sha256), found $actualHash")
     }
 
-    $metadataPath = Join-Path (Split-Path -Parent $artifactPath) 'artifact.json'
     if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
         [void]$failures.Add("$($entry.id): artifact.json is missing")
     }
@@ -47,7 +79,6 @@ foreach ($entry in @($catalog.entries)) {
         }
     }
 
-    $sidecarPath = $artifactPath + '.sha256'
     if (-not (Test-Path -LiteralPath $sidecarPath -PathType Leaf)) {
         [void]$failures.Add("$($entry.id): SHA-256 sidecar is missing")
     }
@@ -64,6 +95,5 @@ if ($failures.Count -gt 0) {
     throw "Release archive verification failed with $($failures.Count) issue(s)."
 }
 
-$available = @($catalog.entries | Where-Object { $_.archiveAvailable -eq $true }).Count
-$missing = @($catalog.entries | Where-Object { $_.archiveAvailable -ne $true }).Count
-Write-Output ("Archive verification passed: {0} file(s) checked, {1} archived entr(y/ies), {2} record-only entr(y/ies)." -f $checked, $available, $missing)
+$catalogOnly = @($catalog.entries | Where-Object { $_.archiveAvailable -ne $true }).Count
+Write-Output ("Archive verification passed: {0} payload file(s) checked, {1} committed metadata record(s) checked, {2} catalog-only record(s)." -f $checked, $recordOnly, $catalogOnly)

@@ -69,4 +69,3 @@ E5D17C4F03D9FC05D14B87C1D126F2CFD20435A53768C3F8394F8B9C2CD4EB03
 
 这些记录保留在 `catalog.json` 的 `historical-test` 分类中，便于将来发现同哈希
 文件时认领归档。
-
