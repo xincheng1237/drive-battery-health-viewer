@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.6",
+  "platform": "windows-x64",
+  "artifact": "DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe",
+  "classification": "github-official",
+  "status": "archived",
+  "archiveAvailable": true,
+  "sha256": "AE92B1CEF1322156D70314082303C1212F0DEC4E1CAF2720E7B8D322C018022E",
+  "bytes": 11125220,
+  "archivedAtUtc": "2026-09-08T15:01:29.6671417Z",
+  "source": "GitHub release v1.0.6",
+  "description": "Verified Windows installer uploaded to GitHub on 2026-09-08",
+  "downloadUrl": "https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe"
+}
