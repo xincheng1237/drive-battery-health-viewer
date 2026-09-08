@@ -21,11 +21,12 @@ const (
 )
 
 type appSettings struct {
-	Language    string
-	FontSize    int
-	HistoryDir  string
-	HistoryMode string
-	HideSerial  bool
+	Language           string
+	FontSize           int
+	HistoryDir         string
+	HistoryMode        string
+	HideSerial         bool
+	SeenChangelogBuild string
 }
 
 var (
@@ -99,6 +100,8 @@ func loadSettings() {
 				}
 			case "hide_serial":
 				s.HideSerial = value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
+			case "seen_changelog_build":
+				s.SeenChangelogBuild = value
 			}
 		}
 	}
@@ -119,7 +122,7 @@ func saveSettingsValue(s appSettings) error {
 	if s.HideSerial {
 		hideSerial = 1
 	}
-	text := fmt.Sprintf("version=%s\r\nlanguage=%s\r\nfont=%d\r\nhistory_mode=%s\r\nhistory_dir=%s\r\nhide_serial=%d\r\n", appVersion, s.Language, s.FontSize, s.HistoryMode, s.HistoryDir, hideSerial)
+	text := fmt.Sprintf("version=%s\r\nlanguage=%s\r\nfont=%d\r\nhistory_mode=%s\r\nhistory_dir=%s\r\nhide_serial=%d\r\nseen_changelog_build=%s\r\n", appVersion, s.Language, s.FontSize, s.HistoryMode, s.HistoryDir, hideSerial, s.SeenChangelogBuild)
 	return atomicWriteFile(settingsPath(), []byte(text), 0644)
 }
 

@@ -13,6 +13,7 @@ const (
 	WM_DESTROY         = 0x0002
 	WM_MOVE            = 0x0003
 	WM_SIZE            = 0x0005
+	WM_SHOWWINDOW      = 0x0018
 	WM_SETFOCUS        = 0x0007
 	WM_PAINT           = 0x000F
 	WM_ERASEBKGND      = 0x0014
@@ -84,6 +85,7 @@ const (
 	SS_NOTIFY       = 0x0100
 	SS_ETCHEDVERT   = 0x0011
 	SS_CENTERIMAGE  = 0x0200
+	SS_END_ELLIPSIS = 0x00004000
 
 	LBS_NOTIFY           = 0x0001
 	LBS_OWNERDRAWFIXED   = 0x0010
@@ -476,6 +478,19 @@ func hiword(v uintptr) uint16      { return uint16(v >> 16) }
 func rgb(r, g, b byte) uint32      { return uint32(r) | uint32(g)<<8 | uint32(b)<<16 }
 func scale(v int32, dpi int) int32 { return int32(int64(v) * int64(dpi) / 96) }
 
+// UI typography is stored in half-points so the native Win32 surface can use
+// the same restrained type scale at every DPI without rounding 9.5/10.5 pt
+// roles to visibly different sizes.
+const (
+	uiPageTitleHalfPoints  = 36 // 18 pt
+	uiBrandHalfPoints      = 22 // 11 pt
+	uiNavigationHalfPoints = 22 // 11 pt
+	uiSectionHalfPoints    = 24 // 12 pt
+	uiBodyHalfPoints       = 22 // 11 pt
+	uiCaptionHalfPoints    = 20 // 10 pt
+	uiMetricHalfPoints     = 44 // 22 pt
+)
+
 func messageBox(owner syscall.Handle, title, text string, flags uintptr) int {
 	r, _, _ := procMessageBoxW.Call(uintptr(owner), uintptr(unsafe.Pointer(utf16Ptr(text))), uintptr(unsafe.Pointer(utf16Ptr(title))), flags)
 	return int(r)
@@ -522,7 +537,7 @@ func windowDPI(h syscall.Handle) int {
 	return int(d)
 }
 func createUIFontDPI(points int, weight int32, dpi int) syscall.Handle {
-	return createFontFaceDPI(points, weight, dpi, "Segoe UI")
+	return createFontFaceDPI(points, weight, dpi, uiFontFaceForLocale(effectiveLocale()))
 }
 func createFontFaceDPI(points int, weight int32, dpi int, face string) syscall.Handle {
 	height := -int32(points * dpi / 72)
@@ -532,8 +547,42 @@ func createFontFaceDPI(points int, weight int32, dpi int, face string) syscall.H
 func createUIFontHalfPointDPI(halfPoints int, weight int32, dpi int) syscall.Handle {
 	// halfPoints stores the point size multiplied by two, allowing sizes such as 9.5 pt.
 	height := -int32(halfPoints * dpi / 144)
-	h, _, _ := procCreateFontW.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, uintptr(unsafe.Pointer(utf16Ptr("Segoe UI"))))
+	face := uiFontFaceForLocale(effectiveLocale())
+	h, _, _ := procCreateFontW.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, uintptr(unsafe.Pointer(utf16Ptr(face))))
 	return syscall.Handle(h)
+}
+
+func uiFontFaceForLocale(code string) string {
+	major, _ := windowsVersion()
+	return uiFontFaceForLocaleVersion(code, major)
+}
+
+// uiFontFaceForLocaleVersion keeps Latin and CJK glyphs in one native family
+// instead of relying on per-glyph Segoe UI fallback.  The base CJK families
+// are used on Windows 7/8 where the newer UI variants may not be installed.
+func uiFontFaceForLocaleVersion(code string, windowsMajor uint32) string {
+	modernUIFonts := windowsMajor >= 10
+	switch code {
+	case "zh-CN":
+		if modernUIFonts {
+			return "Microsoft YaHei UI"
+		}
+		return "Microsoft YaHei"
+	case "zh-TW":
+		if modernUIFonts {
+			return "Microsoft JhengHei UI"
+		}
+		return "Microsoft JhengHei"
+	case "ja":
+		if modernUIFonts {
+			return "Yu Gothic UI"
+		}
+		return "Meiryo UI"
+	case "ko":
+		return "Malgun Gothic"
+	default:
+		return "Segoe UI"
+	}
 }
 func applyFont(h, f syscall.Handle) {
 	if h != 0 && f != 0 {

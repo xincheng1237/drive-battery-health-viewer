@@ -20,7 +20,8 @@ func TestParseSmartctlNVMeJSON(t *testing.T) {
     "power_cycles":12,
     "power_on_hours":345,
     "unsafe_shutdowns":1,
-    "media_errors":0
+    "media_errors":0,
+    "num_err_log_entries":4
   }
 }`)
 	info, err := parseSmartctlJSON(data)
@@ -38,6 +39,9 @@ func TestParseSmartctlNVMeJSON(t *testing.T) {
 	}
 	if info.PercentageUsed == nil || *info.PercentageUsed != 7 || info.PowerOnHours == nil || *info.PowerOnHours != 345 {
 		t.Fatalf("unexpected health counters: %+v", info)
+	}
+	if info.UnsafeShutdowns == nil || *info.UnsafeShutdowns != 1 || info.ErrorLogEntries == nil || *info.ErrorLogEntries != 4 {
+		t.Fatalf("unexpected shutdown/error counters: %+v", info)
 	}
 }
 

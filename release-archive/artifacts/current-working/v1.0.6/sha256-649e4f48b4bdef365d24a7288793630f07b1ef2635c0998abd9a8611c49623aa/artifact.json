@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.6",
+  "platform": "windows-x64",
+  "artifact": "DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe",
+  "classification": "current-working",
+  "status": "archived",
+  "archiveAvailable": true,
+  "sha256": "649E4F48B4BDEF365D24A7288793630F07B1EF2635C0998ABD9A8611C49623AA",
+  "bytes": 11123757,
+  "archivedAtUtc": "2026-08-31T14:33:58.1411415Z",
+  "source": "build-windows.ps1",
+  "description": "",
+  "downloadUrl": ""
+}

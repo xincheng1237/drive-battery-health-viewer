@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.6",
+  "platform": "windows-x64",
+  "artifact": "DriveBatteryHealthViewer-1.0.6-test-win-x64.zip",
+  "classification": "historical-test",
+  "status": "archived",
+  "archiveAvailable": true,
+  "sha256": "62B2B498228EFFBF6205B8C57C6591A5BFE26A73B1545B7A318FC9041A87EDE6",
+  "bytes": 3203976,
+  "archivedAtUtc": "2026-08-31T03:53:11.2123194Z",
+  "source": "archive-system-bootstrap",
+  "description": "Function-alignment Windows test archive",
+  "downloadUrl": ""
+}

@@ -47,6 +47,10 @@ func changelog106(code string) changeVersion {
 	uiText := "Introduced a responsive single-window Windows interface with Overview, History, Settings, and About pages aligned with the macOS workflow."
 	historyText := "Added history selection mode, Select All, batch export and deletion, clickable storage paths, and consistent serial-number privacy controls."
 	compatibilityText := "Windows 10 version 1809 and later use supported native storage interfaces, while earlier systems automatically continue through compatible readers with the same workflow."
+	diskCountersText := "Added unsafe-shutdown and error-log counters to each drive card on the Overview page."
+	updateText := "Added a GitHub update check that opens the matching Windows installer download when a newer release is available."
+	visualText := "Improved the default History split and high-DPI health-ring rendering, and added a quiet one-time changelog hint after an update."
+	typographyText := "Unified the Windows typography hierarchy, enlarged small interface text, and selected native UI fonts for Chinese, Japanese, and Korean."
 	switch code {
 	case "zh-CN":
 		title = "外置存储诊断与扫描可靠性增强"
@@ -58,6 +62,10 @@ func changelog106(code string) changeVersion {
 		uiText = "新增响应式 Windows 单窗口界面，概览、历史记录、设置和关于页面与 macOS 版保持一致的操作层级。"
 		historyText = "新增历史记录选择模式、全选、批量导出与删除、可点击保存路径，并统一序列号隐私控制。"
 		compatibilityText = "Windows 10 1809 及以上版本使用受支持的原生存储接口，较早系统自动切换兼容读取路径并保持相同操作流程。"
+		diskCountersText = "在概览页的每块硬盘卡片中新增非正常关机次数和错误日志条目。"
+		updateText = "新增 GitHub 更新检查，发现新版本时可直接打开对应的 Windows 安装包下载地址。"
+		visualText = "优化历史记录首次分栏比例和高 DPI 健康度圆环，并在更新后首次运行时提供一次轻量更新日志提示。"
+		typographyText = "统一 Windows 字体层级，适度放大概览、导航、设置和历史记录文字，并为中日韩界面使用对应的系统 UI 字体。"
 	case "ru":
 		title = "Диагностика внешних накопителей и надежность сканирования"
 		newHeading, optimizedHeading, fixedHeading = "Новое", "Оптимизировано", "Исправлено"
@@ -75,8 +83,8 @@ func changelog106(code string) changeVersion {
 		newHeading, optimizedHeading, fixedHeading = "新機能", "改善", "修正"
 	}
 	return cv("v1.0.6", title,
-		cs(newHeading, newText, uiText, historyText),
-		cs(optimizedHeading, optimizedText, compatibilityText),
+		cs(newHeading, newText, uiText, historyText, diskCountersText, updateText),
+		cs(optimizedHeading, optimizedText, compatibilityText, visualText, typographyText),
 		cs(fixedHeading, fixedText, identityText),
 	)
 }

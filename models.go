@@ -2,7 +2,12 @@ package main
 
 import "time"
 
-const appVersion = "1.0.6"
+const (
+	appVersion = "1.0.6"
+	// appBuildID is intentionally not shown in the UI. It lets a revised build
+	// of the same public version show its one-time, non-modal changelog hint.
+	appBuildID = "1.0.6-20260820b"
+)
 
 type diskDescriptor struct {
 	Number      int
@@ -34,6 +39,7 @@ type smartctlDriveInfo struct {
 	BytesWritten    *uint64
 	UnsafeShutdowns *uint64
 	MediaErrors     *uint64
+	ErrorLogEntries *uint64
 }
 
 type diskErrorPart struct {

@@ -23,6 +23,8 @@ var (
 	procGdipSetPenEndCap          = gdiplus.NewProc("GdipSetPenEndCap")
 	procGdipDrawEllipseI          = gdiplus.NewProc("GdipDrawEllipseI")
 	procGdipDrawArcI              = gdiplus.NewProc("GdipDrawArcI")
+	procGdipDrawEllipse           = gdiplus.NewProc("GdipDrawEllipse")
+	procGdipDrawArc               = gdiplus.NewProc("GdipDrawArc")
 	procGdipDrawRectangleI        = gdiplus.NewProc("GdipDrawRectangleI")
 	procGdipDrawLineI             = gdiplus.NewProc("GdipDrawLineI")
 	procGdipCreateSolidFill       = gdiplus.NewProc("GdipCreateSolidFill")

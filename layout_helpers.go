@@ -4,7 +4,13 @@ package main
 // The ratio is clamped so that both panes remain usable even after aggressive resizing.
 func splitPaneWidths(total, minLeft, minRight int32, ratio float64) (left, right int32, normalized float64) {
 	if total <= 0 {
-		return 0, 0, 0.5
+		if ratio < 0.25 {
+			ratio = 0.25
+		}
+		if ratio > 0.68 {
+			ratio = 0.68
+		}
+		return 0, 0, ratio
 	}
 	if ratio < 0.25 {
 		ratio = 0.25

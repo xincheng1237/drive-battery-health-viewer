@@ -21,3 +21,13 @@ func TestCompareVersions(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsInstallerURL(t *testing.T) {
+	assets := []releaseAsset{
+		{Name: "DriveBatteryHealthViewer_v1.0.7_macOS_Universal.dmg", BrowserDownloadURL: "https://example.invalid/mac"},
+		{Name: "DriveBatteryHealthViewer_v1.0.7_Windows_x64_Setup.exe", BrowserDownloadURL: "https://example.invalid/setup"},
+	}
+	if got := windowsInstallerURL(assets); got != "https://example.invalid/setup" {
+		t.Fatalf("windowsInstallerURL=%q", got)
+	}
+}

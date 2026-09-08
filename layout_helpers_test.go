@@ -12,6 +12,16 @@ func TestSplitPaneWidthsDefaultHistoryRatio(t *testing.T) {
 	}
 }
 
+func TestSplitPaneWidthsKeepsDefaultRatioBeforeFirstSize(t *testing.T) {
+	left, right, ratio := splitPaneWidths(0, 260, 340, 0.28)
+	if left != 0 || right != 0 {
+		t.Fatalf("zero-size panes must remain zero: %d/%d", left, right)
+	}
+	if ratio < 0.279 || ratio > 0.281 {
+		t.Fatalf("startup ratio was changed before first layout: %f", ratio)
+	}
+}
+
 func TestSplitPaneWidthsClampsBothSides(t *testing.T) {
 	left, right, _ := splitPaneWidths(800, 260, 340, 0.9)
 	if left != 460 || right != 340 {

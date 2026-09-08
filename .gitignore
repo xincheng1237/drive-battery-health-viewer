@@ -38,6 +38,15 @@ go.work.sum
 macos/.build*/
 macos/dist/
 
+# Local Windows build caches and generated WinUI output
+.cache/
+.gocache*/
+modern/bin/
+modern/obj/
+
+# Release archives keep metadata and checksums in Git; binary payloads stay local.
+release-archive/artifacts/**/*.zip
+
 # macOS metadata
 .DS_Store
 

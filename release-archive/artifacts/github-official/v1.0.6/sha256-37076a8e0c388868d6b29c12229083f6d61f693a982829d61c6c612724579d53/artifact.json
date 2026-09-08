@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.6",
+  "platform": "windows-x64",
+  "artifact": "DriveBatteryHealthViewer.exe",
+  "classification": "github-official",
+  "status": "archived",
+  "archiveAvailable": true,
+  "sha256": "37076A8E0C388868D6B29C12229083F6D61F693A982829D61C6C612724579D53",
+  "bytes": 7595008,
+  "archivedAtUtc": "2026-08-31T03:53:11.3568501Z",
+  "source": "archive-system-bootstrap",
+  "description": "GitHub v1.0.6 portable binary verified from local installed copy",
+  "downloadUrl": "https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6"
+}

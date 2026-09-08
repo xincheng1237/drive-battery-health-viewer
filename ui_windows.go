@@ -66,6 +66,8 @@ const (
 	ID_A_EMAIL_LABEL    = 7015
 	ID_A_EMAIL_VALUE    = 7016
 	ID_A_COPYRIGHT_TXT  = 7017
+	ID_A_CHANGELOG      = 7018
+	ID_A_UPDATE         = 7019
 
 	MENU_LANG_BASE          = 6000
 	MENU_MORE_OPEN          = 6101
@@ -133,6 +135,7 @@ var (
 	aboutGithubLinkHwnd, aboutCoolapkInfoHwnd, aboutCoolapkLinkHwnd          syscall.Handle
 	aboutFeedbackIntroHwnd, aboutQQLabelHwnd, aboutQQValueHwnd               syscall.Handle
 	aboutEmailLabelHwnd, aboutEmailValueHwnd, aboutCopyrightHwnd             syscall.Handle
+	aboutChangelogHwnd, aboutUpdateHwnd                                      syscall.Handle
 	aboutFonts                                                               []syscall.Handle
 	aboutAccentBrush                                                         syscall.Handle
 	aboutLinkOldProc, aboutLinkCallback                                      uintptr
@@ -239,9 +242,9 @@ func deleteFonts(list []syscall.Handle) {
 func recreateMainFonts() {
 	deleteFonts([]syscall.Handle{mainUIFont, mainReportFont, mainStatusFont})
 	mainDPI = windowDPI(mainHwnd)
-	mainUIFont = createUIFontDPI(10, FW_NORMAL, mainDPI)
+	mainUIFont = createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, mainDPI)
 	mainReportFont = createUIFontDPI(currentSettings().FontSize, FW_NORMAL, mainDPI)
-	mainStatusFont = createUIFontDPI(9, FW_NORMAL, mainDPI)
+	mainStatusFont = createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_NORMAL, mainDPI)
 	for _, h := range []syscall.Handle{refreshHwnd, exportHwnd, copyHwnd, historyButtonHwnd, languageHwnd, zoomOutHwnd, zoomInHwnd, moreHwnd} {
 		applyFont(h, mainUIFont)
 	}
@@ -496,6 +499,8 @@ func showLanguageMenu() {
 	if cmd >= MENU_LANG_BASE && cmd < MENU_LANG_BASE+uintptr(len(items)) {
 		chosen := items[int(cmd-MENU_LANG_BASE)]
 		updateSettings(func(s *appSettings) { s.Language = chosen })
+		// The preferred UI face changes with the selected writing system.
+		recreateMainFonts()
 		updateMainTexts()
 		layoutMain()
 	}
@@ -610,9 +615,15 @@ func finishUpdateCheck() {
 		restoreOverviewStatus()
 		return
 	}
-	text := fmt.Sprintf(updateText(code, "available"), release.Version, normalizedVersion(appVersion))
+	key := "available"
+	target := release.DownloadURL
+	if strings.TrimSpace(target) == "" {
+		key = "release"
+		target = release.URL
+	}
+	text := fmt.Sprintf(updateText(code, key), release.Version, normalizedVersion(appVersion))
 	if messageBox(mainHwnd, title, text, MB_YESNO|MB_ICONINFORMATION) == IDYES {
-		if err := openPath(release.URL); err != nil {
+		if err := openPath(target); err != nil {
 			messageBox(mainHwnd, tr(code, "errorTitle"), err.Error(), MB_OK|MB_ICONERROR)
 		}
 	}
@@ -851,6 +862,10 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 			if viewerHwnd != 0 {
 				setRichText(viewerEditHwnd, historyDisplayText(viewerText))
 			}
+		case ID_UPDATE_NOTICE_VIEW:
+			dismissUpdateNotice(true)
+		case ID_UPDATE_NOTICE_DISMISS:
+			dismissUpdateNotice(false)
 		}
 		return 0
 	case WM_APP_SCAN_DONE - 1:
@@ -866,6 +881,9 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 	case WM_CTLCOLORSTATIC:
 		if shellBrandHwnd != 0 {
 			procSetBkMode.Call(wParam, TRANSPARENT)
+			if syscall.Handle(lParam) == shellUpdateNoticeHwnd && shellNoticeBrush != 0 {
+				return uintptr(shellNoticeBrush)
+			}
 			if (syscall.Handle(lParam) == shellBrandHwnd || syscall.Handle(lParam) == shellBrandVersionHwnd) && shellSidebarBrush != 0 {
 				return uintptr(shellSidebarBrush)
 			}
@@ -907,7 +925,7 @@ func mainWindowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uin
 			procDestroyWindow.Call(uintptr(aboutHwnd))
 		}
 		deleteFonts([]syscall.Handle{mainUIFont, mainReportFont, mainStatusFont, shellTitleFont, shellBrandFont, shellNavFont, shellSmallFont, shellIconFont, dashboardTitleFont, dashboardCardTitleFont, dashboardBodyFont, dashboardSmallFont, dashboardPercentFont})
-		for _, brush := range []syscall.Handle{shellSidebarBrush, shellCanvasBrush, shellCardBrush} {
+		for _, brush := range []syscall.Handle{shellSidebarBrush, shellCanvasBrush, shellCardBrush, shellNoticeBrush} {
 			if brush != 0 {
 				procDeleteObject.Call(uintptr(brush))
 			}
@@ -934,7 +952,14 @@ func sourceText(code, source string) string {
 func recreateHistoryFonts() {
 	deleteFonts(histFonts)
 	dpi := windowDPI(historyHwnd)
-	histFonts = []syscall.Handle{createUIFontDPI(16, FW_SEMIBOLD, dpi), createUIFontDPI(10, FW_SEMIBOLD, dpi), createUIFontDPI(9, FW_NORMAL, dpi), createUIFontDPI(8, FW_NORMAL, dpi), createUIFontDPI(8, FW_SEMIBOLD, dpi), createUIFontDPI(currentSettings().FontSize, FW_NORMAL, dpi)}
+	histFonts = []syscall.Handle{
+		createUIFontHalfPointDPI(uiPageTitleHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiBodyHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, dpi),
+		createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_NORMAL, dpi),
+		createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontDPI(currentSettings().FontSize, FW_NORMAL, dpi),
+	}
 	applyFont(histTitleHwnd, histFonts[0])
 	for _, h := range []syscall.Handle{histOpenHwnd, histChangeHwnd, histFullHwnd, histBatchHwnd, histSelectAllHwnd, histExportSelectedHwnd, histDeleteSelectedHwnd, histDoneHwnd} {
 		applyFont(h, histFonts[2])
@@ -943,7 +968,7 @@ func recreateHistoryFonts() {
 		applyFont(h, histFonts[2])
 	}
 	applyFont(histPreviewHwnd, histFonts[5])
-	itemH := scale(52, dpi)
+	itemH := scale(56, dpi)
 	procSendMessageW.Call(uintptr(histListHwnd), LB_SETITEMHEIGHT, 0, uintptr(itemH))
 }
 func updateHistoryTexts() {
@@ -1571,6 +1596,20 @@ func invalidateListItem(h syscall.Handle, i int) {
 	procSendMessageW.Call(uintptr(h), LB_GETITEMRECT, uintptr(i), uintptr(unsafe.Pointer(&r)))
 	procInvalidateRect.Call(uintptr(h), uintptr(unsafe.Pointer(&r)), 0)
 }
+
+// historyItemTextRects gives each line its own generous vertical band.  The
+// list uses fixed 10 pt and 8 pt fonts, so its baselines must not be moved by
+// the independently configurable report font size.  Keeping the bands tied
+// only to the DPI-scaled item height prevents the subtitle from being pushed
+// into (and clipped by) the separator at larger report-font settings.
+func historyItemTextRects(left, right, itemHeight int32, dpi int) (title, subtitle rect) {
+	title = rect{left, scale(6, dpi), right, min32(itemHeight, scale(27, dpi))}
+	subtitleTop := min32(itemHeight, scale(30, dpi))
+	subtitleBottom := max32(subtitleTop, itemHeight-scale(6, dpi))
+	subtitle = rect{left, subtitleTop, right, subtitleBottom}
+	return
+}
+
 func drawHistoryItem(dis *drawItemStruct) {
 	i := int(dis.ItemID)
 	if i < 0 || i >= len(histRecords) {
@@ -1616,18 +1655,15 @@ func drawHistoryItem(dis *drawItemStruct) {
 	if hover && !histSelectionMode {
 		textRight = dr.Left - scale(10, dpi)
 	}
-	base := currentSettings().FontSize
-	titleBottom := scale(int32(31+(base-9)*2), dpi)
-	dateR := rect{pad, scale(6, dpi), textRight, titleBottom}
-	subR := rect{pad, titleBottom - scale(2, dpi), textRight, local.Bottom - scale(4, dpi)}
+	dateR, subR := historyItemTextRects(pad, textRight, local.Bottom, dpi)
 	rec := histRecords[i]
-	drawText(syscall.Handle(mem), rec.GeneratedAt.Format("2006-01-02 15:04:05"), &dateR, DT_LEFT|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, histFonts[1], rgb(22, 35, 55))
+	drawText(syscall.Handle(mem), rec.GeneratedAt.Format("2006-01-02 15:04:05"), &dateR, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, histFonts[1], rgb(22, 35, 55))
 	computer := strings.TrimSpace(rec.Computer)
 	if computer == "" {
 		computer = tr(effectiveLocale(), "unknownComputer")
 	}
 	subtitle := computer + "  ·  " + sourceText(effectiveLocale(), rec.Source)
-	drawText(syscall.Handle(mem), subtitle, &subR, DT_LEFT|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, histFonts[3], rgb(83, 105, 140))
+	drawText(syscall.Handle(mem), subtitle, &subR, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, histFonts[3], rgb(83, 105, 140))
 	if hover && !histSelectionMode {
 		a := histHoverAlpha
 		ease := 255 - (255-a)*(255-a)/255
@@ -1895,8 +1931,8 @@ func deleteDialogProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) u
 		deleteDialogHwnd = hwnd
 		applyWindowIcons(hwnd)
 		dpi := windowDPI(hwnd)
-		deleteDialogFont = createUIFontDPI(10, FW_NORMAL, dpi)
-		deleteDialogTitleFont = createUIFontDPI(14, FW_SEMIBOLD, dpi)
+		deleteDialogFont = createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, dpi)
+		deleteDialogTitleFont = createUIFontHalfPointDPI(30, FW_SEMIBOLD, dpi)
 		deleteTextHwnd = createWindow(0, "STATIC", deleteDialogPrompt(effectiveLocale(), deleteDialogCount), WS_CHILD|WS_VISIBLE|SS_LEFT, 0, 0, 0, 0, hwnd, 0)
 		checkText := tr(effectiveLocale(), "deleteExternal")
 		if !deleteDialogShowExternal {
@@ -2332,10 +2368,10 @@ func recreateChangeFonts() {
 	deleteFonts(changeFonts)
 	dpi := windowDPI(changelogHwnd)
 	changeFonts = []syscall.Handle{
-		createUIFontDPI(18, FW_SEMIBOLD, dpi),
-		createUIFontDPI(10, FW_NORMAL, dpi),
-		createUIFontDPI(11, FW_SEMIBOLD, dpi),
-		createUIFontDPI(11, FW_NORMAL, dpi),
+		createUIFontHalfPointDPI(uiPageTitleHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_NORMAL, dpi),
+		createUIFontHalfPointDPI(uiSectionHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, dpi),
 		createUIFontHalfPointDPI(21, FW_SEMIBOLD, dpi),
 	}
 	applyFont(changeTitleHwnd, changeFonts[0])
@@ -2586,9 +2622,10 @@ func aboutFeedbackParts() (intro, qqLabel, qqValue, emailLabel, emailValue strin
 	return
 }
 
-func createAboutLinkFont(points int, dpi int) syscall.Handle {
-	height := -int32(points * dpi / 72)
-	h, _, _ := procCreateFontW.Call(uintptr(height), 0, 0, 0, uintptr(FW_NORMAL), 0, 1, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, uintptr(unsafe.Pointer(utf16Ptr("Segoe UI"))))
+func createAboutLinkFont(halfPoints int, dpi int) syscall.Handle {
+	height := -int32(halfPoints * dpi / 144)
+	face := uiFontFaceForLocale(effectiveLocale())
+	h, _, _ := procCreateFontW.Call(uintptr(height), 0, 0, 0, uintptr(FW_NORMAL), 0, 1, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, uintptr(unsafe.Pointer(utf16Ptr(face))))
 	return syscall.Handle(h)
 }
 
@@ -2599,12 +2636,12 @@ func recreateAboutFonts() {
 	}
 	dpi := windowDPI(aboutHwnd)
 	aboutFonts = []syscall.Handle{
-		createUIFontDPI(18, FW_SEMIBOLD, dpi),
-		createUIFontDPI(11, FW_NORMAL, dpi),
-		createUIFontDPI(10, FW_SEMIBOLD, dpi),
-		createUIFontDPI(11, FW_SEMIBOLD, dpi),
-		createUIFontDPI(11, FW_NORMAL, dpi),
-		createAboutLinkFont(11, dpi),
+		createUIFontHalfPointDPI(40, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, dpi),
+		createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiSectionHalfPoints, FW_SEMIBOLD, dpi),
+		createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, dpi),
+		createAboutLinkFont(uiBodyHalfPoints, dpi),
 	}
 	applyFont(aboutTitleHwnd, aboutFonts[0])
 	applyFont(aboutSummaryHwnd, aboutFonts[1])
@@ -2617,6 +2654,8 @@ func recreateAboutFonts() {
 	}
 	applyFont(aboutGithubLinkHwnd, aboutFonts[5])
 	applyFont(aboutCoolapkLinkHwnd, aboutFonts[5])
+	applyFont(aboutChangelogHwnd, aboutFonts[4])
+	applyFont(aboutUpdateHwnd, aboutFonts[4])
 }
 
 func updateAboutTexts() {
@@ -2644,6 +2683,8 @@ func updateAboutTexts() {
 	setText(aboutEmailLabelHwnd, emailLabel)
 	setText(aboutEmailValueHwnd, emailValue)
 	setText(aboutCopyrightHwnd, aboutCopyrightText())
+	setText(aboutChangelogHwnd, tr(code, "changelogTitle"))
+	setText(aboutUpdateHwnd, updateText(code, "check"))
 }
 
 func aboutMaxScroll(clientH int32) int32 {
@@ -2728,6 +2769,12 @@ func layoutAbout() {
 		y = logicalY - aboutScrollPos
 		moves = append(moves, windowMove{h, m, y, r.Right - 2*m, lineH})
 		logicalY += lineH + lineGap
+	}
+	menuRowH := scale(44, dpi)
+	for _, h := range []syscall.Handle{aboutChangelogHwnd, aboutUpdateHwnd} {
+		y = logicalY - aboutScrollPos
+		moves = append(moves, windowMove{h, m, y, r.Right - 2*m, menuRowH})
+		logicalY += menuRowH + scale(7, dpi)
 	}
 	logicalY += sectionGap
 	y = logicalY - aboutScrollPos
@@ -2824,6 +2871,38 @@ func createAboutTextControl(hwnd syscall.Handle, id uintptr, multiline bool) sys
 	return createWindow(0, "EDIT", "", style, 0, 0, 0, 0, hwnd, id)
 }
 
+func drawAboutMenuButton(dis *drawItemStruct) bool {
+	if dis == nil || (dis.CtlID != ID_A_CHANGELOG && dis.CtlID != ID_A_UPDATE) {
+		return false
+	}
+	dpi := windowDPI(aboutHwnd)
+	background, border, foreground := rgb(255, 255, 255), rgb(224, 228, 234), rgb(31, 43, 60)
+	if dis.ItemState&ODS_SELECTED != 0 {
+		background, border, foreground = rgb(230, 239, 252), rgb(174, 199, 231), rgb(20, 91, 173)
+	}
+	if dis.ItemState&ODS_DISABLED != 0 {
+		background, border, foreground = rgb(247, 248, 250), rgb(232, 235, 239), rgb(151, 158, 168)
+	}
+	drawRoundedSurface(dis.HDC, dis.RcItem, background, border, scale(8, dpi))
+	glyph := "\uE823"
+	if dis.CtlID == ID_A_UPDATE {
+		glyph = "\uE895"
+	}
+	iconRect := dis.RcItem
+	iconRect.Left += scale(12, dpi)
+	iconRect.Right = iconRect.Left + scale(24, dpi)
+	drawText(dis.HDC, glyph, &iconRect, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX, shellIconFont, rgb(31, 106, 204))
+	textRect := dis.RcItem
+	textRect.Left += scale(46, dpi)
+	textRect.Right -= scale(42, dpi)
+	drawText(dis.HDC, getText(syscall.Handle(dis.HwndItem)), &textRect, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX, aboutFonts[4], foreground)
+	chevronRect := dis.RcItem
+	chevronRect.Left = chevronRect.Right - scale(36, dpi)
+	chevronRect.Right -= scale(10, dpi)
+	drawText(dis.HDC, "\uE76C", &chevronRect, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX, shellIconFont, rgb(133, 143, 157))
+	return true
+}
+
 func openAbout() {
 	if shellBrandHwnd != 0 {
 		switchShellPage(shellPageAbout)
@@ -2863,6 +2942,10 @@ func aboutProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr 
 		aboutEmailLabelHwnd = createAboutTextControl(hwnd, ID_A_EMAIL_LABEL, false)
 		aboutEmailValueHwnd = createAboutTextControl(hwnd, ID_A_EMAIL_VALUE, false)
 		aboutCopyrightHwnd = createAboutTextControl(hwnd, ID_A_COPYRIGHT_TXT, false)
+		aboutChangelogHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_A_CHANGELOG)
+		aboutUpdateHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_A_UPDATE)
+		setWindowTheme(aboutChangelogHwnd, "Explorer")
+		setWindowTheme(aboutUpdateHwnd, "Explorer")
 		aboutLinkCallback = syscall.NewCallback(aboutLinkProc)
 		old, _, _ := procSetWindowLongPtrW.Call(uintptr(aboutGithubLinkHwnd), ^uintptr(3), aboutLinkCallback)
 		aboutLinkOldProc = old
@@ -2919,6 +3002,19 @@ func aboutProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr 
 		return 0
 	case WM_ERASEBKGND:
 		return 1
+	case WM_DRAWITEM:
+		if drawAboutMenuButton((*drawItemStruct)(unsafe.Pointer(lParam))) {
+			return 1
+		}
+	case WM_COMMAND:
+		switch loword(wParam) {
+		case ID_A_CHANGELOG:
+			openChangelog()
+			return 0
+		case ID_A_UPDATE:
+			checkForUpdates()
+			return 0
+		}
 	case WM_PAINT:
 		var ps paintStruct
 		hdc, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
@@ -2965,6 +3061,7 @@ func aboutProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr 
 		aboutAccentHwnd, aboutAuthorHwnd, aboutGithubInfoHwnd, aboutGithubLinkHwnd = 0, 0, 0, 0
 		aboutCoolapkInfoHwnd, aboutCoolapkLinkHwnd, aboutFeedbackIntroHwnd = 0, 0, 0
 		aboutQQLabelHwnd, aboutQQValueHwnd, aboutEmailLabelHwnd, aboutEmailValueHwnd, aboutCopyrightHwnd = 0, 0, 0, 0, 0
+		aboutChangelogHwnd, aboutUpdateHwnd = 0, 0
 		aboutLinkOldProc, aboutLinkCallback = 0, 0
 		aboutLastLinkHwnd = 0
 		aboutLastLinkClick = time.Time{}
@@ -2976,6 +3073,9 @@ func aboutProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr 
 }
 
 func main() {
+	if runCoreCommand() {
+		return
+	}
 	runtime.LockOSThread()
 	if procSetProcessDpiAwarenessContext.Find() == nil {
 		if r, _, _ := procSetProcessDpiAwarenessContext.Call(^uintptr(3)); r == 0 {

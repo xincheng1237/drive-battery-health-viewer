@@ -16,9 +16,11 @@ const (
 	ID_NAV_SETTINGS = 8103
 	ID_NAV_ABOUT    = 8104
 
-	ID_SETTINGS_MODE   = 8201
-	ID_SETTINGS_OPEN   = 8202
-	ID_SETTINGS_CHANGE = 8203
+	ID_SETTINGS_MODE         = 8201
+	ID_SETTINGS_OPEN         = 8202
+	ID_SETTINGS_CHANGE       = 8203
+	ID_UPDATE_NOTICE_VIEW    = 8301
+	ID_UPDATE_NOTICE_DISMISS = 8302
 )
 
 const (
@@ -29,25 +31,30 @@ const (
 )
 
 var (
-	shellBrandHwnd, shellBrandVersionHwnd, shellTitleHwnd              syscall.Handle
-	shellPrivacyHwnd                                                   syscall.Handle
-	navOverviewHwnd, navHistoryHwnd, navSettingsHwnd, navAboutHwnd     syscall.Handle
-	dashboardHwnd, settingsPageHwnd                                    syscall.Handle
-	settingsPageTitleHwnd, settingsAppearanceTitleHwnd                 syscall.Handle
-	settingsLanguageLabelHwnd                                          syscall.Handle
-	settingsPrivacyNoteHwnd, settingsFontLabelHwnd                     syscall.Handle
-	settingsStorageTitleHwnd, settingsModeLabelHwnd                    syscall.Handle
-	settingsPathLabelHwnd, settingsReadTitleHwnd, settingsReadNoteHwnd syscall.Handle
-	settingsBridgeNoteHwnd, settingsModeHwnd, settingsOpenHwnd         syscall.Handle
-	settingsChangeHwnd                                                 syscall.Handle
-	shellTitleFont, shellBrandFont, shellNavFont, shellSmallFont       syscall.Handle
-	shellIconFont                                                      syscall.Handle
-	dashboardTitleFont, dashboardCardTitleFont, dashboardBodyFont      syscall.Handle
-	dashboardSmallFont, dashboardPercentFont                           syscall.Handle
-	shellSidebarBrush, shellCanvasBrush, shellCardBrush                syscall.Handle
-	shellPage                                                          = shellPageOverview
-	dashboardScroll                                                    int32
-	settingsScroll                                                     int32
+	shellBrandHwnd, shellBrandVersionHwnd, shellTitleHwnd                 syscall.Handle
+	shellPrivacyHwnd                                                      syscall.Handle
+	shellUpdateNoticeHwnd, shellUpdateViewHwnd, shellUpdateDismissHwnd    syscall.Handle
+	navOverviewHwnd, navHistoryHwnd, navSettingsHwnd, navAboutHwnd        syscall.Handle
+	dashboardHwnd, settingsPageHwnd                                       syscall.Handle
+	settingsPageTitleHwnd, settingsAppearanceTitleHwnd                    syscall.Handle
+	settingsLanguageLabelHwnd                                             syscall.Handle
+	settingsPrivacyNoteHwnd, settingsFontLabelHwnd                        syscall.Handle
+	settingsStorageTitleHwnd, settingsModeLabelHwnd                       syscall.Handle
+	settingsPathLabelHwnd, settingsReadTitleHwnd, settingsReadNoteHwnd    syscall.Handle
+	settingsBridgeNoteHwnd, settingsModeHwnd, settingsOpenHwnd            syscall.Handle
+	settingsChangeHwnd                                                    syscall.Handle
+	shellTitleFont, shellBrandFont, shellNavFont, shellSmallFont          syscall.Handle
+	shellIconFont                                                         syscall.Handle
+	dashboardTitleFont, dashboardCardTitleFont, dashboardBodyFont         syscall.Handle
+	dashboardSmallFont, dashboardPercentFont                              syscall.Handle
+	shellSidebarBrush, shellCanvasBrush, shellCardBrush, shellNoticeBrush syscall.Handle
+	shellPage                                                             = shellPageOverview
+	dashboardScroll                                                       int32
+	settingsScroll                                                        int32
+	updateNoticeVisible                                                   bool
+	settingsLayoutWidth, settingsLayoutHeight                             int32
+	settingsLayoutDPI                                                     int
+	settingsLayoutValid, settingsLayoutInProgress                         bool
 )
 
 func shellText(code, key string) string {
@@ -95,9 +102,12 @@ func createModernShell(hwnd syscall.Handle) {
 	refreshHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_REFRESH)
 	exportHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_EXPORT)
 	copyHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_COPY)
-	moreHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_MORE)
 	shellPrivacyHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_HIDE_SERIAL)
 	statusHwnd = createWindow(0, "STATIC", "", WS_CHILD|WS_VISIBLE|SS_LEFT|SS_CENTERIMAGE, 0, 0, 0, 0, hwnd, ID_STATUS)
+	updateNoticeVisible = currentSettings().SeenChangelogBuild != appBuildID
+	shellUpdateNoticeHwnd = createWindow(0, "STATIC", "", WS_CHILD|SS_LEFT|SS_CENTERIMAGE|SS_END_ELLIPSIS, 0, 0, 0, 0, hwnd, 0)
+	shellUpdateViewHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_UPDATE_NOTICE_VIEW)
+	shellUpdateDismissHwnd = createWindow(0, "BUTTON", "", WS_CHILD|WS_TABSTOP|BS_OWNERDRAW, 0, 0, 0, 0, hwnd, ID_UPDATE_NOTICE_DISMISS)
 	// Keep the report control as a hidden text backing store for existing copy,
 	// export, accessibility, and language-update paths.
 	reportHwnd = createWindow(0, "RICHEDIT50W", "", WS_CHILD|ES_MULTILINE|ES_READONLY, 0, 0, 0, 0, hwnd, ID_REPORT)
@@ -112,8 +122,9 @@ func createModernShell(hwnd syscall.Handle) {
 	shellSidebarBrush = createBrush(rgb(244, 246, 249))
 	shellCanvasBrush = createBrush(rgb(248, 249, 251))
 	shellCardBrush = createBrush(rgb(255, 255, 255))
+	shellNoticeBrush = createBrush(rgb(239, 246, 255))
 
-	for _, control := range []syscall.Handle{refreshHwnd, exportHwnd, copyHwnd, moreHwnd, shellPrivacyHwnd, navOverviewHwnd, navHistoryHwnd, navSettingsHwnd, navAboutHwnd} {
+	for _, control := range []syscall.Handle{refreshHwnd, exportHwnd, copyHwnd, shellPrivacyHwnd, shellUpdateViewHwnd, shellUpdateDismissHwnd, navOverviewHwnd, navHistoryHwnd, navSettingsHwnd, navAboutHwnd} {
 		setWindowTheme(control, "Explorer")
 	}
 	recreateShellFonts()
@@ -124,17 +135,17 @@ func recreateShellFonts() {
 	deleteFonts([]syscall.Handle{shellTitleFont, shellBrandFont, shellNavFont, shellSmallFont, shellIconFont, dashboardTitleFont, dashboardCardTitleFont, dashboardBodyFont, dashboardSmallFont, dashboardPercentFont})
 	dpi := windowDPI(mainHwnd)
 	// The report font preference must not resize the application chrome or
-	// dashboard. Keeping UI typography fixed prevents clipped controls at 14 pt.
-	shellTitleFont = createUIFontDPI(16, FW_SEMIBOLD, dpi)
-	shellBrandFont = createUIFontDPI(10, FW_SEMIBOLD, dpi)
-	shellNavFont = createUIFontDPI(10, FW_NORMAL, dpi)
-	shellSmallFont = createUIFontDPI(9, FW_NORMAL, dpi)
+	// dashboard.  These roles form one fixed 18/12/11/10 pt UI scale.
+	shellTitleFont = createUIFontHalfPointDPI(uiPageTitleHalfPoints, FW_SEMIBOLD, dpi)
+	shellBrandFont = createUIFontHalfPointDPI(uiBrandHalfPoints, FW_SEMIBOLD, dpi)
+	shellNavFont = createUIFontHalfPointDPI(uiNavigationHalfPoints, FW_NORMAL, dpi)
+	shellSmallFont = createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_NORMAL, dpi)
 	shellIconFont = createFontFaceDPI(12, FW_NORMAL, dpi, "Segoe MDL2 Assets")
-	dashboardTitleFont = createUIFontDPI(16, FW_SEMIBOLD, dpi)
-	dashboardCardTitleFont = createUIFontDPI(11, FW_SEMIBOLD, dpi)
-	dashboardBodyFont = createUIFontDPI(10, FW_NORMAL, dpi)
-	dashboardSmallFont = createUIFontDPI(9, FW_NORMAL, dpi)
-	dashboardPercentFont = createUIFontDPI(18, FW_SEMIBOLD, dpi)
+	dashboardTitleFont = createUIFontHalfPointDPI(uiPageTitleHalfPoints, FW_SEMIBOLD, dpi)
+	dashboardCardTitleFont = createUIFontHalfPointDPI(uiSectionHalfPoints, FW_SEMIBOLD, dpi)
+	dashboardBodyFont = createUIFontHalfPointDPI(uiBodyHalfPoints, FW_NORMAL, dpi)
+	dashboardSmallFont = createUIFontHalfPointDPI(uiCaptionHalfPoints, FW_NORMAL, dpi)
+	dashboardPercentFont = createUIFontHalfPointDPI(uiMetricHalfPoints, FW_SEMIBOLD, dpi)
 	applyFont(shellBrandHwnd, shellBrandFont)
 	applyFont(shellBrandVersionHwnd, shellSmallFont)
 	applyFont(shellTitleHwnd, shellTitleFont)
@@ -142,7 +153,8 @@ func recreateShellFonts() {
 	for _, control := range []syscall.Handle{navOverviewHwnd, navHistoryHwnd, navSettingsHwnd, navAboutHwnd} {
 		applyFont(control, shellNavFont)
 	}
-	for _, control := range []syscall.Handle{refreshHwnd, exportHwnd, copyHwnd, moreHwnd, shellPrivacyHwnd} {
+	applyFont(shellUpdateNoticeHwnd, shellSmallFont)
+	for _, control := range []syscall.Handle{refreshHwnd, exportHwnd, copyHwnd, shellPrivacyHwnd, shellUpdateViewHwnd, shellUpdateDismissHwnd} {
 		applyFont(control, mainUIFont)
 	}
 	updateSettingsPageFonts()
@@ -159,8 +171,10 @@ func updateShellTexts() {
 	setText(refreshHwnd, tr(code, "refresh"))
 	setText(exportHwnd, tr(code, "export"))
 	setText(copyHwnd, tr(code, "copy"))
-	setText(moreHwnd, tr(code, "more"))
 	setText(shellPrivacyHwnd, tr(code, "hideSerial"))
+	setText(shellUpdateNoticeHwnd, updateNoticeText(code, "message"))
+	setText(shellUpdateViewHwnd, updateNoticeText(code, "view"))
+	setText(shellUpdateDismissHwnd, updateNoticeText(code, "dismiss"))
 	updateSettingsPageTexts()
 	updateShellPageTitle()
 	refreshDashboard()
@@ -194,6 +208,12 @@ func switchShellPage(page int) {
 	}
 	if page == shellPageSettings {
 		updateSettingsPageTexts()
+		// A hidden child can receive its first paint before the parent has
+		// delivered a size notification.  Re-run the page layout after it is
+		// selected so the title, card backgrounds, and controls share one
+		// geometry snapshot on the very first frame.
+		settingsLayoutValid = false
+		layoutSettingsPage()
 	}
 	if page == shellPageAbout {
 		recreateAboutFonts()
@@ -230,8 +250,29 @@ func enforceShellPageVisibility() {
 	if shellPage == shellPageOverview {
 		command = SW_SHOW
 	}
-	for _, control := range []syscall.Handle{shellTitleHwnd, refreshHwnd, exportHwnd, copyHwnd, moreHwnd, shellPrivacyHwnd, statusHwnd} {
+	for _, control := range []syscall.Handle{shellTitleHwnd, refreshHwnd, exportHwnd, copyHwnd, shellPrivacyHwnd, statusHwnd} {
 		procShowWindow.Call(uintptr(control), command)
+	}
+	noticeCommand := uintptr(SW_HIDE)
+	if shellPage == shellPageOverview && updateNoticeVisible {
+		noticeCommand = SW_SHOW
+	}
+	for _, control := range []syscall.Handle{shellUpdateNoticeHwnd, shellUpdateViewHwnd, shellUpdateDismissHwnd} {
+		procShowWindow.Call(uintptr(control), noticeCommand)
+	}
+}
+
+func dismissUpdateNotice(openChanges bool) {
+	if !updateNoticeVisible {
+		return
+	}
+	updateNoticeVisible = false
+	updateSettings(func(s *appSettings) { s.SeenChangelogBuild = appBuildID })
+	layoutMain()
+	enforceShellPageVisibility()
+	redrawWindowClean(mainHwnd, nil)
+	if openChanges {
+		openChangelog()
 	}
 }
 
@@ -262,16 +303,39 @@ func layoutModernShell() {
 		buttonH := scale(40, dpi)
 		gap := scale(8, dpi)
 		right := r.Right - margin
-		for _, control := range []syscall.Handle{shellPrivacyHwnd, moreHwnd, copyHwnd, exportHwnd, refreshHwnd} {
+		for _, control := range []syscall.Handle{shellPrivacyHwnd, copyHwnd, exportHwnd, refreshHwnd} {
 			procMoveWindow.Call(uintptr(control), uintptr(right-buttonW), uintptr(top), uintptr(buttonW), uintptr(buttonH), 1)
 			right -= buttonW + gap
 		}
 		procMoveWindow.Call(uintptr(statusHwnd), uintptr(contentX+margin), uintptr(scale(56, dpi)), uintptr(max32(scale(160, dpi), contentW-2*margin)), uintptr(scale(22, dpi)), 1)
-		procMoveWindow.Call(uintptr(dashboardHwnd), uintptr(contentX), uintptr(scale(88, dpi)), uintptr(contentW), uintptr(max32(scale(160, dpi), r.Bottom-scale(88, dpi))), 1)
+		dashboardTop := scale(88, dpi)
+		if updateNoticeVisible {
+			noticeTop := scale(88, dpi)
+			noticeHeight := scale(42, dpi)
+			dismissW := scale(66, dpi)
+			viewW := scale(118, dpi)
+			buttonGap := scale(8, dpi)
+			noticeRight := r.Right - margin
+			procMoveWindow.Call(uintptr(shellUpdateDismissHwnd), uintptr(noticeRight-dismissW), uintptr(noticeTop+scale(4, dpi)), uintptr(dismissW), uintptr(scale(34, dpi)), 1)
+			procMoveWindow.Call(uintptr(shellUpdateViewHwnd), uintptr(noticeRight-dismissW-buttonGap-viewW), uintptr(noticeTop+scale(4, dpi)), uintptr(viewW), uintptr(scale(34, dpi)), 1)
+			textRight := noticeRight - dismissW - buttonGap - viewW - scale(12, dpi)
+			procMoveWindow.Call(uintptr(shellUpdateNoticeHwnd), uintptr(contentX+margin+scale(14, dpi)), uintptr(noticeTop), uintptr(max32(scale(120, dpi), textRight-(contentX+margin+scale(14, dpi)))), uintptr(noticeHeight), 1)
+			dashboardTop = scale(140, dpi)
+		}
+		procMoveWindow.Call(uintptr(dashboardHwnd), uintptr(contentX), uintptr(dashboardTop), uintptr(contentW), uintptr(max32(scale(160, dpi), r.Bottom-dashboardTop)), 1)
 	} else {
 		pageH := max32(scale(200, dpi), r.Bottom)
 		active := map[int]syscall.Handle{shellPageHistory: historyHwnd, shellPageSettings: settingsPageHwnd, shellPageAbout: aboutHwnd}[shellPage]
+		if shellPage == shellPageSettings {
+			settingsLayoutValid = false
+		}
 		procMoveWindow.Call(uintptr(active), uintptr(contentX), 0, uintptr(contentW), uintptr(pageH), 0)
+		if shellPage == shellPageSettings {
+			// MoveWindow with repaint disabled does not guarantee a WM_SIZE for
+			// an unchanged child size.  Explicitly synchronize once more so a
+			// first activation cannot paint stale child coordinates.
+			layoutSettingsPage()
+		}
 	}
 }
 
@@ -291,28 +355,55 @@ func paintModernShell(hwnd syscall.Handle) {
 	fillDC(syscall.Handle(hdc), rect{0, 0, sidebar, r.Bottom}, rgb(244, 246, 249))
 	fillDC(syscall.Handle(hdc), rect{sidebar, 0, r.Right, r.Bottom}, rgb(248, 249, 251))
 	fillDC(syscall.Handle(hdc), rect{sidebar - 1, 0, sidebar, r.Bottom}, rgb(222, 226, 232))
+	if shellPage == shellPageOverview && updateNoticeVisible {
+		margin := scale(24, dpi)
+		drawRoundedSurface(syscall.Handle(hdc), rect{sidebar + margin, scale(88, dpi), r.Right - margin, scale(130, dpi)}, rgb(239, 246, 255), rgb(213, 227, 247), scale(8, dpi))
+	}
 }
 
 func drawShellOwnerItem(dis *drawItemStruct) bool {
 	if dis == nil {
 		return false
 	}
-	if dis.CtlID == ID_REFRESH || dis.CtlID == ID_EXPORT || dis.CtlID == ID_COPY || dis.CtlID == ID_MORE || dis.CtlID == ID_HIDE_SERIAL {
+	if dis.CtlID == ID_UPDATE_NOTICE_VIEW || dis.CtlID == ID_UPDATE_NOTICE_DISMISS {
 		r := dis.RcItem
-		fillDC(dis.HDC, r, rgb(248, 249, 251))
+		background, border, foreground := rgb(255, 255, 255), rgb(204, 219, 239), rgb(31, 82, 145)
+		if dis.CtlID == ID_UPDATE_NOTICE_DISMISS {
+			background, border, foreground = rgb(239, 246, 255), rgb(239, 246, 255), rgb(82, 101, 126)
+		}
+		if dis.ItemState&ODS_SELECTED != 0 {
+			background = rgb(224, 236, 251)
+		}
+		drawRoundedSurface(dis.HDC, r, background, border, scale(7, windowDPI(mainHwnd)))
+		drawText(dis.HDC, getText(syscall.Handle(dis.HwndItem)), &r, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX, shellSmallFont, foreground)
+		return true
+	}
+	if dis.CtlID == ID_REFRESH || dis.CtlID == ID_EXPORT || dis.CtlID == ID_COPY || dis.CtlID == ID_HIDE_SERIAL {
+		dpi := windowDPI(mainHwnd)
+		outer := dis.RcItem
+		fillDC(dis.HDC, outer, rgb(248, 249, 251))
+		// Keep the entire rounded frame inside the owner-draw paint region.
+		// A stroke placed on RcItem's lower edge is clipped by Windows and looks
+		// thinner than the other three sides, especially at fractional DPI scales.
+		inset := max32(4, scale(3, dpi))
+		r := rect{outer.Left + inset, outer.Top + inset, outer.Right - inset, outer.Bottom - inset}
+		if r.Right <= r.Left || r.Bottom <= r.Top {
+			return true
+		}
 		background := rgb(255, 255, 255)
-		border := rgb(224, 228, 234)
+		border := rgb(210, 217, 226)
 		if dis.ItemState&ODS_SELECTED != 0 {
 			background = rgb(231, 238, 248)
-			border = rgb(190, 205, 225)
+			border = rgb(166, 193, 228)
 		}
-		drawRoundedSurface(dis.HDC, r, background, border, scale(8, windowDPI(mainHwnd)))
-		glyph := map[uint32]string{ID_REFRESH: "\uE72C", ID_EXPORT: "\uE74E", ID_COPY: "\uE8C8", ID_MORE: "\uE712", ID_HIDE_SERIAL: "\uE890"}[dis.CtlID]
+		borderThickness := max32(2, scale(1, dpi))
+		drawLayeredRoundedSurface(dis.HDC, r, background, border, scale(8, dpi), borderThickness)
+		glyph := map[uint32]string{ID_REFRESH: "\uE72C", ID_EXPORT: "\uE74E", ID_COPY: "\uE8C8", ID_HIDE_SERIAL: "\uE890"}[dis.CtlID]
 		if dis.CtlID == ID_HIDE_SERIAL && currentSettings().HideSerial {
 			glyph = "\uED1A"
 			background = rgb(220, 235, 255)
 			border = rgb(160, 194, 238)
-			drawRoundedSurface(dis.HDC, r, background, border, scale(8, windowDPI(mainHwnd)))
+			drawLayeredRoundedSurface(dis.HDC, r, background, border, scale(8, dpi), borderThickness)
 		}
 		foreground := rgb(49, 61, 78)
 		if dis.ItemState&ODS_DISABLED != 0 {
@@ -321,7 +412,7 @@ func drawShellOwnerItem(dis *drawItemStruct) bool {
 		drawText(dis.HDC, glyph, &r, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX, shellIconFont, foreground)
 		if dis.ItemState&ODS_FOCUS != 0 {
 			focusBrush := createBrush(rgb(37, 99, 180))
-			focus := rect{r.Left + scale(3, windowDPI(mainHwnd)), r.Top + scale(3, windowDPI(mainHwnd)), r.Right - scale(3, windowDPI(mainHwnd)), r.Bottom - scale(3, windowDPI(mainHwnd))}
+			focus := rect{r.Left + scale(3, dpi), r.Top + scale(3, dpi), r.Right - scale(3, dpi), r.Bottom - scale(3, dpi)}
 			procFrameRect.Call(uintptr(dis.HDC), uintptr(unsafe.Pointer(&focus)), uintptr(focusBrush))
 			procDeleteObject.Call(uintptr(focusBrush))
 		}
@@ -448,6 +539,26 @@ func diskPowerCycles(d diskDescriptor) string {
 	return tr(effectiveLocale(), "notReported")
 }
 
+func diskUnsafeShutdowns(d diskDescriptor) string {
+	if d.Health != nil {
+		return d.Health.UnsafeShutdowns
+	}
+	if d.Smartctl != nil && d.Smartctl.UnsafeShutdowns != nil {
+		return fmt.Sprintf("%d", *d.Smartctl.UnsafeShutdowns)
+	}
+	return tr(effectiveLocale(), "notReported")
+}
+
+func diskErrorLogEntries(d diskDescriptor) string {
+	if d.Health != nil {
+		return d.Health.ErrorLogEntries
+	}
+	if d.Smartctl != nil && d.Smartctl.ErrorLogEntries != nil {
+		return fmt.Sprintf("%d", *d.Smartctl.ErrorLogEntries)
+	}
+	return tr(effectiveLocale(), "notReported")
+}
+
 func diskReadWrite(d diskDescriptor) (string, string) {
 	if d.Health != nil {
 		return formatDecimalTB(d.Health.DataReadTB), formatDecimalTB(d.Health.DataWrittenTB)
@@ -477,22 +588,68 @@ func drawRoundedSurface(hdc syscall.Handle, r rect, fill, border uint32, radius 
 	procDeleteObject.Call(uintptr(pen))
 }
 
+func drawLayeredRoundedSurface(hdc syscall.Handle, r rect, fill, border uint32, radius, thickness int32) {
+	if thickness < 1 {
+		thickness = 1
+	}
+	// Build the border from two filled shapes instead of a stroked path. The
+	// centre strips are filled explicitly because GDI RoundRect can omit the
+	// lower straight segment on DPI-scaled owner-draw button DCs.
+	fillRoundedSurface(hdc, r, border, radius)
+	inner := rect{r.Left + thickness, r.Top + thickness, r.Right - thickness, r.Bottom - thickness}
+	if inner.Right <= inner.Left || inner.Bottom <= inner.Top {
+		return
+	}
+	innerRadius := radius - 2*thickness
+	if innerRadius < 1 {
+		innerRadius = 1
+	}
+	fillRoundedSurface(hdc, inner, fill, innerRadius)
+}
+
+func fillRoundedSurface(hdc syscall.Handle, r rect, color uint32, radius int32) {
+	if r.Right <= r.Left || r.Bottom <= r.Top {
+		return
+	}
+	if radius < 2 {
+		fillDC(hdc, r, color)
+		return
+	}
+	drawRoundedSurface(hdc, r, color, color, radius)
+	halfRadius := max32(1, radius/2)
+	if r.Right-r.Left > 2*halfRadius {
+		fillDC(hdc, rect{r.Left + halfRadius, r.Top, r.Right - halfRadius, r.Bottom}, color)
+	}
+	if r.Bottom-r.Top > 2*halfRadius {
+		fillDC(hdc, rect{r.Left, r.Top + halfRadius, r.Right, r.Bottom - halfRadius}, color)
+	}
+}
+
 func drawHealthRing(hdc syscall.Handle, x, y, size int32, percent float64, known bool) {
 	dpi := windowDPI(dashboardHwnd)
 	stroke := float32(scale(8, dpi))
 	if withGDIPlus(hdc, func(graphics uintptr) {
-		inset := scale(5, dpi)
-		diameter := size - 2*inset
+		// Real-valued coordinates retain sub-pixel coverage on high-DPI displays.
+		// The integer GDI+ entry points rounded both sides of the stroke and made
+		// the outer edge appear toothed at fractional Windows scaling factors.
+		inset := float32(scale(5, dpi)) + 0.5
+		diameter := float32(size) - 2*inset
+		left, top := float32(x)+inset, float32(y)+inset
 		backgroundPen := createGDIPlusPen(argb(255, 226, 229, 234), stroke, true)
 		if backgroundPen != 0 {
-			procGdipDrawEllipseI.Call(graphics, backgroundPen, uintptr(x+inset), uintptr(y+inset), uintptr(diameter), uintptr(diameter))
+			procGdipDrawEllipse.Call(graphics, backgroundPen, gdipFloat(left), gdipFloat(top), gdipFloat(diameter), gdipFloat(diameter))
 			procGdipDeletePen.Call(backgroundPen)
 		}
 		if known && percent > 0 {
 			progressPen := createGDIPlusPen(argb(255, 34, 197, 94), stroke, true)
 			if progressPen != 0 {
-				sweep := float32(math.Min(359.9, math.Max(0, percent)*3.6))
-				procGdipDrawArcI.Call(graphics, progressPen, uintptr(x+inset), uintptr(y+inset), uintptr(diameter), uintptr(diameter), gdipFloat(-90), gdipFloat(sweep))
+				if percent >= 99.5 {
+					// A full ellipse has no rounded-cap overlap seam at twelve o'clock.
+					procGdipDrawEllipse.Call(graphics, progressPen, gdipFloat(left), gdipFloat(top), gdipFloat(diameter), gdipFloat(diameter))
+				} else {
+					sweep := float32(math.Min(359, math.Max(0, percent)*3.6))
+					procGdipDrawArc.Call(graphics, progressPen, gdipFloat(left), gdipFloat(top), gdipFloat(diameter), gdipFloat(diameter), gdipFloat(-90), gdipFloat(sweep))
+				}
 				procGdipDeletePen.Call(progressPen)
 			}
 		}
@@ -615,7 +772,7 @@ func batteryDashboardFields(battery BatteryInfo) []dashboardField {
 
 func dashboardContentHeight(result *scanResult, dpi int) int32 {
 	height := scale(88, dpi)
-	height += scale(40, dpi) + int32(len(result.Disks))*scale(320, dpi)
+	height += scale(40, dpi) + int32(len(result.Disks))*scale(360, dpi)
 	height += scale(40, dpi) + int32(len(result.Batteries))*scale(264, dpi)
 	return height + scale(72, dpi)
 }
@@ -682,7 +839,7 @@ func paintDashboard(hwnd syscall.Handle) {
 	drawSectionHeader(hdc, "disk", shellText(effectiveLocale(), "drives"), len(result.Disks), rect{left, y, left + contentW, y + scale(32, dpi)})
 	y += scale(40, dpi)
 	for _, disk := range result.Disks {
-		card := rect{left, y, left + contentW, y + scale(300, dpi)}
+		card := rect{left, y, left + contentW, y + scale(340, dpi)}
 		drawRoundedSurface(hdc, card, rgb(255, 255, 255), rgb(226, 229, 234), scale(14, dpi))
 		percent, known := diskHealthPercent(disk)
 		statusText, statusGood := diskStatusText(disk, known)
@@ -706,9 +863,10 @@ func paintDashboard(hwnd syscall.Handle) {
 			{tr(effectiveLocale(), "firmware"), valueOrUnknownLocalized(effectiveLocale(), disk.Firmware)}, {tr(effectiveLocale(), "powerCycles"), diskPowerCycles(disk)},
 			{tr(effectiveLocale(), "powerOnTime"), diskPowerHours(disk)}, {tr(effectiveLocale(), "totalWritten"), written},
 			{tr(effectiveLocale(), "totalRead"), read}, {tr(effectiveLocale(), "healthStatus"), statusText},
+			{tr(effectiveLocale(), "unsafeShutdowns"), diskUnsafeShutdowns(disk)}, {tr(effectiveLocale(), "errorLogEntries"), diskErrorLogEntries(disk)},
 		}
 		drawDashboardFields(hdc, fields, textLeft, card.Top+scale(88, dpi), card.Right-textLeft-scale(20, dpi), scale(40, dpi))
-		y += scale(320, dpi)
+		y += scale(360, dpi)
 	}
 	drawSectionHeader(hdc, "battery", shellText(effectiveLocale(), "batteries"), len(result.Batteries), rect{left, y, left + contentW, y + scale(32, dpi)})
 	y += scale(40, dpi)
@@ -870,29 +1028,72 @@ func updateSettingsPageTexts() {
 	procSendMessageW.Call(uintptr(hideSerialHwnd), BM_SETCHECK, check, 0)
 }
 
+// settingsContentGeometry is the single source of truth for the settings
+// page's centered content column.  Both the child-control layout and the
+// background card painter must use the same geometry; keeping a second copy
+// of this calculation caused a subtle horizontal drift at narrow widths when
+// the layout fallback used 16 px side padding while the painter still used
+// 24 px.
+func settingsContentGeometry(width int32, dpi int) (x, contentW int32) {
+	if width < 0 {
+		width = 0
+	}
+	maxW := scale(760, dpi)
+	contentW = min32(maxW, width-scale(48, dpi))
+	if contentW < scale(420, dpi) {
+		contentW = width - scale(32, dpi)
+	}
+	if contentW < 0 {
+		contentW = 0
+	}
+	if contentW > width {
+		contentW = width
+	}
+	x = (width - contentW) / 2
+	return
+}
+
+// settingsHeadingTextX optically aligns Win32 static text with the visible
+// one-pixel edge of the antialiased card outline.  The controls and cards use
+// the same geometry, but ClearType glyph overhang makes the text appear one
+// device pixel farther left unless this final visual correction is applied.
+func settingsHeadingTextX(cardX int32) int32 {
+	return cardX + 1
+}
+
 func layoutSettingsPage() {
-	if settingsPageHwnd == 0 {
+	if settingsPageHwnd == 0 || settingsLayoutInProgress {
 		return
 	}
+	settingsLayoutInProgress = true
+	defer func() { settingsLayoutInProgress = false }()
 	r := clientRect(settingsPageHwnd)
 	dpi := windowDPI(settingsPageHwnd)
-	contentW := min32(scale(760, dpi), r.Right-scale(48, dpi))
-	if contentW < scale(420, dpi) {
-		contentW = r.Right - scale(32, dpi)
-	}
-	x := (r.Right - contentW) / 2
-	labelW := scale(170, dpi)
-	rowH := scale(42, dpi)
 	contentHeight := scale(610, dpi)
 	si := scrollInfo{CbSize: uint32(unsafe.Sizeof(scrollInfo{})), FMask: SIF_RANGE | SIF_PAGE | SIF_POS, NMin: 0, NMax: contentHeight - 1, NPage: uint32(max32(1, r.Bottom)), NPos: settingsScroll}
 	procSetScrollInfo.Call(uintptr(settingsPageHwnd), SB_VERT, uintptr(unsafe.Pointer(&si)), 1)
+	// Showing the vertical scrollbar can reduce the child client width.  Read
+	// the client rect again after SetScrollInfo; otherwise controls would use
+	// the pre-scrollbar x coordinate while WM_PAINT would centre the cards in
+	// the narrower post-scrollbar area (the intermittent ~10–14 px drift seen
+	// on the first visit to Settings).
+	r = clientRect(settingsPageHwnd)
 	maxScroll := max32(0, contentHeight-r.Bottom)
 	if settingsScroll > maxScroll {
 		settingsScroll = maxScroll
 	}
-	procMoveWindow.Call(uintptr(settingsPageTitleHwnd), uintptr(x), uintptr(scale(18, dpi)-settingsScroll), uintptr(contentW), uintptr(scale(38, dpi)), 1)
+	settingsLayoutWidth = r.Right
+	settingsLayoutHeight = r.Bottom
+	settingsLayoutDPI = dpi
+	settingsLayoutValid = true
+	x, contentW := settingsContentGeometry(r.Right, dpi)
+	headingX := settingsHeadingTextX(x)
+	headingW := max32(0, contentW-(headingX-x))
+	labelW := scale(170, dpi)
+	rowH := scale(42, dpi)
+	procMoveWindow.Call(uintptr(settingsPageTitleHwnd), uintptr(headingX), uintptr(scale(18, dpi)-settingsScroll), uintptr(headingW), uintptr(scale(38, dpi)), 1)
 	y := scale(76, dpi) - settingsScroll
-	procMoveWindow.Call(uintptr(settingsAppearanceTitleHwnd), uintptr(x), uintptr(y), uintptr(contentW), uintptr(scale(34, dpi)), 1)
+	procMoveWindow.Call(uintptr(settingsAppearanceTitleHwnd), uintptr(headingX), uintptr(y), uintptr(headingW), uintptr(scale(34, dpi)), 1)
 	y += scale(42, dpi)
 	procMoveWindow.Call(uintptr(settingsLanguageLabelHwnd), uintptr(x+scale(14, dpi)), uintptr(y), uintptr(labelW), uintptr(rowH), 1)
 	procMoveWindow.Call(uintptr(languageHwnd), uintptr(x+contentW-scale(220, dpi)), uintptr(y+scale(4, dpi)), uintptr(scale(206, dpi)), uintptr(scale(34, dpi)), 1)
@@ -906,7 +1107,7 @@ func layoutSettingsPage() {
 	procMoveWindow.Call(uintptr(fontStatusHwnd), uintptr(x+contentW-scale(136, dpi)), uintptr(y+scale(4, dpi)), uintptr(scale(76, dpi)), uintptr(scale(34, dpi)), 1)
 	procMoveWindow.Call(uintptr(zoomInHwnd), uintptr(x+contentW-scale(54, dpi)), uintptr(y+scale(4, dpi)), uintptr(scale(42, dpi)), uintptr(scale(34, dpi)), 1)
 	y += scale(70, dpi)
-	procMoveWindow.Call(uintptr(settingsStorageTitleHwnd), uintptr(x), uintptr(y), uintptr(contentW), uintptr(scale(34, dpi)), 1)
+	procMoveWindow.Call(uintptr(settingsStorageTitleHwnd), uintptr(headingX), uintptr(y), uintptr(headingW), uintptr(scale(34, dpi)), 1)
 	y += scale(42, dpi)
 	procMoveWindow.Call(uintptr(settingsModeLabelHwnd), uintptr(x+scale(14, dpi)), uintptr(y), uintptr(labelW), uintptr(rowH), 1)
 	actionW := scale(206, dpi)
@@ -918,7 +1119,7 @@ func layoutSettingsPage() {
 	procMoveWindow.Call(uintptr(settingsChangeHwnd), uintptr(x+contentW-changeW-scale(14, dpi)), uintptr(y+scale(4, dpi)), uintptr(changeW), uintptr(scale(34, dpi)), 1)
 	y += rowH
 	y += scale(28, dpi)
-	procMoveWindow.Call(uintptr(settingsReadTitleHwnd), uintptr(x), uintptr(y), uintptr(contentW), uintptr(scale(34, dpi)), 1)
+	procMoveWindow.Call(uintptr(settingsReadTitleHwnd), uintptr(headingX), uintptr(y), uintptr(headingW), uintptr(scale(34, dpi)), 1)
 	y += scale(42, dpi)
 	procMoveWindow.Call(uintptr(settingsReadNoteHwnd), uintptr(x+scale(14, dpi)), uintptr(y), uintptr(contentW-scale(28, dpi)), uintptr(scale(28, dpi)), 1)
 	y += scale(32, dpi)
@@ -991,6 +1192,21 @@ func settingsPageProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) u
 	case WM_SIZE:
 		layoutSettingsPage()
 		return 0
+	case WM_SHOWWINDOW:
+		if wParam != 0 {
+			// Showing the page is the first moment at which the child has its
+			// final client width on some Windows/DPI combinations.  Reconcile
+			// once after visibility changes before the first visible paint.
+			settingsLayoutValid = false
+			layoutSettingsPage()
+		}
+		return 0
+	case WM_DPICHANGED:
+		settingsLayoutValid = false
+		updateSettingsPageFonts()
+		layoutSettingsPage()
+		procInvalidateRect.Call(uintptr(hwnd), 0, 1)
+		return 0
 	case WM_VSCROLL:
 		si := scrollInfo{CbSize: uint32(unsafe.Sizeof(scrollInfo{})), FMask: SIF_ALL}
 		procGetScrollInfo.Call(uintptr(hwnd), SB_VERT, uintptr(unsafe.Pointer(&si)))
@@ -1035,12 +1251,19 @@ func settingsPageProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) u
 		if hdc != 0 {
 			r := clientRect(hwnd)
 			fillDC(syscall.Handle(hdc), rect{0, 0, r.Right, r.Bottom}, rgb(248, 249, 251))
-			contentW := min32(scale(760, windowDPI(hwnd)), r.Right-scale(48, windowDPI(hwnd)))
-			x := (r.Right - contentW) / 2
+			dpi := windowDPI(hwnd)
+			if !settingsLayoutValid || settingsLayoutWidth != r.Right || settingsLayoutHeight != r.Bottom || settingsLayoutDPI != dpi {
+				// Keep the painter and child controls synchronized even when the
+				// first WM_PAINT arrives before WM_SIZE/WM_SHOWWINDOW processing.
+				layoutSettingsPage()
+				r = clientRect(hwnd)
+				dpi = windowDPI(hwnd)
+			}
+			x, contentW := settingsContentGeometry(r.Right, dpi)
 			offset := settingsScroll
-			drawRoundedSurface(syscall.Handle(hdc), rect{x, scale(110, windowDPI(hwnd)) - offset, x + contentW, scale(292, windowDPI(hwnd)) - offset}, rgb(255, 255, 255), rgb(228, 231, 236), scale(8, windowDPI(hwnd)))
-			drawRoundedSurface(syscall.Handle(hdc), rect{x, scale(354, windowDPI(hwnd)) - offset, x + contentW, scale(454, windowDPI(hwnd)) - offset}, rgb(255, 255, 255), rgb(228, 231, 236), scale(8, windowDPI(hwnd)))
-			drawRoundedSurface(syscall.Handle(hdc), rect{x, scale(508, windowDPI(hwnd)) - offset, x + contentW, scale(590, windowDPI(hwnd)) - offset}, rgb(255, 255, 255), rgb(228, 231, 236), scale(8, windowDPI(hwnd)))
+			drawRoundedSurface(syscall.Handle(hdc), rect{x, scale(110, dpi) - offset, x + contentW, scale(292, dpi) - offset}, rgb(255, 255, 255), rgb(228, 231, 236), scale(8, dpi))
+			drawRoundedSurface(syscall.Handle(hdc), rect{x, scale(354, dpi) - offset, x + contentW, scale(454, dpi) - offset}, rgb(255, 255, 255), rgb(228, 231, 236), scale(8, dpi))
+			drawRoundedSurface(syscall.Handle(hdc), rect{x, scale(508, dpi) - offset, x + contentW, scale(590, dpi) - offset}, rgb(255, 255, 255), rgb(228, 231, 236), scale(8, dpi))
 		}
 		procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
 		return 0

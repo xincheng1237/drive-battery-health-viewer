@@ -158,6 +158,7 @@ func parseSmartctlJSON(data []byte) (*smartctlDriveInfo, error) {
 		result.PowerCycles, _ = smartUint(nvme["power_cycles"])
 		result.UnsafeShutdowns, _ = smartUint(nvme["unsafe_shutdowns"])
 		result.MediaErrors, _ = smartUint(nvme["media_errors"])
+		result.ErrorLogEntries, _ = smartUint(nvme["num_err_log_entries"])
 		if units, found := smartUint(nvme["data_units_read"]); found {
 			result.BytesRead = checkedMultiply(*units, 512000)
 		}

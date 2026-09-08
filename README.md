@@ -29,6 +29,15 @@ macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.6**。请前往 
 
 Windows x64 版提供标准安装程序，无需解压 ZIP。默认启动已验证的兼容界面，确保不同 Windows 版本和高 DPI 设置下的布局保持一致；安装包同时包含可选的 WinUI 界面，可用 `DriveBatteryHealthViewer.exe --modern` 在 Windows 10 1809 及以上版本进行评估。部分硬件信息可能需要管理员权限；Windows 10 1809 及以上版本会启用受支持的原生存储接口，更早版本会自动使用兼容读取路径。
 
+### 版本归档
+
+构建物按版本、用途和 SHA-256 自动保存到不可覆盖的
+[`release-archive`](release-archive/) 目录。用户确认满意的版本、GitHub 正式发布版本、
+历史测试版和仅有哈希记录的版本分别标注在
+[`ARCHIVE_INDEX.md`](release-archive/ARCHIVE_INDEX.md) 与
+[`catalog.json`](release-archive/catalog.json) 中；可用
+[`verify-release-archive.ps1`](verify-release-archive.ps1) 进行完整性核对。
+
 ## 界面预览
 
 ### macOS 原生界面
@@ -100,12 +109,16 @@ Windows x64 版提供标准安装程序，无需解压 ZIP。默认启动已验�
 
 ### Windows
 
-环境要求：Go 1.20 或更高版本。
+环境要求：Go 1.20.14（发布构建会严格校验版本）。仅构建兼容界面可使用：
 
 ```bash
 go test ./...
 go build -o DriveBatteryHealthViewer.exe .
 ```
+
+需要生成完整的双界面安装包时运行项目内的 `build-windows.ps1`；成功后会自动把
+安装包写入 `release-archive`，不会覆盖已有哈希目录。具体参数见
+[`BUILDING_WINDOWS.md`](BUILDING_WINDOWS.md)。
 
 ### macOS
 

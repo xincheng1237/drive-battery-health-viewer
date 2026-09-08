@@ -29,6 +29,15 @@ The current public macOS build uses an ad-hoc signature and has not been notariz
 
 The Windows x64 edition is distributed as a standard installer and does not require ZIP extraction. It launches the verified compatibility interface by default so the layout and high-DPI behavior stay consistent across supported Windows versions. The bundled WinUI interface can be evaluated explicitly with `DriveBatteryHealthViewer.exe --modern` on Windows 10 version 1809 or later. Administrator privileges may be needed for some hardware information; supported native storage interfaces are used where available and earlier versions automatically use compatibility readers.
 
+### Release archive
+
+Build artifacts are automatically copied to the immutable
+[`release-archive`](release-archive/) directory, keyed by version, purpose, and SHA-256.
+The user-confirmed build, GitHub releases, historical tests, and hash-only records are
+organized in [`ARCHIVE_INDEX.md`](release-archive/ARCHIVE_INDEX.md) and
+[`catalog.json`](release-archive/catalog.json). Run
+[`verify-release-archive.ps1`](verify-release-archive.ps1) to verify every local artifact.
+
 ## Screenshots
 
 ### Native macOS interface
@@ -100,12 +109,17 @@ Health reports may contain drive and battery serial numbers. Enable **Hide seria
 
 ### Windows
 
-Requires Go 1.20 or later.
+Go 1.20.14 is required for the release build (the script checks the exact version).
+For a compatibility-only build, use:
 
 ```bash
 go test ./...
 go build -o DriveBatteryHealthViewer.exe .
 ```
+
+To produce the complete dual-interface installer, run `build-windows.ps1`. A successful
+installer build is automatically copied into `release-archive` without replacing an
+existing hash directory. See [`BUILDING_WINDOWS.md`](BUILDING_WINDOWS.md) for options.
 
 ### macOS
 
