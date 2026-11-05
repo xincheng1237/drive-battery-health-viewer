@@ -20,6 +20,7 @@ struct RootView: View {
         }
         .navigationSplitViewStyle(.prominentDetail)
         .toolbar { toolbar }
+        .toolbarBackground(.visible, for: .windowToolbar)
         .alert(model.t("appName"), isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
@@ -62,10 +63,6 @@ struct RootView: View {
                 TextReportView(snapshot: snapshot)
                     .environmentObject(model)
             }
-        }
-        .sheet(item: $model.availableUpdate) { update in
-            UpdateAvailableView(update: update)
-                .environmentObject(model)
         }
         .sheet(isPresented: $model.showsDiagnosticExport) {
             DiagnosticExportView()
@@ -180,44 +177,6 @@ private struct VersionUpdateTip: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .dbhvCardSurface(cornerRadius: 11)
-    }
-}
-
-private struct UpdateAvailableView: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    let update: AvailableAppUpdate
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label {
-                Text(L10n.format("updateAvailableTitle", model.language, update.version))
-                    .font(.title2.weight(.semibold))
-            } icon: {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.format("currentVersionLabel", model.language, update.currentVersion))
-                Text(L10n.format("latestVersionLabel", model.language, update.version))
-                    .fontWeight(.medium)
-            }
-
-            HStack {
-                Spacer()
-                Button(model.t("later"), role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(model.t("downloadFromGitHub")) {
-                    NSWorkspace.shared.open(update.pageURL)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(26)
-        .frame(width: 450)
     }
 }
 
@@ -1902,9 +1861,8 @@ struct ChangelogRelease: Identifiable {
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
         [ChangelogRelease(version: "1.1.2", sections: [
-            ChangelogSection(kind: .feature, items: [L10n.text("release112Calibration", language), L10n.text("release112SystemFull", language)]),
-            ChangelogSection(kind: .fix, items: [L10n.text("release112PauseFix", language)]),
-            ChangelogSection(kind: .improvement, items: [L10n.text("release112Verification", language)])
+            ChangelogSection(kind: .feature, items: [L10n.text("release112Calibration", language), L10n.text("release112SystemFull", language), L10n.text("release112Updater", language)]),
+            ChangelogSection(kind: .fix, items: [L10n.text("release112PauseFix", language), L10n.text("release112Toolbar", language)])
         ])] + legacyLocalized(for: language)
     }
 
