@@ -156,8 +156,19 @@ if [[ "${verified_smartctl_version}" != *"smartctl 7.5"* || "${verified_smartctl
     print -u2 "DMG contains an unexpected smartctl helper: ${verified_smartctl_version}"
     exit 1
 fi
-hdiutil detach "${verify_mount}" >/dev/null
-is_mounted=0
+# Finder or Spotlight may briefly hold the newly mounted verification volume.
+# Retry normal detach without forcing open files closed.
+for detach_attempt in 1 2 3 4 5; do
+    if hdiutil detach "${verify_mount}" >/dev/null; then
+        is_mounted=0
+        break
+    fi
+    sleep 1
+done
+if (( is_mounted )); then
+    print -u2 "Could not unmount the verified DMG after five attempts."
+    exit 1
+fi
 
 (
     cd "${dist_dir}"
