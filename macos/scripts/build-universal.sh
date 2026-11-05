@@ -10,7 +10,7 @@ version="1.1.2"
 app_name="Drive & Battery Health Viewer"
 artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 executable_name="DriveBatteryHealthViewer"
-bundle_build="16"
+bundle_build="17"
 charge_helper_name="DriveBatteryChargeHelper"
 charge_limit_agent_name="DriveBatteryChargeLimitAgent"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
@@ -110,6 +110,7 @@ make_app_bundle() {
     mkdir -p \
         "${bundle_path}/Contents/MacOS" \
         "${bundle_path}/Contents/Helpers" \
+        "${bundle_path}/Contents/Frameworks" \
         "${bundle_path}/Contents/Resources/ThirdParty" \
         "${bundle_path}/Contents/Resources/ChargeProtection"
     cp "${project_dir}/Info.plist" "${bundle_path}/Contents/Info.plist"
@@ -119,6 +120,9 @@ make_app_bundle() {
     cp "${charge_limit_agent_binary}" "${bundle_path}/Contents/Helpers/${charge_limit_agent_name}"
     cp -R "${project_dir}/Resources/ThirdParty/smartmontools" "${bundle_path}/Contents/Resources/ThirdParty/"
     cp -R "${project_dir}/Resources/ThirdParty/ChargeWatch" "${bundle_path}/Contents/Resources/ThirdParty/"
+    cp -R "${project_dir}/Resources/ThirdParty/Sparkle" "${bundle_path}/Contents/Resources/ThirdParty/"
+    # Keep upstream framework symlinks, nested updater apps and signatures intact.
+    ditto "${sparkle_framework}" "${bundle_path}/Contents/Frameworks/Sparkle.framework"
     cp "${project_dir}/Resources/ChargeProtection/install-charge-helper.sh" "${bundle_path}/Contents/Resources/ChargeProtection/"
     cp "${project_dir}/Resources/ChargeProtection/install-charge-limit-agent.sh" "${bundle_path}/Contents/Resources/ChargeProtection/"
     cp "${staging_dir}/AppIcon.icns" "${bundle_path}/Contents/Resources/AppIcon.icns"
@@ -189,6 +193,12 @@ if [[ -z "${arm_binary}" || -z "${intel_binary}" || -z "${charge_helper_binary}"
     exit 1
 fi
 
+sparkle_framework="$(find "${project_dir}/.build-arm64/artifacts" -type d -name Sparkle.framework -print -quit)"
+if [[ -z "${sparkle_framework}" ]]; then
+    print -u2 "Missing the checksum-pinned Sparkle framework."
+    exit 1
+fi
+
 universal_app="${staging_dir}/${app_name}.app"
 
 universal_binary="${staging_dir}/${executable_name}-universal"
@@ -196,9 +206,12 @@ lipo -create "${arm_binary}" "${intel_binary}" -output "${universal_binary}"
 make_app_bundle "${universal_app}" "${universal_binary}"
 
 codesign --verify --deep --strict "${universal_app}"
+codesign --verify --deep --strict "${universal_app}/Contents/Frameworks/Sparkle.framework"
+test -f "${universal_app}/Contents/Resources/ThirdParty/Sparkle/LICENSE"
 for binary in \
     "${universal_app}/Contents/MacOS/${executable_name}" \
-    "${universal_app}/Contents/Helpers/smartctl"; do
+    "${universal_app}/Contents/Helpers/smartctl" \
+    "${universal_app}/Contents/Frameworks/Sparkle.framework/Sparkle"; do
     architectures="$(lipo -archs "${binary}")"
     if [[ " ${architectures} " != *" arm64 "* || " ${architectures} " != *" x86_64 "* ]]; then
         print -u2 "Expected a Universal 2 binary, found: ${architectures} (${binary})"

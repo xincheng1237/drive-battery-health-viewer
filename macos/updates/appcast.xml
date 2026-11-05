@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+<channel><title>Drive &amp; Battery Health Viewer for macOS</title>
+<item><title>Version 1.1.2</title><pubDate>Thu, 05 Nov 2026 09:11:52 +0000</pubDate>
+<sparkle:version>17</sparkle:version><sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
+<sparkle:minimumSystemVersion>13.0.0</sparkle:minimumSystemVersion>
+<description xml:lang="en" sparkle:format="plain-text">New Features
+• Added system battery calibration recognition, a circular-arrow menu-bar icon, and a clear status message.
+• Recognizes temporary full charging selected in macOS while keeping the saved charge limit.
+• Check for updates now shows release notes and downloads, installs and relaunches the app without opening a browser.
+
+Fixes
+• System calibration or temporarily allowed full charging no longer incorrectly displays a charge protection failure.
+• Fixed page content overlapping the title when scrolling in a narrow window.</description>
+<description xml:lang="zh-Hans" sparkle:format="plain-text">新增功能
+• 新增系统电池校准状态识别、菜单栏循环箭头图标与简明说明。
+• 识别 macOS“立即充满电”的临时停用状态，保留原充电上限设置。
+• 检查更新时可查看新版内容，并在应用内下载、安装及重新启动。
+
+问题修复
+• 系统校准或临时允许充满时，不再错误地显示充电保护失败。
+• 修复窄窗口滚动时，页面内容与顶部标题重叠的问题。</description>
+<description xml:lang="ru" sparkle:format="plain-text">Новые функции
+• Добавлены распознавание системной калибровки, значок с круговыми стрелками и пояснение состояния.
+• Распознаётся временная полная зарядка, выбранная в macOS; заданный предел сохраняется.
+• Проверка обновлений показывает список изменений и позволяет загрузить, установить обновление и перезапустить приложение без браузера.
+
+Исправления
+• Системная калибровка и временная полная зарядка больше не отображаются ошибочно как сбой защиты зарядки.
+• Исправлено наложение содержимого на заголовок при прокрутке узкого окна.</description>
+<description xml:lang="fr" sparkle:format="plain-text">Nouveautés
+• Ajout de la détection de l’étalonnage système, d’une icône à flèches circulaires et d’une explication claire.
+• Reconnaissance de la charge complète temporaire choisie dans macOS, sans perdre la limite enregistrée.
+• La recherche de mises à jour affiche les nouveautés et permet le téléchargement, l’installation et le redémarrage sans navigateur.
+
+Correctifs
+• L’étalonnage système ou la charge complète temporaire ne sont plus signalés à tort comme un échec de protection de charge.
+• Correction du chevauchement du contenu et du titre lors du défilement dans une fenêtre étroite.</description>
+<description xml:lang="de" sparkle:format="plain-text">Neue Funktionen
+• Systemkalibrierung wird erkannt und durch ein Kreispfeil-Symbol mit klarer Statusmeldung angezeigt.
+• Vorübergehendes Vollladen über macOS wird erkannt; die gespeicherte Ladegrenze bleibt erhalten.
+• Die Updateprüfung zeigt Versionshinweise und ermöglicht Download, Installation und Neustart ohne Browser.
+
+Fehlerbehebungen
+• Systemkalibrierung oder vorübergehendes Vollladen werden nicht mehr fälschlich als Fehler des Ladeschutzes angezeigt.
+• Überlappung von Inhalt und Titel beim Scrollen in schmalen Fenstern behoben.</description>
+<description xml:lang="ko" sparkle:format="plain-text">새로운 기능
+• 시스템 배터리 보정 감지, 원형 화살표 메뉴 막대 아이콘 및 상태 설명을 추가했습니다.
+• macOS에서 선택한 임시 완전 충전을 감지하고 기존 한도 설정을 유지합니다.
+• 업데이트 확인 시 변경 내용을 표시하고 브라우저 없이 앱에서 다운로드, 설치 및 재시작할 수 있습니다.
+
+문제 수정
+• 시스템 보정이나 임시 완전 충전 중에 충전 보호 실패가 잘못 표시되지 않도록 수정했습니다.
+• 좁은 창에서 스크롤할 때 내용과 상단 제목이 겹치는 문제를 수정했습니다.</description>
+<description xml:lang="ja" sparkle:format="plain-text">新機能
+• システムのバッテリー校正検出、円形矢印のメニューバーアイコン、状態説明を追加しました。
+• macOSで選択された一時的なフル充電を認識し、上限設定を保持します。
+• 更新内容の表示からダウンロード、インストール、再起動までアプリ内で行えるようになりました。
+
+修正
+• システム校正や一時的なフル充電中に、充電保護の失敗と誤表示しないよう修正しました。
+• 幅の狭いウインドウでスクロールすると内容と上部タイトルが重なる問題を修正しました。</description>
+<enclosure url="https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.1.2/DriveBatteryHealthViewer_v1.1.2_build17_macOS_Universal.zip" sparkle:edSignature="HA18at+IU/6eks3zDAVkMq9BjGExoM6bOsRCO60NJTZQPwUGfeSw2YJbYZ/c884TXHMl/kmYbwYHV4DETwogAg==" length="6051237" type="application/octet-stream"></enclosure>
+</item></channel></rss><!-- sparkle-signatures:
+edSignature: WQZj56WVbTyoqW7ZnbdfdnI19bGod8WgA68wOFmDMliKeT1NIlmi6YsryCIC3/MHBpU7O7jKN95kl4ElQQEYDg==
+length: 6025
+-->

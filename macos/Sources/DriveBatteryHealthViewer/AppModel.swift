@@ -38,7 +38,6 @@ final class AppModel: ObservableObject {
     @Published var transientMessage: String?
     @Published var showsChangelog = false
     @Published private(set) var showsVersionUpdatePrompt = false
-    @Published var availableUpdate: AvailableAppUpdate?
     @Published private(set) var isCheckingForUpdates = false
     @Published var showsDiagnosticExport = false
 
@@ -66,7 +65,7 @@ final class AppModel: ObservableObject {
 
     private let defaults: UserDefaults
     private let scanner: HardwareScanner
-    private let releaseChecker: any AppReleaseChecking
+    private var updater: (any ApplicationUpdating)?
     private let currentAppVersion: String
     let chargeProtection: ChargeProtectionManager
     private let diagnosticLogger: any DiagnosticLogging
@@ -80,7 +79,7 @@ final class AppModel: ObservableObject {
     init(
         defaults: UserDefaults = .standard,
         scanner: HardwareScanner = HardwareScanner(),
-        releaseChecker: any AppReleaseChecking = GitHubReleaseChecker(),
+        updater: (any ApplicationUpdating)? = nil,
         currentAppVersion: String? = nil,
         currentAppBuild: String? = nil,
         diagnosticLogger: any DiagnosticLogging = DiagnosticLogger.shared,
@@ -114,7 +113,7 @@ final class AppModel: ObservableObject {
         }
         self.defaults = defaults
         self.scanner = scanner
-        self.releaseChecker = releaseChecker
+        self.updater = updater
         self.diagnosticLogger = diagnosticLogger
         self.diagnosticExporter = diagnosticExporter
         self.chargeProtection = chargeProtection ?? ChargeProtectionManager(
@@ -353,8 +352,20 @@ final class AppModel: ObservableObject {
     }
 
     func checkForUpdates() {
-        guard !isCheckingForUpdates else { return }
-        Task { await checkForUpdatesNow() }
+        if updater == nil { updater = InAppUpdater() }
+        guard let updater else { return }
+        updater.availabilityChanged = { [weak self] available in
+            self?.isCheckingForUpdates = !available
+        }
+        do {
+            try updater.checkForUpdates()
+            isCheckingForUpdates = !updater.canCheckForUpdates
+        } catch {
+            isCheckingForUpdates = false
+            alertMessage = t("updateCheckFailed")
+            diagnosticLogger.log(.error, category: "update", event: "update_start_failed",
+                                 message: "The signed in-app updater could not be started.")
+        }
     }
 
     func dismissVersionUpdatePrompt() {
@@ -369,34 +380,6 @@ final class AppModel: ObservableObject {
         // the first click while keeping the hint completely nonmodal.
         DispatchQueue.main.async { [weak self] in
             self?.showsChangelog = true
-        }
-    }
-
-    func checkForUpdatesNow() async {
-        guard !isCheckingForUpdates else { return }
-        isCheckingForUpdates = true
-        availableUpdate = nil
-        defer { isCheckingForUpdates = false }
-
-        do {
-            let release = try await releaseChecker.latestStableRelease()
-            guard let normalizedCurrentVersion = AppVersion.normalized(currentAppVersion),
-                  let current = AppVersion(normalizedCurrentVersion),
-                  let latest = AppVersion(release.version) else {
-                throw UpdateCheckError.invalidRelease
-            }
-            if current < latest {
-                availableUpdate = AvailableAppUpdate(
-                    currentVersion: normalizedCurrentVersion,
-                    version: release.version,
-                    pageURL: release.pageURL
-                )
-            } else {
-                alertMessage = L10n.format("alreadyLatestVersion", language, normalizedCurrentVersion)
-            }
-        } catch {
-            alertMessage = t("updateCheckFailed")
-            diagnosticLogger.log(.error, category: "update", event: "update_check_failed", message: "The update request or release response could not be processed.")
         }
     }
 

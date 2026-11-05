@@ -10,7 +10,7 @@ artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 volume_name="Drive & Battery Health Viewer ${version}"
 archive="${dist_dir}/${artifact_name}.zip"
 output="${dist_dir}/${artifact_name}.dmg"
-bundle_build="16"
+bundle_build="17"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
 minimum_system="13.0"
 smartctl_source_sha256="690b83ca331378da9ea0d9d61008c4b22dde391387b9bbad7f29387f2595f76e"
@@ -96,6 +96,13 @@ is_mounted=1
 
 verified_app="${verify_mount}/${app_name}.app"
 codesign --verify --deep --strict "${verified_app}"
+codesign --verify --deep --strict "${verified_app}/Contents/Frameworks/Sparkle.framework"
+test -f "${verified_app}/Contents/Resources/ThirdParty/Sparkle/LICENSE"
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :SURequireSignedFeed' "${verified_app}/Contents/Info.plist")" != "true" ||
+      "$(/usr/libexec/PlistBuddy -c 'Print :SUVerifyUpdateBeforeExtraction' "${verified_app}/Contents/Info.plist")" != "true" ]]; then
+    print -u2 "DMG is missing mandatory signed-update verification."
+    exit 1
+fi
 verified_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${verified_app}/Contents/Info.plist")"
 if [[ "${verified_version}" != "${version}" ]]; then
     print -u2 "DMG contains version ${verified_version}; expected ${version}."
@@ -109,7 +116,8 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${verified_app}/Co
 fi
 for binary in \
     "${verified_app}/Contents/MacOS/DriveBatteryHealthViewer" \
-    "${verified_app}/Contents/Helpers/smartctl"; do
+    "${verified_app}/Contents/Helpers/smartctl" \
+    "${verified_app}/Contents/Frameworks/Sparkle.framework/Sparkle"; do
     architectures="$(lipo -archs "${binary}")"
     if [[ " ${architectures} " != *" arm64 "* || " ${architectures} " != *" x86_64 "* ]]; then
         print -u2 "DMG contains a non-Universal binary: ${architectures} (${binary})"

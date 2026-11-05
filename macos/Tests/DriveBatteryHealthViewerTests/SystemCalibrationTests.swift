@@ -124,7 +124,7 @@ struct SystemCalibrationTests {
     func calibrationCopyAndReleaseNotesAreLocalized(_ language: AppLanguage) {
         let message = L10n.format("systemCalibrationInProgress", language, 80)
         #expect(message.contains("80%") && !message.contains("%d"))
-        for key in ["systemCalibrationAwaitingConfirmation", "release112Calibration", "release112SystemFull", "release112PauseFix", "release112Verification"] {
+        for key in ["systemCalibrationAwaitingConfirmation", "release112Calibration", "release112SystemFull", "release112PauseFix"] {
             #expect(L10n.text(key, language) != key)
         }
         let release = ChangelogRelease.localized(for: language)
