@@ -10,11 +10,11 @@ The Windows edition is written in Go. The macOS edition uses native SwiftUI and 
 
 ## Download
 
-Current macOS version: **v1.1.0**; Windows version: **v1.0.6**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
+Current macOS version: **v1.1.2**; Windows version: **v1.0.6**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
 
 | Platform | Download | Architecture | Requirements |
 | --- | --- | --- | --- |
-| macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
+| macOS | [`DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg`](../../releases/download/v1.1.2/DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
 | Windows | [Installer](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 or later |
 
 ### Install on macOS
@@ -66,7 +66,7 @@ organized in [`ARCHIVE_INDEX.md`](release-archive/ARCHIVE_INDEX.md) and
 - Hide drive and battery serial numbers from the interface, history, and exported reports
 - Support Simplified Chinese, English, Russian, French, German, Korean, and Japanese
 - Keep drive, S.M.A.R.T., and health-data access read-only: no benchmarks, repairs, erases, or firmware updates
-- macOS v1.1.0 adds optional charge protection with menu-bar status and quick controls on supported Apple silicon Macs, plus privacy-friendly diagnostic-log export by time range
+- Since macOS v1.1.0, optional charge protection is available with menu-bar status and quick controls on supported Apple silicon Macs, plus privacy-friendly diagnostic-log export by time range
 
 ## Platform notes
 
@@ -150,3 +150,9 @@ The macOS charge-control core adapts and refactors the AppleSMC, CHTE/CHIE, and 
 ## Copyright
 
 © 2026 ChengXin
+
+## macOS v1.1.2 charging states
+
+System-requested full charging and battery calibration are recognized separately while preserving the saved limit. Calibration uses a circular-arrow battery icon and a short explanation; unknown data waits for confirmation. A high battery percentage alone is never treated as calibration. The system temporary override is respected across power reconnects. Protection is checked again when the system explicitly ends the pause; genuine failures remain visible.
+
+The calibration-notification mapping is enabled only on the verified macOS 15.8.1 build 24H212; other builds do not infer this state. Other application functions retain their existing compatibility. A fresh complete real calibration cycle was not forced for this release. See [system charging states](macos/docs/SYSTEM_CHARGING_STATES.md) for evidence and validation limits.

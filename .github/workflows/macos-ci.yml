@@ -29,6 +29,9 @@ jobs:
           brew install create-dmg
           create-dmg --version
 
+      - name: Verify read-only PowerUI bridge boundaries
+        run: ./macos/scripts/test-powerui-bridge.sh
+
       - name: Run macOS tests
         working-directory: macos
         run: swift test --disable-sandbox

@@ -10,11 +10,11 @@ Windows 版使用 Go 开发；macOS 版采用原生 SwiftUI，提供同时兼容
 
 ## 下载
 
-macOS 当前版本：**v1.1.0**；Windows 当前版本：**v1.0.6**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
+macOS 当前版本：**v1.1.2**；Windows 当前版本：**v1.0.6**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
 
 | 平台 | 下载文件 | 架构 | 系统要求 |
 | --- | --- | --- | --- |
-| macOS | [`DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`](../../releases/download/v1.1.0/DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
+| macOS | [`DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg`](../../releases/download/v1.1.2/DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
 | Windows | [安装程序](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 或更高版本 |
 
 ### macOS 安装
@@ -66,7 +66,7 @@ Windows x64 版提供标准安装程序，无需解压 ZIP。默认启动已验�
 - 在界面、历史记录和导出报告中隐藏硬盘与电池序列号
 - 支持简体中文、英语、俄语、法语、德语、韩语和日语
 - 硬盘、S.M.A.R.T. 与健康信息保持只读，不进行测速、修复、擦除或固件更新
-- macOS v1.1.0 为受支持的 Apple Silicon Mac 提供可选充电保护、菜单栏状态与快捷控制，并支持按时间范围导出隐私友好的诊断日志
+- macOS v1.1.0 起为受支持的 Apple Silicon Mac 提供可选充电保护、菜单栏状态与快捷控制，并支持按时间范围导出隐私友好的诊断日志
 
 ## 平台说明
 
@@ -149,3 +149,9 @@ macOS 充电控制核心参考并重构了 TY-teo 的 [ChargeWatch](https://gith
 ## 版权
 
 © 2026 程心
+
+## macOS v1.1.2 充电状态提示
+
+系统临时允许充满电与系统电池校准分别识别，并保留原充电上限。校准时显示循环箭头电池图标和简短说明；读取未知时等待确认，不把超过上限直接解释为校准。系统临时满充期间尊重系统决定，拔电重接不擅自取消；系统明确解除后重新核验保护状态，真实失败仍会提示。
+
+校准通知映射目前仅在已验证的 macOS 15.8.1（24H212）启用，其他系统不据此推测校准状态；应用的其他功能仍遵循原兼容性范围。真实校准的完整周期尚未在本次发布中强制触发验证。技术依据与测试范围见 [系统充电状态说明](macos/docs/SYSTEM_CHARGING_STATES.md)。

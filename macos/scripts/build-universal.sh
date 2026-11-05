@@ -6,11 +6,11 @@ project_dir="${script_dir:h}"
 repo_dir="${project_dir:h}"
 dist_dir="${project_dir}/dist"
 staging_dir="$(mktemp -d)"
-version="1.1.0"
+version="1.1.2"
 app_name="Drive & Battery Health Viewer"
 artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 executable_name="DriveBatteryHealthViewer"
-bundle_build="9"
+bundle_build="16"
 charge_helper_name="DriveBatteryChargeHelper"
 charge_limit_agent_name="DriveBatteryChargeLimitAgent"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
@@ -234,7 +234,7 @@ fi
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${universal_app}/Contents/Info.plist")" != "${bundle_build}" ||
       "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${universal_app}/Contents/Info.plist")" != "${bundle_identifier}" ||
       "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "${universal_app}/Contents/Info.plist")" != "${minimum_system}" ]]; then
-    print -u2 "Bundle metadata does not match the 1.1.0 release manifest."
+    print -u2 "Bundle metadata does not match the 1.1.2 release manifest."
     exit 1
 fi
 

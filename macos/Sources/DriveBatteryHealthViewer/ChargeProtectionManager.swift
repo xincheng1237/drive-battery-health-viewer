@@ -11,6 +11,18 @@ private let dbhvCurrentArchitectureIsAppleSilicon = false
 
 @MainActor
 final class ChargeProtectionManager: ObservableObject {
+    var systemChargeOverrideState: SystemChargeOverrideState? {
+        resolvedSystemChargeOverride(configuration: configuration, status: status)
+    }
+
+    var systemCalibrationState: SystemCalibrationState? {
+        resolvedSystemCalibration(configuration: configuration, status: status)
+    }
+
+    var systemChargingPaused: Bool {
+        systemCalibrationState?.defersChargeControl == true || systemChargeOverrideState?.defersChargeControl == true
+    }
+
     static let sectionExpandedDefaultsKey = "chargeProtectionSectionExpanded"
     static let lastNativeLimitBoundaryDefaultsKey = "chargeProtectionLastNativeLimitBoundary"
     static let helperIdentifier = "com.chengxin.drivebatteryhealthviewer.chargehelper"

@@ -713,11 +713,11 @@ struct CoreTests {
         let plistData = try Data(contentsOf: macosRoot.appendingPathComponent("Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(plist["CFBundleVersion"] as? String == "9")
+        #expect(plist["CFBundleVersion"] as? String == "16")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
-            #expect(text.contains("bundle_build=\"9\""))
+            #expect(text.contains("bundle_build=\"16\""))
         }
     }
 
@@ -975,7 +975,9 @@ struct CoreTests {
     @Test @MainActor
     func testChangelogMerges1051Into106WithoutChangingOlderReleases() {
         for language in AppLanguage.allCases {
-            let releases = ChangelogRelease.localized(for: language)
+            let allReleases = ChangelogRelease.localized(for: language)
+            #expect(allReleases.first?.version == "1.1.2")
+            let releases = allReleases.filter { $0.version != "1.1.2" }
             #expect(releases.map(\.version) == ["1.1.0", "1.0.6", "1.0.5", "1.0.4", "1.0.0"])
             #expect(releases[0].sections.map(\.kind) == [.feature, .improvement])
             #expect(releases[0].sections[0].kind.symbol == "checkmark.circle.fill")
@@ -988,7 +990,7 @@ struct CoreTests {
             #expect(releases[3].sections.map(\.kind) == [.feature, .fix])
             #expect(releases[4].sections.map(\.kind) == [.historical])
         }
-        let chinese = ChangelogRelease.localized(for: .simplifiedChinese)
+        let chinese = ChangelogRelease.localized(for: .simplifiedChinese).filter { $0.version != "1.1.2" }
         #expect(chinese[0].sections[0].items[0] == "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及启用保护期间持续可用的菜单栏状态与快捷控制。")
         #expect(chinese[0].sections[0].items[1] == "在 macOS 15.8 上新增 PowerUI 原生 80% 充电上限，仅开放系统实际支持的档位，并保持适配器供电。")
         #expect(chinese[0].sections[0].items.contains("为 iMac、Mac mini、Mac Studio 等桌面设备的“电池”部分设计了新的界面显示。"))
@@ -1183,6 +1185,36 @@ struct CoreTests {
         #expect(source.contains("VersionUpdateTip()"))
         #expect(source.contains("DetailItem(model.t(\"unsafeShutdowns\"), drive.unsafeShutdowns.map(String.init))"))
         #expect(source.contains("DetailItem(model.t(\"errorLogEntries\"), drive.errorLogEntries.map(String.init))"))
+    }
+
+    @Test
+    func testVersionUpdatePromptScrollsWithOverviewContent() throws {
+        let sourceFile = URL(fileURLWithPath: #filePath)
+        let viewsURL = sourceFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/DriveBatteryHealthViewer/Views.swift")
+        let source = try String(contentsOf: viewsURL, encoding: .utf8)
+
+        let rootStart = try #require(source.range(of: "struct RootView: View"))
+        let tipStart = try #require(source.range(of: "private struct VersionUpdateTip: View"))
+        let rootBody = source[rootStart.lowerBound..<tipStart.lowerBound]
+        #expect(!rootBody.contains("VersionUpdateTip()"))
+        #expect(!rootBody.contains(".safeAreaInset(edge: .top"))
+
+        let overviewStart = try #require(source.range(of: "struct OverviewView: View"))
+        let driveCardStart = try #require(source.range(of: "struct DriveCard: View"))
+        let overviewBody = source[overviewStart.lowerBound..<driveCardStart.lowerBound]
+        let prompt = try #require(overviewBody.range(of: "VersionUpdateTip()"))
+        let scroll = try #require(overviewBody.range(of: "ScrollView"))
+        let lazyStack = try #require(overviewBody.range(of: "LazyVStack"))
+        let header = try #require(overviewBody.range(of: "overviewHeader(snapshot)"))
+        #expect(scroll.lowerBound < lazyStack.lowerBound)
+        #expect(lazyStack.lowerBound < prompt.lowerBound)
+        #expect(prompt.lowerBound < header.lowerBound)
+        #expect(overviewBody.contains(".opacity(loadedContentIsVisible ? 1 : 0)"))
+        #expect(overviewBody.contains("@Environment(\\.accessibilityReduceMotion)"))
     }
 
     @Test @MainActor
@@ -1853,6 +1885,7 @@ struct CoreTests {
             #expect(stateImage?.tiffRepresentation == image?.tiffRepresentation)
         }
         #expect(ChargeLimitAgentStatusItemController.recoveryInterval == 2)
+        #expect(ChargeLimitAgentStatusItemController.visibilityTransitionDelay == 3)
         #expect(ChargeLimitAgentStatusItemController.fadeDuration > 0)
         #expect(ChargeLimitAgentStatusItemController.fadeDuration < 0.5)
         #expect(ChargeLimitAgentStatusItemController.fadeFrameCount > 1)
@@ -1873,12 +1906,13 @@ struct CoreTests {
 
     @MainActor
     @Test
-    func testEnabledProtectionKeepsMenuBarStatusItemVisibleWithoutReachedStatus() throws {
+    func testEnabledProtectionDoesNotShowMenuBarWithoutFreshReachedStatus() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("dbhv-agent-persistent-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = ChargeLimitAgentModel(
             configurationDirectory: root,
+            statusURL: root.appendingPathComponent("status.json"),
             operatingSystemVersion: OperatingSystemVersion(
                 majorVersion: 15,
                 minorVersion: 7,
@@ -1888,7 +1922,7 @@ struct CoreTests {
         #expect(!model.shouldShowStatusItem)
         model.selectDisplayedLimit(85)
         #expect(model.configuration.enabled)
-        #expect(model.shouldShowStatusItem)
+        #expect(!model.shouldShowStatusItem)
         model.setMenuBarStatusVisible(false)
         #expect(!model.shouldShowStatusItem)
     }
@@ -1922,6 +1956,61 @@ struct CoreTests {
                 status: holding
             ) == .limitReached
         )
+        let now = Date()
+        var freshHolding = holding
+        freshHolding.timestamp = now
+        #expect(
+            shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: freshHolding,
+                now: now
+            )
+        )
+        var disconnected = freshHolding
+        disconnected.adapterConnected = false
+        #expect(
+            !shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: disconnected,
+                now: now
+            )
+        )
+        var noLongerHolding = freshHolding
+        noLongerHolding.holding = false
+        #expect(
+            !shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: noLongerHolding,
+                now: now
+            )
+        )
+        var belowLimit = freshHolding
+        belowLimit.batteryPercentage = 79
+        #expect(
+            !shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: belowLimit,
+                now: now
+            )
+        )
+        var stale = freshHolding
+        stale.timestamp = now.addingTimeInterval(-21)
+        #expect(
+            !shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: stale,
+                now: now
+            )
+        )
+        var mismatchedLimit = freshHolding
+        mismatchedLimit.fixedLimit = .eightyFive
+        #expect(
+            !shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: mismatchedLimit,
+                now: now
+            )
+        )
         var temporaryFull = configuration
         temporaryFull.temporaryFullCharge = true
         #expect(
@@ -1948,7 +2037,7 @@ struct CoreTests {
             .deletingLastPathComponent()
         let helperURL = macosRoot.appendingPathComponent("Sources/DriveBatteryChargeHelper/main.swift")
         let source = try String(contentsOf: helperURL, encoding: .utf8)
-        #expect(source.contains("private let helperVersion = \"1.1.0.14\""))
+        #expect(source.contains("private let helperVersion = \"1.1.2.1\""))
         #expect(!source.contains("st_mode & S_IFLNK"))
         let markerStart = try #require(source.range(of: "private struct PowerUIOwnershipMarker: Codable"))
         let markerEnd = try #require(source.range(of: "private func readBattery()", range: markerStart.upperBound..<source.endIndex))
@@ -1966,6 +2055,18 @@ struct CoreTests {
         #expect(source.contains("Self.keyInfoSizeWithRetry(\"CHIE\", expectedSize: 1)"))
 
         #expect(source.contains("DBHVPowerUIEngageEighty"))
+        #expect(source.contains("DBHVPowerUIRefreshEighty"))
+        #expect(source.contains("func isPowerUIManaged() -> Bool"))
+        #expect(source.contains("snapshot.checkpoint == 1"))
+        #expect(source.contains("let lastKnownBatteryPercentage: Int?"))
+        #expect(source.contains("func maintainPowerUIWithoutBatteryReading()"))
+        #expect(source.contains("battery_read_failed_powerui_maintained"))
+        #expect(source.contains("battery_read_recovered"))
+        #expect(source.contains("private static let powerUIRefreshInterval: TimeInterval = 4 * 60 * 60"))
+        #expect(source.contains("private static let powerUIRefreshRetryInterval: TimeInterval = 5 * 60"))
+        #expect(source.contains("guard let lastSuccess = lastPowerUIRefreshSucceededAt else { return true }"))
+        #expect(source.contains("holdingLimit != nil || actuator.hasOwnedPowerUIState"))
+        #expect(source.contains("protection_disable_restore_failed"))
         #expect(source.contains("powerui-owner.json"))
         let holdStart = try #require(source.range(of: "func holdCharging(at batteryPercentage: Int) -> Bool"))
         let holdEnd = try #require(source.range(of: "func isHoldApplied() -> Bool", range: holdStart.upperBound..<source.endIndex))
@@ -1975,6 +2076,16 @@ struct CoreTests {
         #expect(holdBody.contains("SMC.writeLegacyCommand(\"CH0B\", value: legacyHold)"))
         #expect(holdBody.contains("SMC.writeLegacyCommand(\"CH0C\", value: legacyHold)"))
         #expect(!holdBody.contains("SMC.write(\"CHIE\", value: chieConnect)"))
+
+        let bridge = try String(
+            contentsOf: macosRoot.appendingPathComponent("Sources/CPowerUIBridge/CPowerUIBridge.m"),
+            encoding: .utf8
+        )
+        #expect(bridge.contains("bool DBHVPowerUIRefreshEighty"))
+        #expect(bridge.contains("static bool DBHVIsEightyManaged"))
+        #expect(bridge.contains("return DBHVWaitForEightyManaged"))
+        #expect(bridge.contains("baseline.checkpoint == 0 || baseline.checkpoint == 5"))
+        #expect(bridge.contains("final.checkpoint == 5 && final.engaged == 0"))
     }
 
     @Test

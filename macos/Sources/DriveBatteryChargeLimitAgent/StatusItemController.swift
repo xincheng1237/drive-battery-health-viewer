@@ -21,6 +21,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
         "DBHV Remembered StatusItem Preferred Position \(statusItemAutosaveName)"
     static let fallbackPreferredPosition: Double = 350
     static let recoveryInterval: TimeInterval = 2
+    static let visibilityTransitionDelay: TimeInterval = 3
     static let fadeDuration: TimeInterval = 0.28
     static let fadeFrameCount = 12
     static let buttonAvailabilityRetryLimit = 20
@@ -36,6 +37,11 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     private var transitionTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Never>?
     private var visibilityObservation: NSKeyValueObservation?
+    private enum VisibilityTransition: Equatable {
+        case appearing
+        case disappearing
+    }
+    private var visibilityTransition: VisibilityTransition?
     private var isFading = false
     private var presentationAttempts = 0
     private var didCheckSafeAreaPlacement = false
@@ -82,6 +88,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
 
     func invalidate() {
         transitionTask?.cancel()
+        visibilityTransition = nil
         recoveryTask?.cancel()
         visibilityObservation?.invalidate()
         visibilityObservation = nil
@@ -94,9 +101,46 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     private func reconcile() {
         refreshContent()
         if model.shouldShowStatusItem {
-            revealImmediately()
+            scheduleRevealAfterDelayIfNeeded()
         } else if !popover.isShown {
             beginFadeOut()
+        }
+    }
+
+    /// Debounces the appearance without reserving an empty menu-bar slot.
+    /// Once the condition has remained valid for the full delay, creation and
+    /// the fade-in begin together so nearby status items never move early.
+    private func scheduleRevealAfterDelayIfNeeded() {
+        if let item = statusItem, item.statusBar != nil, item.isVisible {
+            revealImmediately()
+            return
+        }
+        guard visibilityTransition != .appearing else { return }
+
+        transitionTask?.cancel()
+        transitionTask = nil
+        visibilityTransition = .appearing
+        isFading = false
+        transitionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(
+                    nanoseconds: UInt64(Self.visibilityTransitionDelay * 1_000_000_000)
+                )
+            } catch { return }
+            guard !Task.isCancelled,
+                  self.visibilityTransition == .appearing,
+                  self.statusItem == nil,
+                  self.model.shouldShowStatusItem else {
+                if self.visibilityTransition == .appearing, self.statusItem == nil {
+                    self.transitionTask = nil
+                    self.visibilityTransition = nil
+                }
+                return
+            }
+            self.transitionTask = nil
+            self.visibilityTransition = nil
+            self.revealImmediately()
         }
     }
 
@@ -113,6 +157,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
         } else {
             transitionTask?.cancel()
             transitionTask = nil
+            visibilityTransition = nil
             isFading = false
             sender.alphaValue = 1
             // A menu-bar-only LSUIElement is not necessarily active when its
@@ -133,9 +178,18 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func revealImmediately() {
-        transitionTask?.cancel()
-        transitionTask = nil
-        isFading = false
+        if visibilityTransition == .disappearing {
+            let needsFadeIn = (statusItem?.button?.alphaValue ?? 1) < 0.999
+            transitionTask?.cancel()
+            transitionTask = nil
+            visibilityTransition = nil
+            isFading = false
+            if let item = statusItem, needsFadeIn {
+                beginFadeIn(of: item)
+                return
+            }
+            statusItem?.button?.alphaValue = 1
+        }
 
         let item: NSStatusItem
         let shouldAnimateAppearance: Bool
@@ -166,8 +220,11 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
         if item.button != nil {
             configureButtonIfAvailable()
             if animatingAppearance {
+                if visibilityTransition != .appearing {
+                    item.button?.alphaValue = 0
+                }
                 beginFadeIn(of: item)
-            } else if transitionTask == nil {
+            } else if visibilityTransition == nil {
                 item.button?.alphaValue = 1
             }
             presentationAttempts = 0
@@ -190,9 +247,15 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     private func beginFadeIn(of item: NSStatusItem) {
         transitionTask?.cancel()
         guard let button = item.button else { return }
-        button.alphaValue = 0
+        visibilityTransition = .appearing
+        isFading = false
+        let startingAlpha = button.alphaValue
         transitionTask = Task { [weak self, weak item] in
             guard let self, let item else { return }
+            guard !Task.isCancelled,
+                  self.visibilityTransition == .appearing,
+                  self.statusItem === item,
+                  self.model.shouldShowStatusItem else { return }
             let frameCount = Self.fadeFrameCount
             let frameDuration = Self.fadeDuration / Double(frameCount)
             for frame in 1...frameCount {
@@ -203,24 +266,47 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
                 } catch { return }
                 guard !Task.isCancelled,
                       self.statusItem === item,
-                      !self.isFading else { return }
+                      self.visibilityTransition == .appearing,
+                      self.model.shouldShowStatusItem else { return }
                 let progress = Double(frame) / Double(frameCount)
-                button.alphaValue = progress * progress * (3 - (2 * progress))
+                let eased = progress * progress * (3 - (2 * progress))
+                button.alphaValue = startingAlpha + ((1 - startingAlpha) * eased)
             }
             button.alphaValue = 1
             self.transitionTask = nil
+            self.visibilityTransition = nil
         }
     }
 
     private func beginFadeOut() {
-        guard transitionTask == nil,
+        if visibilityTransition == .appearing, statusItem == nil {
+            transitionTask?.cancel()
+            transitionTask = nil
+            visibilityTransition = nil
+            isFading = false
+            return
+        }
+        guard visibilityTransition != .disappearing,
               let item = statusItem,
               item.isVisible,
               let button = item.button else { return }
+        transitionTask?.cancel()
+        transitionTask = nil
+        visibilityTransition = .disappearing
         isFading = true
-        button.alphaValue = 1
+        let startingAlpha = button.alphaValue
         transitionTask = Task { [weak self, weak item] in
             guard let self, let item else { return }
+            do {
+                try await Task.sleep(
+                    nanoseconds: UInt64(Self.visibilityTransitionDelay * 1_000_000_000)
+                )
+            } catch { return }
+            guard !Task.isCancelled,
+                  self.visibilityTransition == .disappearing,
+                  self.statusItem === item,
+                  !self.popover.isShown,
+                  !self.model.shouldShowStatusItem else { return }
             let frameCount = Self.fadeFrameCount
             let frameDuration = Self.fadeDuration / Double(frameCount)
             for frame in 1...frameCount {
@@ -231,18 +317,20 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
                 } catch { return }
                 guard !Task.isCancelled,
                       self.isFading,
+                      self.visibilityTransition == .disappearing,
                       self.statusItem === item,
                       !self.popover.isShown,
                       !self.model.shouldShowStatusItem else { return }
                 let progress = Double(frame) / Double(frameCount)
                 let eased = progress * progress * (3 - (2 * progress))
-                button.alphaValue = 1 - eased
+                button.alphaValue = startingAlpha * (1 - eased)
             }
 
             guard self.isFading, self.statusItem === item else { return }
             button.alphaValue = 1
             self.isFading = false
             self.transitionTask = nil
+            self.visibilityTransition = nil
             self.removeStatusItemForDisabledProtection()
         }
     }
@@ -289,7 +377,11 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func recoverPresentationIfNeeded() {
-        guard model.shouldShowStatusItem else { return }
+        guard model.shouldShowStatusItem else {
+            if !popover.isShown { beginFadeOut() }
+            return
+        }
+        if visibilityTransition == .appearing, statusItem == nil { return }
         guard let item = statusItem,
               item.statusBar != nil,
               item.button != nil,
@@ -386,9 +478,49 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     }
 
     static func statusItemImage(for state: ChargeLimitAgentPresentationState) -> NSImage? {
-        // The status item has one stable identity. State changes belong in the
-        // popover text, not in a transient replacement icon during polling.
-        reachedLimitImage()
+        // Keep the same status item and saved position; only swap its glyph.
+        switch state {
+        case .systemCalibration, .systemCalibrationAwaitingConfirmation:
+            return calibratingImage()
+        default: return reachedLimitImage()
+        }
+    }
+
+    /// The existing battery silhouette with two circular arrows cut out.
+    /// Static template art stays legible and respects reduced motion.
+    static func calibratingImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 24, height: 16), flipped: false) { _ in
+            NSGraphicsContext.saveGraphicsState()
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 2.2, y: 2.65, width: 17.8, height: 10.7),
+                         xRadius: 2.45, yRadius: 2.45).fill()
+            NSBezierPath(roundedRect: NSRect(x: 20.4, y: 5.85, width: 1.85, height: 4.3),
+                         xRadius: 0.8, yRadius: 0.8).fill()
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            let center = NSPoint(x: 11.1, y: 8)
+            for angles in [(CGFloat(150), CGFloat(20)), (CGFloat(330), CGFloat(200))] {
+                let arc = NSBezierPath()
+                arc.appendArc(withCenter: center, radius: 3.1, startAngle: angles.0,
+                              endAngle: angles.1, clockwise: true)
+                arc.lineWidth = 1.2
+                arc.lineCapStyle = .round
+                arc.stroke()
+            }
+            let upperHead = NSBezierPath()
+            upperHead.move(to: NSPoint(x: 14.5, y: 7.9))
+            upperHead.line(to: NSPoint(x: 12.9, y: 9.3))
+            upperHead.line(to: NSPoint(x: 15.0, y: 9.5))
+            upperHead.close(); upperHead.fill()
+            let lowerHead = NSBezierPath()
+            lowerHead.move(to: NSPoint(x: 7.7, y: 8.1))
+            lowerHead.line(to: NSPoint(x: 7.2, y: 6.5))
+            lowerHead.line(to: NSPoint(x: 9.3, y: 6.7))
+            lowerHead.close(); lowerHead.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     /// One solid, fully charged battery silhouette with a centered checkmark

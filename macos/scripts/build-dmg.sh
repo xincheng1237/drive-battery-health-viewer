@@ -4,13 +4,13 @@ set -euo pipefail
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 dist_dir="${project_dir}/dist"
-version="1.1.0"
+version="1.1.2"
 app_name="Drive & Battery Health Viewer"
 artifact_name="DriveBatteryHealthViewer_v${version}_macOS_Universal"
 volume_name="Drive & Battery Health Viewer ${version}"
 archive="${dist_dir}/${artifact_name}.zip"
 output="${dist_dir}/${artifact_name}.dmg"
-bundle_build="9"
+bundle_build="16"
 bundle_identifier="com.chengxin.drive-battery-health-viewer"
 minimum_system="13.0"
 smartctl_source_sha256="690b83ca331378da9ea0d9d61008c4b22dde391387b9bbad7f29387f2595f76e"
@@ -156,8 +156,19 @@ if [[ "${verified_smartctl_version}" != *"smartctl 7.5"* || "${verified_smartctl
     print -u2 "DMG contains an unexpected smartctl helper: ${verified_smartctl_version}"
     exit 1
 fi
-hdiutil detach "${verify_mount}" >/dev/null
-is_mounted=0
+# Finder or Spotlight may briefly hold the newly mounted verification volume.
+# Retry normal detach without forcing open files closed.
+for detach_attempt in 1 2 3 4 5; do
+    if hdiutil detach "${verify_mount}" >/dev/null; then
+        is_mounted=0
+        break
+    fi
+    sleep 1
+done
+if (( is_mounted )); then
+    print -u2 "Could not unmount the verified DMG after five attempts."
+    exit 1
+fi
 
 (
     cd "${dist_dir}"

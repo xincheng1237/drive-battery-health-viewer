@@ -33,6 +33,14 @@ enum AgentL10n {
             "reached": "Charge limit reached (%d%%)",
             "active": "Charge protection enabled (%d%% limit)",
             "temporaryFullActive": "Charging to full this time",
+            "systemFullActive": "Full charge temporarily allowed by macOS",
+            "calibrationActive": "System battery calibration",
+            "calibrationPending": "Confirming battery calibration",
+            "calibrationDetail": "macOS is calibrating the battery and may charge it fully. Your %d%% limit is saved.",
+            "calibrationPendingDetail": "Confirming the system calibration state. Charge limiting remains paused.",
+            "systemFullPending": "Confirming system charging state",
+            "systemFullDetail": "macOS is temporarily allowing a full charge. Your %d%% limit is saved.",
+            "systemFullPendingDetail": "Confirming the system charging state. Charge limiting remains paused.",
             "attention": "Charge protection needs attention",
             "adjust": "Adjust fixed charge limit",
             "full": "Charge to Full This Time",
@@ -46,6 +54,14 @@ enum AgentL10n {
             "reached": "已到达设定电量（%d%%）",
             "active": "充电保护已启用（上限 %d%%）",
             "temporaryFullActive": "本次正在充满",
+            "systemFullActive": "系统临时允许充满",
+            "calibrationActive": "系统正在校准电池",
+            "calibrationPending": "正在确认系统校准状态",
+            "calibrationDetail": "系统正在校准电池，暂时允许充满电。原 %d%% 上限设置已保留。",
+            "calibrationPendingDetail": "正在确认系统校准状态，暂不重新限充。原上限设置已保留。",
+            "systemFullPending": "正在确认系统充电状态",
+            "systemFullDetail": "系统已临时允许充满电，原 %d%% 上限设置已保留。",
+            "systemFullPendingDetail": "正在确认系统充电状态，暂不重新限充。",
             "attention": "充电保护需要处理",
             "adjust": "调整固定充电上限",
             "full": "本次充满",
@@ -59,6 +75,14 @@ enum AgentL10n {
             "reached": "Достигнут предел заряда (%d%%)",
             "active": "Защита зарядки включена (предел %d%%)",
             "temporaryFullActive": "Выполняется разовая полная зарядка",
+            "systemFullActive": "macOS временно разрешает полную зарядку",
+            "calibrationActive": "Системная калибровка аккумулятора",
+            "calibrationPending": "Проверка калибровки аккумулятора",
+            "calibrationDetail": "macOS калибрует аккумулятор и может зарядить его полностью. Предел %d%% сохранён.",
+            "calibrationPendingDetail": "Проверяется состояние калибровки. Ограничение зарядки пока приостановлено.",
+            "systemFullPending": "Проверка состояния зарядки системы",
+            "systemFullDetail": "macOS временно разрешает полную зарядку. Предел %d%% сохранён.",
+            "systemFullPendingDetail": "Проверяется состояние зарядки системы. Ограничение пока приостановлено.",
             "attention": "Требуется проверить защиту зарядки",
             "adjust": "Изменить постоянный предел",
             "full": "Зарядить полностью один раз",
@@ -70,6 +94,14 @@ enum AgentL10n {
             "reached": "Limite de charge atteinte (%d%%)",
             "active": "Protection de charge activée (limite de %d %%)",
             "temporaryFullActive": "Charge complète en cours pour cette fois",
+            "systemFullActive": "Charge complète temporairement autorisée",
+            "calibrationActive": "Étalonnage système de la batterie",
+            "calibrationPending": "Vérification de l’étalonnage",
+            "calibrationDetail": "macOS étalonne la batterie et peut la charger complètement. Votre limite de %d%% est conservée.",
+            "calibrationPendingDetail": "Vérification de l’étalonnage système. La limitation de charge reste en pause.",
+            "systemFullPending": "Vérification de la charge du système",
+            "systemFullDetail": "macOS autorise temporairement une charge complète. Votre limite de %d%% est conservée.",
+            "systemFullPendingDetail": "Vérification de la charge du système. La limitation reste en pause.",
             "attention": "La protection de charge nécessite votre attention",
             "adjust": "Modifier la limite fixe",
             "full": "Charger complètement cette fois",
@@ -81,6 +113,14 @@ enum AgentL10n {
             "reached": "Ladegrenze erreicht (%d%%)",
             "active": "Ladeschutz aktiviert (Grenze: %d %%)",
             "temporaryFullActive": "Dieses Mal wird vollständig geladen",
+            "systemFullActive": "Vollladung durch macOS vorübergehend erlaubt",
+            "calibrationActive": "System-Batteriekalibrierung",
+            "calibrationPending": "Batteriekalibrierung wird geprüft",
+            "calibrationDetail": "macOS kalibriert die Batterie und kann sie vollständig laden. Die Grenze von %d%% bleibt gespeichert.",
+            "calibrationPendingDetail": "Der System-Kalibrierungsstatus wird geprüft. Die Ladebegrenzung bleibt pausiert.",
+            "systemFullPending": "System-Ladestatus wird geprüft",
+            "systemFullDetail": "macOS erlaubt vorübergehend eine Vollladung. Die Grenze von %d%% bleibt gespeichert.",
+            "systemFullPendingDetail": "Der System-Ladestatus wird geprüft. Die Ladebegrenzung bleibt pausiert.",
             "attention": "Ladeschutz erfordert Aufmerksamkeit",
             "adjust": "Feste Ladegrenze anpassen",
             "full": "Diesmal vollständig laden",
@@ -92,6 +132,14 @@ enum AgentL10n {
             "reached": "설정한 충전량에 도달함(%d%%)",
             "active": "충전 보호가 켜짐(한도 %d%%)",
             "temporaryFullActive": "이번에는 완전 충전 중",
+            "systemFullActive": "시스템이 일시적으로 완전 충전 허용",
+            "calibrationActive": "시스템 배터리 보정 중",
+            "calibrationPending": "시스템 배터리 보정 확인 중",
+            "calibrationDetail": "macOS가 배터리를 보정 중이며 완전히 충전할 수 있습니다. 기존 %d%% 한도 설정은 유지됩니다.",
+            "calibrationPendingDetail": "시스템 배터리 보정 상태를 확인 중입니다. 충전 제한은 계속 일시 중지됩니다.",
+            "systemFullPending": "시스템 충전 상태 확인 중",
+            "systemFullDetail": "macOS가 일시적으로 완전 충전을 허용했습니다. 기존 %d%% 한도 설정은 유지됩니다.",
+            "systemFullPendingDetail": "시스템 충전 상태를 확인 중입니다. 충전 제한은 일시 중지된 상태입니다.",
             "attention": "충전 보호를 확인해야 함",
             "adjust": "고정 충전 한도 조절",
             "full": "이번에 완전히 충전",
@@ -103,6 +151,14 @@ enum AgentL10n {
             "reached": "設定した充電量に到達（%d%%）",
             "active": "充電保護が有効（上限 %d%%）",
             "temporaryFullActive": "今回だけ満充電中",
+            "systemFullActive": "システムが一時的にフル充電を許可",
+            "calibrationActive": "システムによるバッテリー校正中",
+            "calibrationPending": "バッテリー校正状態を確認中",
+            "calibrationDetail": "macOSがバッテリーを校正しており、フル充電することがあります。上限%d%%の設定は保持されています。",
+            "calibrationPendingDetail": "システムのバッテリー校正状態を確認中です。充電制限は引き続き一時停止しています。",
+            "systemFullPending": "システムの充電状態を確認中",
+            "systemFullDetail": "macOSが一時的にフル充電を許可しています。上限%d%%の設定は保持されています。",
+            "systemFullPendingDetail": "システムの充電状態を確認中です。充電制限は引き続き一時停止しています。",
             "attention": "充電保護の確認が必要です",
             "adjust": "固定充電上限を調整",
             "full": "今回だけ満充電",
@@ -129,6 +185,10 @@ enum ChargeLimitAgentPresentationState: Equatable {
     case protectionActive
     case limitReached
     case temporaryFullCharge
+    case systemTemporaryFullCharge
+    case systemFullChargeAwaitingConfirmation
+    case systemCalibration
+    case systemCalibrationAwaitingConfirmation
     case attentionRequired
 
     static func resolve(
@@ -138,6 +198,16 @@ enum ChargeLimitAgentPresentationState: Equatable {
         if let error = status?.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
            !error.isEmpty {
             return .attentionRequired
+        }
+        switch resolvedSystemCalibration(configuration: configuration, status: status) {
+        case .calibrating?: return .systemCalibration
+        case .awaitingConfirmation?: return .systemCalibrationAwaitingConfirmation
+        default: break
+        }
+        switch resolvedSystemChargeOverride(configuration: configuration, status: status) {
+        case .chargingToFull?: return .systemTemporaryFullCharge
+        case .awaitingConfirmation?: return .systemFullChargeAwaitingConfirmation
+        default: break
         }
         if configuration.temporaryFullCharge { return .temporaryFullCharge }
         if shouldPresentChargeLimitStatusItem(configuration: configuration, status: status) {
@@ -159,6 +229,7 @@ final class ChargeLimitAgentModel: ObservableObject {
 
     private let fileManager: FileManager
     private let configurationURL: URL
+    private let helperStatusURL: URL
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
     private let isAppleSilicon: Bool
@@ -170,6 +241,7 @@ final class ChargeLimitAgentModel: ObservableObject {
     init(
         fileManager: FileManager = .default,
         configurationDirectory: URL? = nil,
+        statusURL: URL? = nil,
         isAppleSilicon: Bool = true,
         operatingSystemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
     ) {
@@ -182,6 +254,7 @@ final class ChargeLimitAgentModel: ObservableObject {
                 isDirectory: true
             )
         configurationURL = directory.appendingPathComponent("configuration.json")
+        helperStatusURL = statusURL ?? Self.statusURL
         decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         encoder = JSONEncoder()
@@ -227,15 +300,28 @@ final class ChargeLimitAgentModel: ObservableObject {
     }
 
     var shouldShowStatusItem: Bool {
-        // The icon represents the enabled protection feature, not a brief
-        // threshold event. Keeping one stable NSStatusItem also avoids losing
-        // its menu-bar position while power and battery state fluctuate.
         availability.permitsSoftwareControls &&
-            configuration.showMenuBarStatus && configuration.enabled
+            configuration.showMenuBarStatus &&
+            (shouldPresentCalibrationStatusItem(configuration: configuration, status: status) || shouldPresentChargeLimitStatusItem(
+                configuration: configuration,
+                status: status
+            ))
     }
 
     var presentationState: ChargeLimitAgentPresentationState {
         .resolve(configuration: configuration, status: status)
+    }
+
+    var systemChargeOverrideState: SystemChargeOverrideState? {
+        resolvedSystemChargeOverride(configuration: configuration, status: status)
+    }
+
+    var systemCalibrationState: SystemCalibrationState? {
+        resolvedSystemCalibration(configuration: configuration, status: status)
+    }
+
+    var systemChargingPaused: Bool {
+        systemCalibrationState?.defersChargeControl == true || systemChargeOverrideState?.defersChargeControl == true
     }
 
     var statusItemLabel: String {
@@ -246,6 +332,14 @@ final class ChargeLimitAgentModel: ObservableObject {
             return AgentL10n.reached(configuration.fixedLimit.rawValue, language: language)
         case .temporaryFullCharge:
             return AgentL10n.text("temporaryFullActive", language: language)
+        case .systemTemporaryFullCharge:
+            return AgentL10n.text("systemFullActive", language: language)
+        case .systemFullChargeAwaitingConfirmation:
+            return AgentL10n.text("systemFullPending", language: language)
+        case .systemCalibration:
+            return AgentL10n.text("calibrationActive", language: language)
+        case .systemCalibrationAwaitingConfirmation:
+            return AgentL10n.text("calibrationPending", language: language)
         case .attentionRequired:
             return AgentL10n.text("attention", language: language)
         }
@@ -306,7 +400,7 @@ final class ChargeLimitAgentModel: ObservableObject {
                 lastObservedConfigurationDate = decoded.updatedAt
             }
         }
-        if let data = try? Data(contentsOf: Self.statusURL),
+        if let data = try? Data(contentsOf: helperStatusURL),
            let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data) {
             if status != decoded { status = decoded }
         } else {

@@ -9,6 +9,9 @@ typedef struct {
     int32_t current_state;
     int32_t checkpoint;
     int32_t engaged;
+    /// Explicit PowerUI TemporarilyDisabled flag: 0/1, or -1 if unavailable.
+    /// This is independent of battery percentage and checkpoint numbers.
+    int32_t temporarily_disabled;
 } DBHVPowerUIStatus;
 
 /// Opens the private framework dynamically and verifies that its smart-charge
@@ -18,9 +21,21 @@ bool DBHVPowerUIOpen(void);
 /// Reads a snapshot without changing charging state.
 bool DBHVPowerUIReadStatus(DBHVPowerUIStatus *status);
 
-/// Engages Apple's native optimized-battery-charging target (80%). The method
-/// accepts only a clean baseline or the already-engaged native state.
+/// Read-only, independently of PowerUI engagement. Returns 1 when powerd
+/// reports SOC limiting suspended for gauging, 0 when not reported, or -1
+/// for an unverified OS build, unavailable notification or unknown value.
+/// Zero does not prove the entire calibration process has completed.
+int32_t DBHVReadGaugingLimitSuspension(void);
+
+/// Engages Apple's native optimized-battery-charging target (80%). The caller
+/// must establish ownership before using this to recover an Apple top-off
+/// transition; an unowned non-baseline state is never passed to this method.
 bool DBHVPowerUIEngageEighty(int32_t battery_percentage);
+
+/// Renews an already engaged 80% override before PowerUI reaches its full-
+/// charge deadline. This keeps the adapter connected without allowing the
+/// native 24-hour schedule to enter its automatic top-off window.
+bool DBHVPowerUIRefreshEighty(int32_t battery_percentage);
 
 /// Clears this process's engagement override and restores normal charging.
 bool DBHVPowerUIDisable(void);
