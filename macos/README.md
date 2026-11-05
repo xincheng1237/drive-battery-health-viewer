@@ -20,7 +20,7 @@
 - 输出同时支持 Apple Silicon 与 Intel 的 Universal 2 应用
 - 内置 Universal 2 版只读 `smartctl` 7.5；当 macOS 或已安装的兼容驱动公开底层设备时补充读取详细信息，许可证和完整对应源代码随应用分发
 - Apple Silicon 充电保护：macOS 15.8 使用 PowerUI 原生 80% 路径；其他受支持组合提供 80% 至 100% 多档位，运行时检测 CHTE 或旧式 CH0B+CH0C，并保留“本次充满”
-- 充电保护启用期间持续显示菜单栏状态图标，并根据保护中、到达上限、本次充满或需要注意切换状态。普通用户 LaunchAgent 负责图标与快捷控制，因此主应用完全退出后仍可操作
+- 确认实际保持上限时显示带勾电池图标；系统校准时显示循环箭头电池图标与说明。系统临时允许充满时保留上限配置，带勾状态正常退隐。普通用户 LaunchAgent 负责图标与快捷控制，主应用退出后仍可工作
 - 轻量 JSON Lines 诊断日志，支持从“帮助 → 导出诊断日志…”按时间范围合并导出主程序与 helper 日志
 
 ## 系统要求
@@ -39,8 +39,8 @@ swift test --disable-sandbox
 
 构建脚本生成：
 
-- `DriveBatteryHealthViewer_v1.1.0_macOS_Universal.zip`
-- `DriveBatteryHealthViewer_v1.1.0_macOS_Universal.dmg`
+- `DriveBatteryHealthViewer_v1.1.2_macOS_Universal.zip`
+- `DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg`
 
 发布文件位于 `macos/dist/`。文件名包含版本、系统和 Universal 标识，便于在 GitHub Releases 中管理；DMG 提供“拖入应用程序”安装界面，安装后的应用始终为简洁的 `Drive & Battery Health Viewer.app`。
 
@@ -74,7 +74,7 @@ macOS 不会向普通第三方应用开放所有硬件底层数据，因此以�
 
 序列号隐藏默认开启。开启状态下，新保存的历史记录只写入脱敏值；复制或导出的报告也不会包含原始硬盘和电池序列号。
 
-## 电池充电保护（v1.1.0）
+## 电池充电保护（v1.1.2）
 
 - Apple Silicon + macOS 13 至 26.3（macOS 15.8 除外）在检测到 CHTE 或旧式 CH0B+CH0C 能力后，提供 80% / 85% / 90% / 95% / 100% 多档位。Intel Mac 不开放。
 - macOS 26.4 及以上默认折叠并优先推荐系统原生充电上限。用户仍可明确选择“继续使用本软件”；确认系统上限为 100% 并关闭“优化电池充电”后，再启用同样的 80% / 85% / 90% / 95% / 100% 多档位软件保护。在用户未明确完成该流程前，helper 不会控制充电。
@@ -95,3 +95,7 @@ macOS 不会向普通第三方应用开放所有硬件底层数据，因此以�
 - 默认不记录硬盘/电池序列号、报告正文、剪贴板、用户名、Apple ID 或完整私人路径；用户主目录统一脱敏为 `~`。
 - 启动/写入时清理约 14 天前的记录，并限制总容量约 20 MB。
 - “帮助 → 导出诊断日志…”默认最近 1 小时，可选择日期和时间；导出按时间排序合并 `[APP]` 与 `[CHARGE-HELPER]`，缺失来源会在文件中明确说明。
+
+## 1.1.2 系统状态识别
+
+校准信号目前仅对已验证的 macOS 15.8.1（24H212）启用。手动系统满充与自动校准分别展示；不取消系统必要维护，不依据电量或单独 checkpoint 猜测校准，不承诺临时标志消失即代表保护恢复。详细数据来源、版本门控与测试边界见 [系统充电状态说明](docs/SYSTEM_CHARGING_STATES.md)。

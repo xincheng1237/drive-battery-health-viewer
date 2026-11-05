@@ -11,6 +11,23 @@ struct ChargeLimitAgentPopoverView: View {
                 systemImage: presentationSystemImage
             )
             .font(.headline)
+            if let calibration = model.systemCalibrationState, calibration.defersChargeControl {
+                Text(calibration == .awaitingConfirmation
+                     ? AgentL10n.text("calibrationPendingDetail", language: model.language)
+                     : String(format: AgentL10n.text("calibrationDetail", language: model.language),
+                              model.configuration.fixedLimit.rawValue))
+                    .font(.footnote)
+                    .foregroundStyle(.blue)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let override = model.systemChargeOverrideState, override.defersChargeControl {
+                Text(override == .awaitingConfirmation
+                     ? AgentL10n.text("systemFullPendingDetail", language: model.language)
+                     : String(format: AgentL10n.text("systemFullDetail", language: model.language),
+                              model.configuration.fixedLimit.rawValue))
+                    .font(.footnote)
+                    .foregroundStyle(.blue)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 12) {
                 if model.configuration.fixedLimit != .oneHundred {
                     Button(
@@ -21,6 +38,7 @@ struct ChargeLimitAgentPopoverView: View {
                     ) {
                         model.toggleTemporaryFullCharge()
                     }
+                    .disabled(model.systemChargingPaused)
                 }
                 Toggle(
                     AgentL10n.text("menuBar", language: model.language),
@@ -53,7 +71,9 @@ struct ChargeLimitAgentPopoverView: View {
         switch model.presentationState {
         case .protectionActive: return "battery.75percent"
         case .limitReached: return "battery.100percent"
-        case .temporaryFullCharge: return "bolt.fill"
+        case .temporaryFullCharge, .systemTemporaryFullCharge: return "bolt.fill"
+        case .systemFullChargeAwaitingConfirmation: return "clock"
+        case .systemCalibration, .systemCalibrationAwaitingConfirmation: return "arrow.triangle.2.circlepath"
         case .attentionRequired: return "exclamationmark.triangle.fill"
         }
     }

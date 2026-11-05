@@ -17,13 +17,6 @@ struct RootView: View {
         } detail: {
             destinationView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if model.showsVersionUpdatePrompt {
-                        VersionUpdateTip()
-                            .environmentObject(model)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
         }
         .navigationSplitViewStyle(.prominentDetail)
         .toolbar { toolbar }
@@ -78,7 +71,6 @@ struct RootView: View {
             DiagnosticExportView()
                 .environmentObject(model)
         }
-        .animation(.easeOut(duration: 0.22), value: model.showsVersionUpdatePrompt)
     }
 
     @ViewBuilder
@@ -188,8 +180,6 @@ private struct VersionUpdateTip: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .dbhvCardSurface(cornerRadius: 11)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 }
 
@@ -233,6 +223,8 @@ private struct UpdateAvailableView: View {
 
 struct OverviewView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var loadedContentIsVisible = false
 
     var body: some View {
         Group {
@@ -241,9 +233,16 @@ struct OverviewView: View {
                     ProgressView().controlSize(.large)
                     Text(model.t("refreshing")).foregroundStyle(.secondary)
                 }
+                .transition(.opacity)
             } else if let snapshot = model.currentSnapshot {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 22) {
+                        if model.showsVersionUpdatePrompt {
+                            VersionUpdateTip()
+                                .environmentObject(model)
+                                .transition(updatePromptTransition)
+                        }
+
                         overviewHeader(snapshot)
                         hardwareSection(title: model.t("drives"), count: snapshot.drives.count, symbol: "internaldrive") {
                             if snapshot.drives.isEmpty {
@@ -287,6 +286,10 @@ struct OverviewView: View {
                     .padding(28)
                     .frame(maxWidth: 1040)
                     .frame(maxWidth: .infinity)
+                    .opacity(loadedContentIsVisible ? 1 : 0)
+                    .offset(y: loadedContentIsVisible || reduceMotion ? 0 : 8)
+                    .onAppear(perform: revealLoadedContent)
+                    .animation(.easeOut(duration: 0.2), value: model.showsVersionUpdatePrompt)
                 }
             } else {
                 EmptyState(
@@ -296,9 +299,28 @@ struct OverviewView: View {
                     buttonTitle: model.t("refresh"),
                     action: model.refresh
                 )
+                .transition(.opacity)
             }
         }
         .navigationTitle(model.t("overview"))
+    }
+
+    private var updatePromptTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
+    }
+
+    private func revealLoadedContent() {
+        guard !loadedContentIsVisible else { return }
+        guard !reduceMotion else {
+            loadedContentIsVisible = true
+            return
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.26)) {
+                loadedContentIsVisible = true
+            }
+        }
     }
 
     private func overviewHeader(_ snapshot: HealthSnapshot) -> some View {
@@ -877,14 +899,23 @@ struct ChargeProtectionSection: View {
                         Button(model.t("cancelFullCharge"), role: .cancel) {
                             manager.cancelTemporaryFullCharge()
                         }
+                        .disabled(manager.systemChargingPaused)
                     } else {
                         Button(model.t("chargeToFullOnce")) {
                             manager.beginTemporaryFullCharge()
                         }
+                        .disabled(manager.systemChargingPaused)
                     }
                     Spacer()
                 }
-                if manager.configuration.temporaryFullCharge {
+                if manager.systemChargingPaused {
+                    SystemChargingPauseNotice(
+                        calibration: manager.systemCalibrationState,
+                        override: manager.systemChargeOverrideState,
+                        limit: manager.configuration.fixedLimit.rawValue,
+                        language: model.language
+                    )
+                } else if manager.configuration.temporaryFullCharge {
                     Label(model.t("temporaryFullInProgress"), systemImage: "battery.100percent.bolt")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -1870,6 +1901,14 @@ struct ChangelogRelease: Identifiable {
     let sections: [ChangelogSection]
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
+        [ChangelogRelease(version: "1.1.2", sections: [
+            ChangelogSection(kind: .feature, items: [L10n.text("release112Calibration", language), L10n.text("release112SystemFull", language)]),
+            ChangelogSection(kind: .fix, items: [L10n.text("release112PauseFix", language)]),
+            ChangelogSection(kind: .improvement, items: [L10n.text("release112Verification", language)])
+        ])] + legacyLocalized(for: language)
+    }
+
+    private static func legacyLocalized(for language: AppLanguage) -> [ChangelogRelease] {
         switch L10n.effective(language) {
         case .simplifiedChinese:
             return releases(

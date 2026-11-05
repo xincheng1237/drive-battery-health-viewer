@@ -10,7 +10,7 @@ import Darwin
 import Foundation
 import IOKit
 
-private let helperVersion = "1.1.0.14"
+private let helperVersion = "1.1.2.1"
 private let statusHeartbeatInterval: TimeInterval = 10
 
 private enum HelperExit: Int32 {
@@ -70,6 +70,20 @@ private enum JSONLineLogger {
         lock.lock()
         defer { lock.unlock() }
         do {
+            let directory = fileURL.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: false,
+                    attributes: [.posixPermissions: 0o755, .ownerAccountID: 0, .groupOwnerAccountID: 0]
+                )
+            }
+            var directoryInfo = stat()
+            guard lstat(directory.path, &directoryInfo) == 0,
+                  (directoryInfo.st_mode & S_IFMT) == S_IFDIR,
+                  directoryInfo.st_uid == 0,
+                  directoryInfo.st_mode & 0o022 == 0 else {
+                throw CocoaError(.fileWriteNoPermission)
+            }
             try rotateAndCleanIfNeeded(fileURL)
             if !FileManager.default.fileExists(atPath: fileURL.path) {
                 FileManager.default.createFile(atPath: fileURL.path, contents: nil)
@@ -268,17 +282,25 @@ private struct PowerUIOwnershipMarker: Codable {
     let schema: Int
     let helperIdentifier: String
     let targetPercentage: Int
+    /// Last battery percentage read directly from AppleSmartBattery while the
+    /// policy was owned. Optional keeps existing v1 markers decodable during
+    /// an in-place helper upgrade.
+    let lastKnownBatteryPercentage: Int?
 
-    init() {
+    init(lastKnownBatteryPercentage: Int?) {
         schema = Self.schemaVersion
         helperIdentifier = InstalledComponents.helperIdentifier
         targetPercentage = FixedChargeLimit.eighty.rawValue
+        self.lastKnownBatteryPercentage = lastKnownBatteryPercentage.flatMap {
+            (0...100).contains($0) ? $0 : nil
+        }
     }
 
     var isValid: Bool {
         schema == Self.schemaVersion &&
             helperIdentifier == InstalledComponents.helperIdentifier &&
-            targetPercentage == FixedChargeLimit.eighty.rawValue
+            targetPercentage == FixedChargeLimit.eighty.rawValue &&
+            lastKnownBatteryPercentage.map { (0...100).contains($0) } != false
     }
 }
 
@@ -308,6 +330,8 @@ private func readBattery() -> BatteryReading? {
 }
 
 private final class ChargeActuator {
+    private static let powerUIRefreshInterval: TimeInterval = 4 * 60 * 60
+    private static let powerUIRefreshRetryInterval: TimeInterval = 5 * 60
     private let chteAllow: [UInt8] = [0, 0, 0, 0]
     private let chteHold: [UInt8] = [1, 0, 0, 0]
     private let legacyAllow: [UInt8] = [0]
@@ -321,6 +345,8 @@ private final class ChargeActuator {
     private let hasCHIE: Bool
     private let powerUIOwnershipURL: URL
     private var legacyHoldCommanded = false
+    private var lastPowerUIRefreshSucceededAt: Date?
+    private var lastPowerUIRefreshAttemptedAt: Date?
     let method: ChargeControlMethod
 
     init(preferPowerUIEighty: Bool, powerUIOwnershipURL: URL) {
@@ -340,8 +366,10 @@ private final class ChargeActuator {
         hasCH0C = ch0cSize == 1
         hasLegacyPair = hasCH0B && hasCH0C
         hasCHIE = chieSize == 1
-        if preferPowerUIEighty, DBHVPowerUIOpen() {
-            method = .powerUIOptimized80
+        if preferPowerUIEighty {
+            // This platform is native-80-only. A missing private interface
+            // must not turn system maintenance into forced SMC limiting.
+            method = DBHVPowerUIOpen() ? .powerUIOptimized80 : .unavailable
         } else {
             method = preferredChargeControlMethod(
                 chteSupported: hasCHTE,
@@ -361,7 +389,7 @@ private final class ChargeActuator {
         )
     }
 
-    private func hasPowerUIOwnership() -> Bool {
+    private func readPowerUIOwnership() -> PowerUIOwnershipMarker? {
         var information = stat()
         guard lstat(powerUIOwnershipURL.path, &information) == 0,
               (information.st_mode & S_IFMT) == S_IFREG,
@@ -369,16 +397,39 @@ private final class ChargeActuator {
               information.st_mode & 0o077 == 0,
               let data = try? Data(contentsOf: powerUIOwnershipURL),
               let marker = try? JSONDecoder().decode(PowerUIOwnershipMarker.self, from: data) else {
-            return false
+            return nil
         }
-        return marker.isValid
+        return marker.isValid ? marker : nil
     }
 
-    private func writePowerUIOwnership() -> Bool {
+    private func hasPowerUIOwnership() -> Bool {
+        readPowerUIOwnership() != nil
+    }
+
+    var hasOwnedPowerUIState: Bool {
+        method == .powerUIOptimized80 && hasPowerUIOwnership()
+    }
+
+    var cachedPowerUIBatteryPercentage: Int? {
+        readPowerUIOwnership()?.lastKnownBatteryPercentage
+    }
+
+    @discardableResult
+    func rememberPowerUIBatteryPercentage(_ percentage: Int) -> Bool {
+        guard (0...100).contains(percentage),
+              let marker = readPowerUIOwnership() else { return false }
+        guard marker.lastKnownBatteryPercentage != percentage else { return true }
+        return writePowerUIOwnership(batteryPercentage: percentage)
+    }
+
+    private func writePowerUIOwnership(batteryPercentage: Int) -> Bool {
+        guard (0...100).contains(batteryPercentage) else { return false }
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            try encoder.encode(PowerUIOwnershipMarker()).write(to: powerUIOwnershipURL, options: .atomic)
+            try encoder.encode(PowerUIOwnershipMarker(
+                lastKnownBatteryPercentage: batteryPercentage
+            )).write(to: powerUIOwnershipURL, options: .atomic)
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o600, .ownerAccountID: 0, .groupOwnerAccountID: 0],
                 ofItemAtPath: powerUIOwnershipURL.path
@@ -394,6 +445,8 @@ private final class ChargeActuator {
             "/Library/Application Support/DriveBatteryHealthViewer/ChargeProtection/"
         ) else { return }
         try? FileManager.default.removeItem(at: powerUIOwnershipURL)
+        lastPowerUIRefreshSucceededAt = nil
+        lastPowerUIRefreshAttemptedAt = nil
     }
 
     private static func keyInfoSizeWithRetry(_ key: String, expectedSize: UInt32) -> UInt32? {
@@ -450,6 +503,30 @@ private final class ChargeActuator {
         return succeeded
     }
 
+    func shouldRefreshPowerUI(at now: Date = Date()) -> Bool {
+        guard method == .powerUIOptimized80, hasPowerUIOwnership() else {
+            return false
+        }
+        if let lastAttempt = lastPowerUIRefreshAttemptedAt,
+           now.timeIntervalSince(lastAttempt) < Self.powerUIRefreshRetryInterval {
+            return false
+        }
+        // A newly launched helper has no in-memory refresh timestamp. Refresh
+        // immediately so an already-owned PowerUI lease cannot silently age
+        // out after an app update, helper restart, logout, or reboot.
+        guard let lastSuccess = lastPowerUIRefreshSucceededAt else { return true }
+        return now.timeIntervalSince(lastSuccess) >= Self.powerUIRefreshInterval
+    }
+
+    @discardableResult
+    func refreshPowerUI(at batteryPercentage: Int, now: Date = Date()) -> Bool {
+        guard method == .powerUIOptimized80, hasPowerUIOwnership() else { return false }
+        lastPowerUIRefreshAttemptedAt = now
+        let refreshed = DBHVPowerUIRefreshEighty(Int32(batteryPercentage))
+        if refreshed { lastPowerUIRefreshSucceededAt = now }
+        return refreshed
+    }
+
     @discardableResult
     func holdCharging(at batteryPercentage: Int) -> Bool {
         // The startup restore already clears any adapter-isolation state left
@@ -468,10 +545,13 @@ private final class ChargeActuator {
                 }
             }
             guard DBHVPowerUIEngageEighty(Int32(batteryPercentage)) else { return false }
-            guard writePowerUIOwnership() else {
+            guard writePowerUIOwnership(batteryPercentage: batteryPercentage) else {
                 _ = DBHVPowerUIDisable()
                 return false
             }
+            let now = Date()
+            lastPowerUIRefreshSucceededAt = now
+            lastPowerUIRefreshAttemptedAt = now
             return true
         case .chte: return SMC.write("CHTE", value: chteHold)
         case .legacyCH0BCH0C:
@@ -496,12 +576,80 @@ private final class ChargeActuator {
             guard hasPowerUIOwnership() else { return false }
             var snapshot = DBHVPowerUIStatus()
             return DBHVPowerUIReadStatus(&snapshot) &&
+                snapshot.temporarily_disabled != 1 && DBHVReadGaugingLimitSuspension() != 1 &&
                 snapshot.enabled == 1 && snapshot.current_state == 1 && snapshot.engaged == 1
         case .chte: return SMC.read("CHTE", size: 4) == chteHold
         case .legacyCH0BCH0C: return legacyHoldCommanded
         case .chieFallback: return SMC.read("CHIE", size: 1) == chieDisconnect
         case .unavailable: return false
         }
+    }
+
+    func isPowerUIManaged() -> Bool {
+        guard method == .powerUIOptimized80, hasPowerUIOwnership() else { return false }
+        var snapshot = DBHVPowerUIStatus()
+        guard DBHVPowerUIReadStatus(&snapshot),
+              snapshot.temporarily_disabled != 1, DBHVReadGaugingLimitSuspension() != 1,
+              snapshot.enabled == 1,
+              snapshot.current_state == 1 else { return false }
+        return snapshot.checkpoint == 1 ||
+            (snapshot.checkpoint == 2 && snapshot.engaged == 1)
+    }
+
+    func systemTemporaryFullChargeObservation() -> Bool? {
+        guard method == .powerUIOptimized80 else { return nil }
+        var snapshot = DBHVPowerUIStatus()
+        guard DBHVPowerUIReadStatus(&snapshot) else { return nil }
+        switch snapshot.temporarily_disabled {
+        case 1: return true
+        case 0: return false
+        default: return nil
+        }
+    }
+
+    func systemCalibrationObservation() -> Bool? {
+        guard method == .powerUIOptimized80 else { return nil }
+        switch DBHVReadGaugingLimitSuspension() {
+        case 1: return true
+        case 0: return false
+        default: return nil
+        }
+    }
+
+    /// Keeps an already-owned PowerUI policy alive when AppleSmartBattery
+    /// telemetry is temporarily unavailable. The cached percentage came from
+    /// a previously validated 0...100 reading and is used only for the native
+    /// 80% path; no SMC fallback is attempted.
+    func maintainPowerUIWithoutBatteryReading() -> (succeeded: Bool, managed: Bool, holding: Bool) {
+        guard method == .powerUIOptimized80, hasPowerUIOwnership() else {
+            return (false, false, false)
+        }
+        var managed = isPowerUIManaged()
+        var holding = isHoldApplied()
+        guard let cachedPercentage = cachedPowerUIBatteryPercentage else {
+            // Existing v1 ownership markers are still valid. If PowerUI is
+            // already holding at 80%, that value is an authoritative cache
+            // seed even when AppleSmartBattery is temporarily unavailable.
+            guard holding else { return (managed, managed, holding) }
+            guard rememberPowerUIBatteryPercentage(FixedChargeLimit.eighty.rawValue) else {
+                return (managed, managed, holding)
+            }
+            return maintainPowerUIWithoutBatteryReading()
+        }
+
+        var succeeded = true
+        if managed && shouldRefreshPowerUI() {
+            let refreshed = refreshPowerUI(at: cachedPercentage)
+            managed = isPowerUIManaged()
+            holding = isHoldApplied()
+            succeeded = refreshed || managed
+        }
+        if !managed {
+            succeeded = holdCharging(at: cachedPercentage)
+            managed = succeeded && isPowerUIManaged()
+            holding = managed && isHoldApplied()
+        }
+        return (succeeded, managed, holding)
     }
 }
 
@@ -686,6 +834,8 @@ private struct StatusSnapshot: Equatable {
     let batteryPercentage: Int?
     let controlMethod: ChargeControlMethod
     let lastError: String?
+    let systemChargeOverride: SystemChargeOverrideState?
+    let systemCalibration: SystemCalibrationState?
     /// Keep the adapter observation fresh even when no charge-control state
     /// changes. This status file is tiny and is overwritten atomically; a
     /// ten-second heartbeat avoids both stale UI state and high-frequency I/O.
@@ -703,6 +853,8 @@ private struct StatusSnapshot: Equatable {
         batteryPercentage = status.batteryPercentage
         controlMethod = status.controlMethod
         lastError = status.lastError
+        systemChargeOverride = status.systemChargeOverride
+        systemCalibration = status.systemCalibration
         heartbeatBucket = Int(status.timestamp.timeIntervalSince1970 / statusHeartbeatInterval)
     }
 }
@@ -733,6 +885,44 @@ private extension JSONDecoder {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
+}
+
+private func writeSystemChargingPauseStatus(
+    override: SystemChargeOverrideState?,
+    calibration: SystemCalibrationState?,
+    configuration: ChargeProtectionConfiguration,
+    battery: BatteryReading?,
+    to url: URL,
+    previous: inout StatusSnapshot?,
+    lastReported: inout String?
+) {
+    let reason: String
+    if let calibration, calibration.defersChargeControl {
+        reason = "calibration:\(calibration.rawValue)"
+    } else {
+        reason = "system-full:\(override?.rawValue ?? "unknown")"
+    }
+    if reason != lastReported {
+        JSONLineLogger.write(
+            "info", category: "charge", event: "system_charging_pause",
+            message: "System charging pause: \(reason); configured limit retained; engagement and renewal deferred."
+        )
+    }
+    lastReported = reason
+    writeStatusIfChanged(ChargeProtectionStatus(
+        helperVersion: helperVersion,
+        installed: true,
+        enabled: configuration.enabled,
+        fixedLimit: configuration.fixedLimit,
+        temporaryFullCharge: configuration.temporaryFullCharge,
+        configurationUpdatedAt: configuration.updatedAt,
+        holding: false,
+        adapterConnected: battery?.charge.adapterConnected,
+        batteryPercentage: battery?.charge.percentage,
+        controlMethod: .powerUIOptimized80,
+        systemChargeOverride: override,
+        systemCalibration: calibration
+    ), to: url, previous: &previous)
 }
 
 private extension JSONEncoder {
@@ -830,7 +1020,10 @@ guard let initialConfiguration = secureConfiguration(
         message: "Configuration ownership, permissions, or contents were invalid; charging was restored."
     )
 }
-guard attemptNormalChargingRestoration() else {
+let preserveSystemFullCharge = !arguments.restoreOnly && initialConfiguration.enabled &&
+    initialConfiguration.fixedLimit == .eighty &&
+    (actuator.systemTemporaryFullChargeObservation() == true || actuator.systemCalibrationObservation() == true)
+guard preserveSystemFullCharge || attemptNormalChargingRestoration() else {
     restoreAndExit(.smcUnavailable, event: "failsafe_restore_failed", message: "The helper could not verify normal charging state and stopped without applying a limit.")
 }
 if arguments.restoreOnly {
@@ -880,9 +1073,50 @@ var lastConfigurationInvalid = false
 var wasEnabled = false
 var lastBatteryReadFailed = false
 var lastActuationFailed = false
+var lastRestorationFailed = false
+var lastPowerUIRefreshFailed = false
+var systemOverrideTracker = SystemChargeOverrideTracker()
+var systemCalibrationTracker = SystemCalibrationTracker()
+var lastReportedSystemPause: String?
 private var previousStatus: StatusSnapshot?
 let machine = ChargeProtectionStateMachine()
 var applicationRemovalMonitor = ApplicationRemovalMonitor()
+
+private func deferToSystemIfNeeded(
+    configuration: ChargeProtectionConfiguration,
+    battery: BatteryReading? = nil
+) -> Bool {
+    guard actuator.method == .powerUIOptimized80, configuration.fixedLimit == .eighty else {
+        systemOverrideTracker = SystemChargeOverrideTracker()
+        systemCalibrationTracker = SystemCalibrationTracker()
+        lastReportedSystemPause = nil
+        return false
+    }
+    let override = systemOverrideTracker.observe(
+        temporarilyDisabled: actuator.systemTemporaryFullChargeObservation()
+    )
+    let calibration = systemCalibrationTracker.observe(
+        limitSuspended: actuator.systemCalibrationObservation()
+    )
+    guard override?.defersChargeControl == true || calibration?.defersChargeControl == true else {
+        if lastReportedSystemPause != nil {
+            JSONLineLogger.write("info", category: "charge", event: "system_charging_pause_ended",
+                                 message: "The system no longer reports a charging pause; normal policy verification resumes. This is not a claim of calibration completion or restored protection.")
+            lastReportedSystemPause = nil
+        }
+        return false
+    }
+    holdingLimit = nil
+    lastActuationFailed = false
+    lastPowerUIRefreshFailed = false
+    writeSystemChargingPauseStatus(
+        override: override, calibration: calibration,
+        configuration: configuration, battery: battery ?? readBattery(),
+        to: arguments.statusURL, previous: &previousStatus,
+        lastReported: &lastReportedSystemPause
+    )
+    return true
+}
 
 while true {
     if let applicationURL = arguments.applicationURL,
@@ -892,9 +1126,8 @@ while true {
         cleanUpAfterApplicationRemoval(arguments)
     }
     guard var configuration = secureConfiguration(at: arguments.configurationURL, ownerUID: arguments.ownerUID) else {
-        if holdingLimit != nil {
-            _ = actuator.allowCharging()
-            holdingLimit = nil
+        if holdingLimit != nil || actuator.hasOwnedPowerUIState {
+            if actuator.allowCharging() { holdingLimit = nil }
         }
         let fallback = ChargeProtectionConfiguration()
         writeTerminalStatus(
@@ -939,28 +1172,91 @@ while true {
         continue
     }
     if !configuration.enabled {
-        if holdingLimit != nil {
-            _ = actuator.allowCharging()
-            holdingLimit = nil
-        }
+        systemOverrideTracker = SystemChargeOverrideTracker()
+        systemCalibrationTracker = SystemCalibrationTracker()
+        lastReportedSystemPause = nil
+        let restorationRequired = holdingLimit != nil || actuator.hasOwnedPowerUIState
+        let restored = !restorationRequired || actuator.allowCharging()
+        if restored { holdingLimit = nil }
         writeTerminalStatus(
             configuration: configuration,
-            error: nil,
+            error: restored ? nil : "Unable to restore normal charging",
             controlMethod: actuator.method,
             to: arguments.statusURL,
             previous: &previousStatus
         )
         if wasEnabled {
-            JSONLineLogger.write("info", category: "charge", event: "protection_disabled", message: "Charge protection was disabled and normal system charging was restored.")
+            JSONLineLogger.write(
+                restored ? "info" : "error",
+                category: "charge",
+                event: restored ? "protection_disabled" : "protection_disable_restore_failed",
+                message: restored
+                    ? "Charge protection was disabled and normal system charging was restored."
+                    : "Charge protection was disabled, but normal charging restoration could not yet be verified; the helper will retry."
+            )
+        } else if lastRestorationFailed && restored {
+            JSONLineLogger.write(
+                "info",
+                category: "charge",
+                event: "protection_disable_restore_recovered",
+                message: "Normal charging restoration succeeded after a previous retryable failure."
+            )
         }
+        lastRestorationFailed = !restored
         wasEnabled = false
         Thread.sleep(forTimeInterval: 5)
         continue
     }
     wasEnabled = true
 
+    // Both system reasons take precedence over telemetry maintenance and
+    // control. Unknown reads after a confirmed pause cannot cancel it.
+    if deferToSystemIfNeeded(configuration: configuration) {
+        Thread.sleep(forTimeInterval: 5)
+        continue
+    }
+
     guard let battery = readBattery() else {
-        if holdingLimit != nil { _ = actuator.allowCharging(); holdingLimit = nil }
+        if actuator.method == .powerUIOptimized80,
+           configuration.fixedLimit == .eighty,
+           !configuration.temporaryFullCharge,
+           actuator.hasOwnedPowerUIState {
+            let maintenance = actuator.maintainPowerUIWithoutBatteryReading()
+            if deferToSystemIfNeeded(configuration: configuration) {
+                Thread.sleep(forTimeInterval: 5)
+                continue
+            }
+            holdingLimit = maintenance.holding ? .eighty : nil
+            if !lastBatteryReadFailed {
+                JSONLineLogger.write(
+                    maintenance.succeeded ? "warning" : "error",
+                    category: "charge",
+                    event: "battery_read_failed_powerui_maintained",
+                    message: maintenance.succeeded
+                        ? "Battery telemetry is unavailable; the owned native 80% policy remains managed using the last validated battery reading."
+                        : "Battery telemetry is unavailable and the owned native 80% policy could not be verified; recovery will be retried."
+                )
+                lastBatteryReadFailed = true
+            }
+            writeStatusIfChanged(ChargeProtectionStatus(
+                helperVersion: helperVersion,
+                installed: true,
+                enabled: configuration.enabled,
+                fixedLimit: .eighty,
+                temporaryFullCharge: false,
+                configurationUpdatedAt: configuration.updatedAt,
+                holding: maintenance.holding,
+                adapterConnected: nil,
+                batteryPercentage: nil,
+                controlMethod: actuator.method,
+                lastError: maintenance.succeeded ? nil : "Unable to verify battery telemetry or the native 80% policy"
+            ), to: arguments.statusURL, previous: &previousStatus)
+            Thread.sleep(forTimeInterval: 5)
+            continue
+        }
+
+        let restorationRequired = holdingLimit != nil || actuator.hasOwnedPowerUIState
+        if restorationRequired, actuator.allowCharging() { holdingLimit = nil }
         if !lastBatteryReadFailed {
             JSONLineLogger.write("error", category: "charge", event: "battery_read_failed", message: "The helper could not read the battery; charging was restored.")
             lastBatteryReadFailed = true
@@ -981,8 +1277,17 @@ while true {
         Thread.sleep(forTimeInterval: 5)
         continue
     }
+    if lastBatteryReadFailed {
+        JSONLineLogger.write(
+            "info",
+            category: "charge",
+            event: "battery_read_recovered",
+            message: "Battery telemetry recovered; live charge-protection decisions resumed."
+        )
+    }
     lastBatteryReadFailed = false
     if actuator.method == .powerUIOptimized80 {
+        _ = actuator.rememberPowerUIBatteryPercentage(battery.charge.percentage)
         if configuration.fixedLimit != .eighty {
             _ = actuator.allowCharging()
             holdingLimit = nil
@@ -1045,13 +1350,46 @@ while true {
             }
         }
 
-        var active = actuator.isHoldApplied()
+        var managed = actuator.isPowerUIManaged()
+        var holding = actuator.isHoldApplied()
         var actuationSucceeded = true
-        if battery.charge.adapterConnected && !active {
-            actuationSucceeded = actuator.holdCharging(at: battery.charge.percentage)
-            active = actuationSucceeded && actuator.isHoldApplied()
+        if battery.charge.adapterConnected && managed && actuator.shouldRefreshPowerUI() {
+            let refreshed = actuator.refreshPowerUI(at: battery.charge.percentage)
+            managed = actuator.isPowerUIManaged()
+            holding = actuator.isHoldApplied()
+            actuationSucceeded = refreshed || managed
+            if !refreshed && !lastPowerUIRefreshFailed {
+                JSONLineLogger.write(
+                    "warning",
+                    category: "charge",
+                    event: "powerui_refresh_deferred",
+                    message: managed
+                        ? "The native PowerUI 80% lease could not be refreshed yet; the existing limit remains active and the helper will retry."
+                        : "The native PowerUI 80% lease expired during refresh; immediate recovery will be attempted."
+                )
+            } else if refreshed && lastPowerUIRefreshFailed {
+                JSONLineLogger.write(
+                    "info",
+                    category: "charge",
+                    event: "powerui_refresh_recovered",
+                    message: "The native PowerUI 80% lease was refreshed after a retryable failure."
+                )
+            }
+            lastPowerUIRefreshFailed = !refreshed
         }
-        holdingLimit = active ? .eighty : nil
+        if battery.charge.adapterConnected && !managed {
+            actuationSucceeded = actuator.holdCharging(at: battery.charge.percentage)
+            managed = actuationSucceeded && actuator.isPowerUIManaged()
+            holding = managed && actuator.isHoldApplied()
+            if managed { lastPowerUIRefreshFailed = false }
+        }
+        // A pause may arrive while a request is in flight. Report its actual
+        // reason rather than treating that transition as an engagement error.
+        if deferToSystemIfNeeded(configuration: configuration, battery: battery) {
+            Thread.sleep(forTimeInterval: 5)
+            continue
+        }
+        holdingLimit = holding ? .eighty : nil
         if !actuationSucceeded {
             if !lastActuationFailed {
                 JSONLineLogger.write(
@@ -1063,7 +1401,7 @@ while true {
             }
             lastActuationFailed = true
         } else {
-            if lastActuationFailed || (active && !wasEnabled) {
+            if lastActuationFailed || (managed && !wasEnabled) {
                 JSONLineLogger.write(
                     "info",
                     category: "charge",
@@ -1080,11 +1418,13 @@ while true {
             fixedLimit: .eighty,
             temporaryFullCharge: false,
             configurationUpdatedAt: configuration.updatedAt,
-            holding: active && battery.charge.percentage >= FixedChargeLimit.eighty.rawValue,
+            holding: holding && battery.charge.percentage >= FixedChargeLimit.eighty.rawValue,
             adapterConnected: battery.charge.adapterConnected,
             batteryPercentage: battery.charge.percentage,
             controlMethod: actuator.method,
-            lastError: actuationSucceeded ? nil : "Native PowerUI 80% engagement failed"
+            lastError: actuationSucceeded ? nil : "Native PowerUI 80% engagement failed",
+            systemChargeOverride: systemOverrideTracker.state,
+            systemCalibration: systemCalibrationTracker.state
         ), to: arguments.statusURL, previous: &previousStatus)
         Thread.sleep(forTimeInterval: 5)
         continue

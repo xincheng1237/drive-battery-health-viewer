@@ -333,6 +333,60 @@ public struct ApplicationRemovalMonitor: Sendable {
     }
 }
 
+public enum SystemChargeOverrideState: String, Codable, Sendable {
+    case inactive
+    case chargingToFull
+    case awaitingConfirmation
+
+    public var defersChargeControl: Bool { self != .inactive }
+}
+
+/// Tracks explicit system intent separately from this application's override.
+/// A lost read cannot revoke a full-charge request we have already observed.
+/// No SOC threshold (including 100%) can end it; only an explicit false read.
+public struct SystemChargeOverrideTracker {
+    public private(set) var state: SystemChargeOverrideState?
+
+    public init() {}
+
+    @discardableResult
+    public mutating func observe(temporarilyDisabled: Bool?) -> SystemChargeOverrideState? {
+        switch temporarilyDisabled {
+        case true?: state = .chargingToFull
+        case false?: state = .inactive
+        case nil:
+            state = state?.defersChargeControl == true ? .awaitingConfirmation : nil
+        }
+        return state
+    }
+}
+
+public enum SystemCalibrationState: String, Codable, Sendable {
+    case inactive
+    case calibrating
+    case awaitingConfirmation
+
+    public var defersChargeControl: Bool { self != .inactive }
+}
+
+/// A negative gauging notification only ends the reported limit suspension;
+/// it cannot establish "calibration completed" or "protection restored".
+public struct SystemCalibrationTracker {
+    public private(set) var state: SystemCalibrationState?
+
+    public init() {}
+
+    @discardableResult
+    public mutating func observe(limitSuspended: Bool?) -> SystemCalibrationState? {
+        switch limitSuspended {
+        case true?: state = .calibrating
+        case false?: state = .inactive
+        case nil: state = state?.defersChargeControl == true ? .awaitingConfirmation : nil
+        }
+        return state
+    }
+}
+
 public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
     public var helperVersion: String
     public var timestamp: Date
@@ -346,6 +400,9 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
     public var batteryPercentage: Int?
     public var controlMethod: ChargeControlMethod
     public var lastError: String?
+    /// Optional for compatibility with Helpers predating system-menu overrides.
+    public var systemChargeOverride: SystemChargeOverrideState?
+    public var systemCalibration: SystemCalibrationState?
 
     public init(
         helperVersion: String,
@@ -359,7 +416,9 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
         adapterConnected: Bool?,
         batteryPercentage: Int?,
         controlMethod: ChargeControlMethod,
-        lastError: String? = nil
+        lastError: String? = nil,
+        systemChargeOverride: SystemChargeOverrideState? = nil,
+        systemCalibration: SystemCalibrationState? = nil
     ) {
         self.helperVersion = helperVersion
         self.timestamp = timestamp
@@ -373,16 +432,79 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
         self.batteryPercentage = batteryPercentage
         self.controlMethod = controlMethod
         self.lastError = lastError
+        self.systemChargeOverride = systemChargeOverride
+        self.systemCalibration = systemCalibration
     }
+}
+
+/// Share the same freshness and configuration checks across both interfaces.
+public func resolvedSystemChargeOverride(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date(),
+    maximumStatusAge: TimeInterval = 20
+) -> SystemChargeOverrideState? {
+    matchingSystemControlStatus(configuration: configuration, status: status, now: now,
+                                maximumStatusAge: maximumStatusAge)?.systemChargeOverride
+}
+
+public func resolvedSystemCalibration(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date(),
+    maximumStatusAge: TimeInterval = 20
+) -> SystemCalibrationState? {
+    matchingSystemControlStatus(configuration: configuration, status: status, now: now,
+                                maximumStatusAge: maximumStatusAge)?.systemCalibration
+}
+
+private func matchingSystemControlStatus(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date,
+    maximumStatusAge: TimeInterval
+) -> ChargeProtectionStatus? {
+    guard configuration.enabled, configuration.fixedLimit == .eighty,
+          let status, status.installed, status.enabled,
+          status.controlMethod == .powerUIOptimized80,
+          status.fixedLimit == configuration.fixedLimit,
+          let appliedConfigurationDate = status.configurationUpdatedAt,
+          // JSON's ISO8601 configuration timestamp is rounded to seconds.
+          abs(appliedConfigurationDate.timeIntervalSince(configuration.updatedAt)) < 1,
+          now.timeIntervalSince(status.timestamp) >= 0,
+          now.timeIntervalSince(status.timestamp) < maximumStatusAge else { return nil }
+    return status
 }
 
 public func shouldPresentChargeLimitStatusItem(
     configuration: ChargeProtectionConfiguration,
-    status: ChargeProtectionStatus?
+    status: ChargeProtectionStatus?,
+    now: Date = Date(),
+    maximumStatusAge: TimeInterval = 20
 ) -> Bool {
     guard configuration.enabled, !configuration.temporaryFullCharge,
-          let status, status.holding, status.adapterConnected == true else { return false }
-    return (status.batteryPercentage ?? 0) >= configuration.fixedLimit.rawValue
+          resolvedSystemCalibration(configuration: configuration, status: status, now: now,
+                                    maximumStatusAge: maximumStatusAge)?.defersChargeControl != true,
+          resolvedSystemChargeOverride(configuration: configuration, status: status, now: now,
+                                       maximumStatusAge: maximumStatusAge)?.defersChargeControl != true,
+          let status,
+          status.installed,
+          status.enabled,
+          status.fixedLimit == configuration.fixedLimit,
+          status.holding,
+          status.adapterConnected == true,
+          abs(now.timeIntervalSince(status.timestamp)) < maximumStatusAge,
+          let batteryPercentage = status.batteryPercentage else { return false }
+    return batteryPercentage >= configuration.fixedLimit.rawValue
+}
+
+public func shouldPresentCalibrationStatusItem(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> Bool {
+    configuration.showMenuBarStatus &&
+        resolvedSystemCalibration(configuration: configuration, status: status, now: now)?.defersChargeControl == true
 }
 
 /// Resolves the user-facing adapter state when a CHIE fallback deliberately

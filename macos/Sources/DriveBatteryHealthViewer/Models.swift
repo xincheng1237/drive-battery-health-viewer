@@ -1,6 +1,6 @@
 import Foundation
 
-let applicationVersion = "1.1.0"
+let applicationVersion = "1.1.2"
 
 enum HealthState: String, Codable, Sendable {
     case good
@@ -13,6 +13,7 @@ struct DriveInfo: Codable, Identifiable, Hashable, Sendable {
     var id: String { deviceIdentifier }
     let deviceIdentifier: String
     var model: String
+    var manufacturer: String? = nil
     var serialNumber: String?
     var firmware: String?
     var protocolName: String?
@@ -25,6 +26,13 @@ struct DriveInfo: Codable, Identifiable, Hashable, Sendable {
     var powerCycles: UInt64?
     var bytesRead: UInt64?
     var bytesWritten: UInt64?
+    /// I/O reported by macOS for the current device attachment. Unlike SMART
+    /// totals, these counters can reset after reconnecting, rebooting, or a
+    /// storage-driver reload and must be labelled accordingly in the UI.
+    var connectionBytesRead: UInt64? = nil
+    var connectionBytesWritten: UInt64? = nil
+    var connectionReadErrors: UInt64? = nil
+    var connectionWriteErrors: UInt64? = nil
     var unsafeShutdowns: UInt64?
     var mediaErrors: UInt64?
     var errorLogEntries: UInt64? = nil
