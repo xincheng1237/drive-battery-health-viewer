@@ -54,8 +54,7 @@ enum ReportRenderer {
 
         lines.append("")
         lines.append("==================== \(L10n.text("systemNotes", language)) ====================")
-        lines.append(L10n.text("readOnlyNote", language))
-        lines.append(L10n.text("systemLimitations", language))
+        lines.append(L10n.text("overviewLimitations", language))
         if !snapshot.batteries.isEmpty { lines.append(L10n.text("batteryHealthExplanation", language)) }
         if hideSerials { lines.append(L10n.text("privacyNotice", language)) }
         lines.append(contentsOf: snapshot.warnings)

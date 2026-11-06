@@ -1,17 +1,5 @@
 import Foundation
 
-struct AppReleaseInfo: Equatable, Sendable {
-    let version: String
-    let pageURL: URL
-}
-
-struct AvailableAppUpdate: Identifiable, Equatable, Sendable {
-    var id: String { version }
-    let currentVersion: String
-    let version: String
-    let pageURL: URL
-}
-
 /// Decides whether a launch represents an installed app update that merits the
 /// one-time, nonmodal release-notes hint. The release identity includes both
 /// the public version and the internal build so same-version replacement builds
@@ -43,59 +31,6 @@ enum VersionUpdatePromptPolicy {
         // so migrate by showing the hint once and recording the full identity.
         return legacyPreviousVersion != nil || hasExistingAppData
     }
-}
-
-protocol AppReleaseChecking: Sendable {
-    func latestStableRelease() async throws -> AppReleaseInfo
-}
-
-struct GitHubReleaseChecker: AppReleaseChecking {
-    private static let latestReleaseURL = URL(
-        string: "https://api.github.com/repos/xincheng1237/drive-battery-health-viewer/releases/latest"
-    )!
-
-    func latestStableRelease() async throws -> AppReleaseInfo {
-        var request = URLRequest(url: Self.latestReleaseURL)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        request.setValue("DriveBatteryHealthViewer/\(applicationVersion)", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            throw UpdateCheckError.invalidResponse
-        }
-        return try Self.decodeRelease(from: data)
-    }
-
-    static func decodeRelease(from data: Data) throws -> AppReleaseInfo {
-        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-        guard !release.draft, !release.prerelease,
-              let version = AppVersion.normalized(release.tagName),
-              let url = URL(string: release.htmlURL) else {
-            throw UpdateCheckError.invalidRelease
-        }
-        return AppReleaseInfo(version: version, pageURL: url)
-    }
-
-    private struct GitHubRelease: Decodable {
-        let tagName: String
-        let htmlURL: String
-        let draft: Bool
-        let prerelease: Bool
-
-        enum CodingKeys: String, CodingKey {
-            case tagName = "tag_name"
-            case htmlURL = "html_url"
-            case draft
-            case prerelease
-        }
-    }
-}
-
-enum UpdateCheckError: Error {
-    case invalidResponse
-    case invalidRelease
 }
 
 struct AppVersion: Comparable, Equatable, Sendable {

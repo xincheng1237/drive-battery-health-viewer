@@ -4,106 +4,77 @@
 
 [简体中文](README.md) | English
 
-An open-source hardware health viewer for Windows and macOS. It displays drive status, battery health, and device information, and includes history and batch management, report export, serial-number privacy protection, and seven interface languages.
-
-The Windows edition is written in Go. The macOS edition uses native SwiftUI and ships as one Universal 2 application for both Apple silicon and Intel Macs.
+View drive and battery health, manage charge protection, and browse saved reports. The macOS edition uses native SwiftUI; the Windows edition is written in Go. Seven interface languages are available.
 
 ## Download
 
-Current macOS version: **v1.1.2**; Windows version: **v1.0.6**. Visit [Releases](../../releases/latest) to download the appropriate platform file.
+macOS: **1.2** · Windows: **1.0.6**
 
-| Platform | Download | Architecture | Requirements |
-| --- | --- | --- | --- |
-| macOS | [`DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg`](../../releases/download/v1.1.2/DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg) | Apple silicon + Intel | macOS 13 Ventura or later |
-| Windows | [Installer](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 or later |
+| Platform | Download | Requirements |
+| --- | --- | --- |
+| macOS | [Download DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.2/DriveBatteryHealthViewer_v1.2_macOS_Universal.dmg) | macOS 13 or later, Apple silicon and Intel Macs |
+| Windows | [Download installer](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | Windows 7 or later, x64 |
 
-### Install on macOS
+[macOS 1.2 release notes](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.2) · [All releases](https://github.com/xincheng1237/drive-battery-health-viewer/releases)
 
-1. Open the downloaded DMG.
-2. Drag **Drive & Battery Health Viewer** into **Applications**.
-3. Launch the app from the Applications folder.
+### Installation and updates
 
-The current public macOS build uses an ad-hoc signature and has not been notarized by Apple. If macOS blocks the first launch, approve the app in **System Settings → Privacy & Security**.
+- **macOS:** Open the DMG, drag the app into Applications, and launch it. For first-launch approval, choose Open in System Settings → Privacy & Security.
+- **Upgrading an older macOS app:** Quit the old app and install 1.2. Future updates are available in Settings → Check for Updates, with release notes, download, installation, and relaunch.
+- **Windows:** Run the installer and follow the setup wizard. Both compatibility and modern interfaces are included. See [BUILDING_WINDOWS.md](BUILDING_WINDOWS.md) for build information.
 
-### Install on Windows
+## macOS 1.2
 
-The Windows x64 edition is distributed as a standard installer and does not require ZIP extraction. It launches the verified compatibility interface by default so the layout and high-DPI behavior stay consistent across supported Windows versions. The bundled WinUI interface can be evaluated explicitly with `DriveBatteryHealthViewer.exe --modern` on Windows 10 version 1809 or later. Administrator privileges may be needed for some hardware information; supported native storage interfaces are used where available and earlier versions automatically use compatibility readers.
-
-### Release archive
-
-Build artifacts are automatically copied to the immutable
-[`release-archive`](release-archive/) directory, keyed by version, purpose, and SHA-256.
-The user-confirmed build, GitHub releases, historical tests, and hash-only records are
-organized in [`ARCHIVE_INDEX.md`](release-archive/ARCHIVE_INDEX.md) and
-[`catalog.json`](release-archive/catalog.json). Run
-[`verify-release-archive.ps1`](verify-release-archive.ps1) to verify every local artifact.
+- **A new interface:** A compact navigation capsule connects Overview, History, and Settings, with report actions in the toolbar.
+- **Four display sizes:** Small, Standard, Large, and Extra Large adjust interface text and information layout together.
+- **History reading:** Smooth report transitions and independent text sizing with − / ＋ controls.
+- **Settings and app information:** Release notes, update checks, and About are accessible from Settings.
+- **In-app updates:** Read what's new, download the update, then confirm installation and relaunch.
+- **Charging status:** Separate active limiting, temporary full charging, and calibration states while retaining the saved limit.
 
 ## Screenshots
 
-### Native macOS interface
-
-![macOS Overview](docs/screenshots/macos-overview-zh.png)
-
-![macOS History](docs/screenshots/macos-history-zh.png)
-
-<img src="docs/screenshots/macos-charge-protection-menu-zh.png" alt="macOS menu-bar charge protection" width="480">
-
-### Windows main window
-
-![Drive & Battery Health Viewer for Windows](docs/screenshots/main-window-en.png)
-
-### Windows history
-
-![Windows history view](docs/screenshots/history-window-en.png)
-
-## Features
-
-- View drive model, capacity, connection, firmware, serial number, and system-provided S.M.A.R.T. status
-- Read temperature, operating time, power cycles, total reads, and total writes when exposed by the hardware and operating system
-- View battery manufacturer, chemistry, design capacity, full-charge capacity, health, voltage, cycle count, charge level, and power state
-- Save and browse health history with multi-select, Select All, batch export, and batch deletion
-- Copy or export UTF-8 health reports
-- Hide drive and battery serial numbers from the interface, history, and exported reports
-- Support Simplified Chinese, English, Russian, French, German, Korean, and Japanese
-- Keep drive, S.M.A.R.T., and health-data access read-only: no benchmarks, repairs, erases, or firmware updates
-- Since macOS v1.1.0, optional charge protection is available with menu-bar status and quick controls on supported Apple silicon Macs, plus privacy-friendly diagnostic-log export by time range
-
-## Platform notes
-
 ### macOS
 
-- Native SwiftUI interface delivered as one Universal 2 package for Apple silicon and Intel Macs
-- Supports macOS 13 and later, dark mode, system accent colors, keyboard operation, and VoiceOver
-- Live battery level and charging status, plus drive and battery temperatures when reported by the system
-- History, report export, serial-number hiding, and privacy-friendly diagnostic logs
-- Bundled read-only `smartctl`; the app never benchmarks, repairs, erases, or updates drive firmware
+![macOS Overview](docs/screenshots/macos-overview-en.png)
 
-#### Charge protection compatibility
+<details>
+<summary>History and Settings</summary>
 
-| Device and system | Available behavior |
-| --- | --- |
-| Apple silicon + macOS 13 through 26.3 (except macOS 15.8) | 80% / 85% / 90% / 95% / 100% charge limits |
-| Apple silicon + macOS 15.8 | Apple’s native 80% charge limit; selecting 100% turns charge protection off |
-| Apple silicon + macOS 26.4 or later | The native macOS feature is recommended; users may explicitly choose software management instead |
-| Intel Mac | Charging is managed by macOS; software charge protection is unavailable |
+![macOS History](docs/screenshots/macos-history-en.png)
 
-Charge protection is off by default and works only after the user enables it. When the app is updated, it checks the charge helper version and completely replaces an older helper when necessary.
+![macOS Settings](docs/screenshots/macos-settings-en.png)
 
-The information available for an external drive depends on macOS, the connection, the enclosure, and whether the driver exposes low-level data. Fields not reported by the system remain empty; the app does not estimate or invent values.
-
-Drive operating time is reported by drive firmware and is not the same as the computer’s power-on time or actual usage time. See [`macos/README.md`](macos/README.md) for more technical details.
+</details>
 
 ### Windows
 
-- RAID mode and Intel VMD/RST may prevent complete S.M.A.R.T. access
-- USB adapters may not expose all drive information
-- Older Windows versions and vendor drivers may have interface limitations
+![Windows main window](docs/screenshots/main-window-en.png)
 
-These conditions are normally caused by the operating system, driver, controller, or enclosure and do not necessarily indicate a hardware failure.
+![Windows history](docs/screenshots/history-window-en.png)
 
-## Privacy
+## Features
 
-Health reports may contain drive and battery serial numbers. Enable **Hide serial numbers** before publishing, forwarding, or uploading a report. The macOS edition enables this protection by default.
+- View drive model, capacity, connection, firmware, S.M.A.R.T. status, temperature, and read/write statistics.
+- View battery health, design and full-charge capacity, cycle count, charge level, temperature, and charging state.
+- Save reports with multi-select, Select All, batch export, and deletion.
+- Copy or export UTF-8 reports, with live charge, power-state, and temperature updates.
+- Hide serial numbers in the interface, history, and exported reports; enabled by default on macOS.
+- Use Simplified Chinese, English, Russian, French, German, Korean, or Japanese.
+
+## macOS charge protection
+
+| Device and system | Available control |
+| --- | --- |
+| Apple silicon, macOS 13–26.3 except macOS 15.8 | 80% / 85% / 90% / 95% / 100% limits |
+| Apple silicon, macOS 15.8 | Apple's native 80% limit; select 100% for normal charging |
+| Apple silicon, macOS 26.4 or later | System charging limits or app-managed charging |
+| Intel Macs | Battery information; charging is managed by macOS |
+
+The first activation installs the charging helper with administrator approval. Menu-bar status and quick actions remain available, and Charge to Full Once restores the saved limit afterward. System full-charge and calibration states have their own explanations.
+
+See the [macOS guide](macos/README.md) for details and development information, and the [Windows release archive](release-archive/README.md) for archived installers.
+
 
 ## Building from Source
 
@@ -150,9 +121,3 @@ The macOS charge-control core adapts and refactors the AppleSMC, CHTE/CHIE, and 
 ## Copyright
 
 © 2026 ChengXin
-
-## macOS v1.1.2 charging states
-
-System-requested full charging and battery calibration are recognized separately while preserving the saved limit. Calibration uses a circular-arrow battery icon and a short explanation; unknown data waits for confirmation. A high battery percentage alone is never treated as calibration. The system temporary override is respected across power reconnects. Protection is checked again when the system explicitly ends the pause; genuine failures remain visible.
-
-The calibration-notification mapping is enabled only on the verified macOS 15.8.1 build 24H212; other builds do not infer this state. Other application functions retain their existing compatibility. A fresh complete real calibration cycle was not forced for this release. See [system charging states](macos/docs/SYSTEM_CHARGING_STATES.md) for evidence and validation limits.
