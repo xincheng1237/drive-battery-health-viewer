@@ -190,7 +190,7 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWind
         let controller = NSHostingController(rootView: content)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 780),
-            styleMask: MainWindowLayout.styleMask,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -199,7 +199,8 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWind
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 720, height: 560)
         window.title = model.t("overview")
-        MainWindowLayout.configure(window)
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
         let frameName = "DriveBatteryHealthViewer.MainWindow"
         if !window.setFrameUsingName(frameName) { window.center() }
         window.setFrameAutosaveName(frameName)

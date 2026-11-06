@@ -11,11 +11,6 @@ let package = Package(
         .executable(name: "DriveBatteryChargeLimitAgent", targets: ["DriveBatteryChargeLimitAgent"])
     ],
     targets: [
-        .binaryTarget(
-            name: "Sparkle",
-            url: "https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-for-Swift-Package-Manager.zip",
-            checksum: "4c2e48a3e50ebcc2c88a58a4c7264a1a99c3c31857ce754357afb9cdb323022a"
-        ),
         .target(
             name: "CNVMeSMART",
             path: "Sources/CNVMeSMART",
@@ -37,9 +32,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "DriveBatteryHealthViewer",
-            dependencies: ["CNVMeSMART", "ChargeProtectionCore", "Sparkle"],
-            path: "Sources/DriveBatteryHealthViewer",
-            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+            dependencies: ["CNVMeSMART", "ChargeProtectionCore"],
+            path: "Sources/DriveBatteryHealthViewer"
         ),
         .executableTarget(
             name: "DriveBatteryChargeHelper",

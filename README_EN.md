@@ -156,7 +156,3 @@ The macOS charge-control core adapts and refactors the AppleSMC, CHTE/CHIE, and 
 System-requested full charging and battery calibration are recognized separately while preserving the saved limit. Calibration uses a circular-arrow battery icon and a short explanation; unknown data waits for confirmation. A high battery percentage alone is never treated as calibration. The system temporary override is respected across power reconnects. Protection is checked again when the system explicitly ends the pause; genuine failures remain visible.
 
 The calibration-notification mapping is enabled only on the verified macOS 15.8.1 build 24H212; other builds do not infer this state. Other application functions retain their existing compatibility. A fresh complete real calibration cycle was not forced for this release. See [system charging states](macos/docs/SYSTEM_CHARGING_STATES.md) for evidence and validation limits.
-
-### 1.1.2 in-app updates and window revision (build 17)
-
-Native titlebar boundaries prevent narrow-window scroll content overlapping the title. Update checks show release notes, download, confirm installation and relaunch in-app. Existing build 16 installations need this revision installed manually once; subsequent signed updates use the new updater. See [update design and validation](macos/docs/IN_APP_UPDATES.md).

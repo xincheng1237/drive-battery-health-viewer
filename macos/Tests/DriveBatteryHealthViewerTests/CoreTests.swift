@@ -713,11 +713,11 @@ struct CoreTests {
         let plistData = try Data(contentsOf: macosRoot.appendingPathComponent("Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(plist["CFBundleVersion"] as? String == "17")
+        #expect(plist["CFBundleVersion"] as? String == "16")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
-            #expect(text.contains("bundle_build=\"17\""))
+            #expect(text.contains("bundle_build=\"16\""))
         }
     }
 
@@ -1076,7 +1076,10 @@ struct CoreTests {
         #expect(AppVersion("1.0.5")! == AppVersion("1.0.5.0")!)
         #expect(AppVersion("1.0.5-beta")! == AppVersion("1.0.5")!)
 
-
+        let data = Data(#"{"tag_name":"v1.0.6","html_url":"https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6","draft":false,"prerelease":false}"#.utf8)
+        let release = try GitHubReleaseChecker.decodeRelease(from: data)
+        #expect(release.version == "1.0.6")
+        #expect(release.pageURL.absoluteString.hasSuffix("/releases/tag/v1.0.6"))
     }
 
     @Test
@@ -1215,38 +1218,34 @@ struct CoreTests {
     }
 
     @Test @MainActor
-    func testUpdateChecksUseTheInAppUpdaterAndAvoidDuplicateRequests() {
-        let suite = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let updater = StubApplicationUpdater()
-        let model = AppModel(defaults: defaults, updater: updater)
-        model.checkForUpdates()
-        #expect(updater.requests == 1)
-        #expect(model.isCheckingForUpdates)
-        model.checkForUpdates()
-        #expect(updater.requests == 1)
-        updater.finish()
-        #expect(!model.isCheckingForUpdates)
-        model.checkForUpdates()
-        #expect(updater.requests == 2)
-        #expect(model.alertMessage == nil)
-    }
+    func testUpdateCheckPresentsNewReleaseAndRecognizesCurrentVersion() async {
+        let suiteName = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(AppLanguage.english.rawValue, forKey: "language")
+        let release = AppReleaseInfo(
+            version: "1.0.6",
+            pageURL: URL(string: "https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6")!
+        )
 
-    @Test @MainActor
-    func testUpdaterStartupFailureKeepsTheHostRunningAndAllowsRetry() {
-        let suite = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let updater = StubApplicationUpdater()
-        updater.fails = true
-        let model = AppModel(defaults: defaults, updater: updater)
-        model.checkForUpdates()
-        #expect(!model.isCheckingForUpdates)
-        #expect(model.alertMessage != nil)
-        updater.fails = false
-        model.checkForUpdates()
-        #expect(updater.requests == 1)
+        let updateModel = AppModel(
+            defaults: defaults,
+            releaseChecker: StubReleaseChecker(release: release),
+            currentAppVersion: "1.0.5"
+        )
+        await updateModel.checkForUpdatesNow()
+        #expect(updateModel.availableUpdate?.version == "1.0.6")
+        #expect(updateModel.availableUpdate?.currentVersion == "1.0.5")
+        #expect(updateModel.alertMessage == nil)
+
+        let currentModel = AppModel(
+            defaults: defaults,
+            releaseChecker: StubReleaseChecker(release: release),
+            currentAppVersion: "1.0.6"
+        )
+        await currentModel.checkForUpdatesNow()
+        #expect(currentModel.availableUpdate == nil)
+        #expect(currentModel.alertMessage == "You’re using the latest version (v1.0.6).")
     }
 
     @Test @MainActor
@@ -2588,23 +2587,10 @@ struct CoreTests {
     }
 }
 
-@MainActor
-private final class StubApplicationUpdater: ApplicationUpdating {
-    var canCheckForUpdates = true
-    var availabilityChanged: ((Bool) -> Void)?
-    var requests = 0
-    var fails = false
-    func checkForUpdates() throws {
-        if fails { throw CocoaError(.fileReadCorruptFile) }
-        guard canCheckForUpdates else { return }
-        requests += 1
-        canCheckForUpdates = false
-        availabilityChanged?(false)
-    }
-    func finish() {
-        canCheckForUpdates = true
-        availabilityChanged?(true)
-    }
+private struct StubReleaseChecker: AppReleaseChecking {
+    let release: AppReleaseInfo
+
+    func latestStableRelease() async throws -> AppReleaseInfo { release }
 }
 
 private struct FixtureRunner: CommandRunning {
