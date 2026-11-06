@@ -10,12 +10,12 @@ enum L10n {
     static func text(_ key: String, _ selected: AppLanguage) -> String {
         let language = effective(selected)
         let selectedValues: [String?] = [
-            safetyCopyTables[language]?[key], tables[language]?[key], historyActionTables[language]?[key],
+            interface12Tables[language]?[key], safetyCopyTables[language]?[key], tables[language]?[key], historyActionTables[language]?[key],
             menuActionTables[language]?[key], updatePromptTables[language]?[key], featureTables[language]?[key]
         ]
         if let match = selectedValues.compactMap({ $0 }).first { return match }
         let fallbackValues: [String?] = [
-            safetyCopyTables[.english]?[key], tables[.english]?[key], historyActionTables[.english]?[key],
+            interface12Tables[.english]?[key], safetyCopyTables[.english]?[key], tables[.english]?[key], historyActionTables[.english]?[key],
             menuActionTables[.english]?[key], updatePromptTables[.english]?[key], featureTables[.english]?[key]
         ]
         return fallbackValues.compactMap({ $0 }).first ?? key
@@ -37,6 +37,7 @@ enum L10n {
         referenceKeys.append(contentsOf: updatePromptTables[.english]?.keys.map { $0 } ?? [])
         referenceKeys.append(contentsOf: featureTables[.english]?.keys.map { $0 } ?? [])
         referenceKeys.append(contentsOf: safetyCopyTables[.english]?.keys.map { $0 } ?? [])
+        referenceKeys.append(contentsOf: interface12Tables[.english]?.keys.map { $0 } ?? [])
         let reference = Set(referenceKeys)
         let tableKeys = tables[selected]?.keys.map { $0 } ?? [String]()
         let actionKeys = historyActionTables[selected]?.keys.map { $0 } ?? [String]()
@@ -44,14 +45,15 @@ enum L10n {
         let updatePromptKeys = updatePromptTables[selected]?.keys.map { $0 } ?? [String]()
         let featureKeys = featureTables[selected]?.keys.map { $0 } ?? [String]()
         let safetyKeys = safetyCopyTables[selected]?.keys.map { $0 } ?? [String]()
-        let translated = Set(tableKeys + actionKeys + menuKeys + updatePromptKeys + featureKeys + safetyKeys)
+        let interfaceKeys = interface12Tables[selected]?.keys.map { $0 } ?? []
+        let translated = Set(tableKeys + actionKeys + menuKeys + updatePromptKeys + featureKeys + safetyKeys + interfaceKeys)
         return reference.subtracting(translated).sorted()
     }
 
     private static let tables: [AppLanguage: [String: String]] = [
         .english: [
             "appName": "Drive & Battery Health Viewer", "systemLanguage": "System Language",
-            "overview": "Overview", "history": "History", "settings": "Settings", "about": "About",
+            "overview": "Overview", "history": "History", "historyNavigation": "History", "settings": "Settings", "about": "About",
             "menuFile": "File", "menuEdit": "Edit", "menuView": "View", "menuWindow": "Window", "menuHelp": "Help",
             "refresh": "Refresh", "refreshing": "Scanning…", "exportReport": "Export Report", "copyReport": "Copy Report",
             "lastUpdated": "Updated %@", "noScan": "No health report yet", "noScanDetail": "Refresh to read this Mac’s drive and battery information.",
@@ -88,7 +90,7 @@ enum L10n {
         ],
         .simplifiedChinese: [
             "appName": "硬盘与电池健康查看器", "systemLanguage": "跟随系统",
-            "overview": "概览", "history": "历史记录", "settings": "设置", "about": "关于",
+            "overview": "概览", "history": "历史记录", "historyNavigation": "历史", "settings": "设置", "about": "关于",
             "menuFile": "文件", "menuEdit": "编辑", "menuView": "显示", "menuWindow": "窗口", "menuHelp": "帮助",
             "refresh": "刷新", "refreshing": "正在检测…", "exportReport": "导出报告", "copyReport": "复制报告",
             "lastUpdated": "更新于 %@", "noScan": "还没有健康报告", "noScanDetail": "点击刷新，读取这台 Mac 的硬盘和电池信息。",
@@ -125,7 +127,7 @@ enum L10n {
         ],
         .russian: [
             "overviewLimitations": "Приложение показывает все данные, доступные macOS и устройству. Температура, время работы и общий объём чтения/записи могут быть недоступны для некоторых дисков или подключений.", "driveWorkingTimeExplanation": "Этот показатель рассчитывается прошивкой накопителя и может не учитывать время, когда контроллер находится в режиме пониженного энергопотребления. Он не равен времени включения или фактического использования компьютера.", "batteryHealthExplanation": "Состояние батареи основано на откалиброванной macOS максимальной ёмкости. Температура, управление зарядом, калибровка и округление могут давать небольшое отличие от простого расчёта полной ёмкости к проектной.", "powerConnectedNotCharging": "Питание подключено. Батарея заряжена или macOS временно питает Mac напрямую.", "internalBattery": "Встроенная литий-ионная батарея",
-            "appName": "Состояние накопителей и батареи", "systemLanguage": "Язык системы", "overview": "Обзор", "history": "История", "settings": "Настройки", "about": "О программе", "menuFile": "Файл", "menuEdit": "Правка", "menuView": "Вид", "menuWindow": "Окно", "menuHelp": "Справка",
+            "appName": "Состояние накопителей и батареи", "systemLanguage": "Язык системы", "overview": "Обзор", "history": "История", "historyNavigation": "История", "settings": "Настройки", "about": "О программе", "menuFile": "Файл", "menuEdit": "Правка", "menuView": "Вид", "menuWindow": "Окно", "menuHelp": "Справка",
             "refresh": "Обновить", "refreshing": "Сканирование…", "exportReport": "Экспорт отчёта", "copyReport": "Копировать отчёт", "lastUpdated": "Обновлено %@",
             "noScan": "Отчёта пока нет", "noScanDetail": "Обновите данные накопителей и батареи этого Mac.", "drives": "Накопители", "batteries": "Батарея", "noDrives": "Физические накопители не обнаружены.", "noBattery": "В этом Mac нет батареи.",
             "health": "Состояние", "good": "Хорошо", "warning": "Внимание", "critical": "Критично", "unknown": "Недоступно", "model": "Модель", "capacity": "Ёмкость", "protocol": "Подключение", "firmware": "Прошивка", "serialNumber": "Серийный номер", "smartStatus": "Статус S.M.A.R.T.", "lifeRemaining": "Оценка остаточного ресурса", "temperature": "Температура", "powerOnHours": "Время работы", "powerCycles": "Циклы питания", "totalRead": "Всего прочитано", "totalWritten": "Всего записано", "unsafeShutdowns": "Небезопасные выключения", "mediaErrors": "Ошибки носителя", "errorLogEntries": "Записи журнала ошибок", "internal": "Внутренний", "solidState": "SSD",
@@ -136,25 +138,25 @@ enum L10n {
         ],
         .french: [
             "overviewLimitations": "L’app affiche toutes les informations fournies par macOS et l’appareil. La température, le temps de fonctionnement et les volumes lus/écrits peuvent manquer selon le disque ou la connexion.", "driveWorkingTimeExplanation": "Cette valeur est comptabilisée par le micrologiciel du disque et peut exclure les périodes où le contrôleur est en mode basse consommation. Elle ne correspond pas à la durée de mise sous tension ou d’utilisation réelle de l’ordinateur.", "batteryHealthExplanation": "La santé de la batterie utilise la capacité maximale étalonnée par macOS. Température, gestion de la charge, étalonnage et arrondi peuvent créer un léger écart avec le simple calcul capacité pleine ÷ capacité nominale.", "powerConnectedNotCharging": "L’alimentation est connectée. La batterie est pleine ou macOS alimente temporairement le Mac directement.", "internalBattery": "Batterie lithium-ion interne",
-            "appName": "État des disques et de la batterie", "systemLanguage": "Langue du système", "overview": "Aperçu", "history": "Historique", "settings": "Réglages", "about": "À propos", "menuFile": "Fichier", "menuEdit": "Édition", "menuView": "Présentation", "menuWindow": "Fenêtre", "menuHelp": "Aide", "refresh": "Actualiser", "refreshing": "Analyse…", "exportReport": "Exporter le rapport", "copyReport": "Copier le rapport", "lastUpdated": "Mis à jour %@", "noScan": "Aucun rapport", "noScanDetail": "Actualisez pour lire les informations de ce Mac.", "drives": "Disques", "batteries": "Batterie", "noDrives": "Aucun disque physique signalé.", "noBattery": "Ce Mac ne possède pas de batterie.",
+            "appName": "État des disques et de la batterie", "systemLanguage": "Langue du système", "overview": "Aperçu", "history": "Historique", "historyNavigation": "Historique", "settings": "Réglages", "about": "À propos", "menuFile": "Fichier", "menuEdit": "Édition", "menuView": "Présentation", "menuWindow": "Fenêtre", "menuHelp": "Aide", "refresh": "Actualiser", "refreshing": "Analyse…", "exportReport": "Exporter le rapport", "copyReport": "Copier le rapport", "lastUpdated": "Mis à jour %@", "noScan": "Aucun rapport", "noScanDetail": "Actualisez pour lire les informations de ce Mac.", "drives": "Disques", "batteries": "Batterie", "noDrives": "Aucun disque physique signalé.", "noBattery": "Ce Mac ne possède pas de batterie.",
             "health": "Santé", "good": "Bon", "warning": "Attention", "critical": "Critique", "unknown": "Indisponible", "model": "Modèle", "capacity": "Capacité", "protocol": "Connexion", "firmware": "Micrologiciel", "serialNumber": "Numéro de série", "smartStatus": "État S.M.A.R.T.", "lifeRemaining": "Durée de vie restante estimée", "temperature": "Température", "powerOnHours": "Temps de fonctionnement", "powerCycles": "Cycles d’alimentation", "totalRead": "Total lu", "totalWritten": "Total écrit", "unsafeShutdowns": "Arrêts non sécurisés", "mediaErrors": "Erreurs du support", "errorLogEntries": "Entrées du journal d’erreurs", "internal": "Interne", "solidState": "SSD", "manufacturer": "Fabricant", "chemistry": "Type de batterie", "designCapacity": "Capacité nominale", "fullChargeCapacity": "Capacité à pleine charge", "currentCharge": "Charge actuelle", "cycleCount": "Nombre de cycles", "batteryVoltage": "Tension de la batterie", "charging": "En charge", "connected": "Alimentation connectée", "yes": "Oui", "no": "Non", "unavailable": "Non indiqué", "hours": "%llu heures", "mAh": "%d mAh", "percent": "%.0f%%",
             "report": "Rapport de santé", "generated": "Généré", "computer": "Ordinateur", "systemNotes": "Notes système", "privacyNotice": "Si activé, les numéros de série sont masqués dans l’interface, l’historique et les exports.", "systemLimitations": "macOS n’expose pas tous les compteurs S.M.A.R.T. NVMe/USB ; les valeurs indisponibles ne sont pas estimées.", "historyEmpty": "Aucun rapport enregistré", "historyEmptyDetail": "Enregistrez après chaque actualisation ou uniquement lors de l’export.", "sourceRefresh": "Enregistré après actualisation", "sourceExport": "Enregistré lors de l’export", "delete": "Supprimer", "deleteConfirm": "Supprimer ce rapport ?", "deleteDetail": "Le rapport enregistré sera supprimé, mais pas le fichier texte exporté.", "showInFinder": "Afficher dans le Finder", "chooseFolder": "Choisir…", "openFolder": "Ouvrir le dossier", "historyLocation": "Dossier de l’historique", "saveMode": "Enregistrer les rapports", "saveOnRefresh": "Après chaque actualisation", "saveOnExport": "Uniquement lors de l’export", "language": "Langue", "hideSerials": "Masquer les numéros de série", "reportTextSize": "Taille du rapport", "appearance": "Apparence et confidentialité", "storage": "Stockage de l’historique", "dataAccess": "Accès aux données matérielles", "aboutSummary": "Un utilitaire léger en lecture seule pour consulter l’état des disques et de la batterie et suivre leur évolution.", "developer": "Développeur", "author": "ChengXin", "projectHome": "Page du projet", "issueFeedback": "Problèmes et suggestions", "coolapk": "Coolapk · 程心ChengXin", "qq": "Groupe QQ · 1040456137", "email": "E-mail · 2680149724@qq.com", "copyright": "© 2026 ChengXin. Tous droits réservés.", "version": "Version %@", "changelog": "Notes de version", "license": "Licence GNU GPL v3", "readOnlyNote": "Cette app lit uniquement les informations ; aucun test, écriture, réparation, effacement ou micrologiciel.", "permissionNote": "Certains disques externes et compteurs constructeur peuvent être indisponibles selon macOS, le contrôleur ou le boîtier USB.", "scanFailed": "Analyse impossible : %@", "copied": "Rapport copié", "exported": "Rapport exporté", "done": "Terminé", "cancel": "Annuler"
         ],
         .german: [
             "overviewLimitations": "Die App zeigt alle von macOS und dem Gerät bereitgestellten Informationen. Temperatur, Betriebszeit und gesamte Lese-/Schreibmengen können je nach Laufwerk oder Verbindung fehlen.", "driveWorkingTimeExplanation": "Dieser Wert wird von der Laufwerksfirmware erfasst und kann Zeiten ausschließen, in denen sich der Controller im Energiesparmodus befindet. Er entspricht nicht der Einschalt- oder tatsächlichen Nutzungsdauer des Computers.", "batteryHealthExplanation": "Der Akkuzustand verwendet die von macOS kalibrierte Maximalkapazität. Temperatur, Lademanagement, Kalibrierung und Rundung können zu kleinen Abweichungen von Vollladung ÷ Designkapazität führen.", "powerConnectedNotCharging": "Das Netzteil ist verbunden. Der Akku ist voll oder macOS versorgt den Mac vorübergehend direkt mit Strom.", "internalBattery": "Interner Lithium-Ionen-Akku",
-            "appName": "Laufwerks- und Akkuzustand", "systemLanguage": "Systemsprache", "overview": "Übersicht", "history": "Verlauf", "settings": "Einstellungen", "about": "Info", "menuFile": "Ablage", "menuEdit": "Bearbeiten", "menuView": "Darstellung", "menuWindow": "Fenster", "menuHelp": "Hilfe", "refresh": "Aktualisieren", "refreshing": "Analyse läuft…", "exportReport": "Bericht exportieren", "copyReport": "Bericht kopieren", "lastUpdated": "Aktualisiert %@", "noScan": "Noch kein Zustandsbericht", "noScanDetail": "Aktualisieren Sie die Laufwerks- und Akkuinformationen dieses Mac.", "drives": "Laufwerke", "batteries": "Akku", "noDrives": "Keine physischen Laufwerke gemeldet.", "noBattery": "Dieser Mac hat keinen Akku.",
+            "appName": "Laufwerks- und Akkuzustand", "systemLanguage": "Systemsprache", "overview": "Übersicht", "history": "Verlauf", "historyNavigation": "Verlauf", "settings": "Einstellungen", "about": "Info", "menuFile": "Ablage", "menuEdit": "Bearbeiten", "menuView": "Darstellung", "menuWindow": "Fenster", "menuHelp": "Hilfe", "refresh": "Aktualisieren", "refreshing": "Analyse läuft…", "exportReport": "Bericht exportieren", "copyReport": "Bericht kopieren", "lastUpdated": "Aktualisiert %@", "noScan": "Noch kein Zustandsbericht", "noScanDetail": "Aktualisieren Sie die Laufwerks- und Akkuinformationen dieses Mac.", "drives": "Laufwerke", "batteries": "Akku", "noDrives": "Keine physischen Laufwerke gemeldet.", "noBattery": "Dieser Mac hat keinen Akku.",
             "health": "Zustand", "good": "Gut", "warning": "Achtung", "critical": "Kritisch", "unknown": "Nicht verfügbar", "model": "Modell", "capacity": "Kapazität", "protocol": "Verbindung", "firmware": "Firmware", "serialNumber": "Seriennummer", "smartStatus": "S.M.A.R.T.-Status", "lifeRemaining": "Geschätzte Restlebensdauer", "temperature": "Temperatur", "powerOnHours": "Betriebszeit", "powerCycles": "Einschaltvorgänge", "totalRead": "Insgesamt gelesen", "totalWritten": "Insgesamt geschrieben", "unsafeShutdowns": "Unsichere Abschaltungen", "mediaErrors": "Medienfehler", "errorLogEntries": "Fehlerprotokolleinträge", "internal": "Intern", "solidState": "SSD", "manufacturer": "Hersteller", "chemistry": "Akkutyp", "designCapacity": "Designkapazität", "fullChargeCapacity": "Volle Ladekapazität", "currentCharge": "Aktueller Ladestand", "cycleCount": "Ladezyklen", "batteryVoltage": "Akkuspannung", "charging": "Wird geladen", "connected": "Netzteil verbunden", "yes": "Ja", "no": "Nein", "unavailable": "Nicht gemeldet", "hours": "%llu Stunden", "mAh": "%d mAh", "percent": "%.0f%%",
             "report": "Zustandsbericht", "generated": "Erstellt", "computer": "Computer", "systemNotes": "Systemhinweise", "privacyNotice": "Bei Aktivierung werden Seriennummern in Oberfläche, Verlauf und Exporten verborgen.", "systemLimitations": "macOS stellt normalen Apps nicht alle NVMe/USB-S.M.A.R.T.-Werte bereit; fehlende Werte werden nicht geschätzt.", "historyEmpty": "Keine gespeicherten Berichte", "historyEmptyDetail": "Berichte nach jeder Aktualisierung oder nur beim Export speichern.", "sourceRefresh": "Nach Aktualisierung gespeichert", "sourceExport": "Beim Export gespeichert", "delete": "Löschen", "deleteConfirm": "Diesen Bericht löschen?", "deleteDetail": "Der gespeicherte Bericht wird gelöscht; exportierte Textdateien bleiben erhalten.", "showInFinder": "Im Finder zeigen", "chooseFolder": "Auswählen…", "openFolder": "Ordner öffnen", "historyLocation": "Verlaufsordner", "saveMode": "Berichte speichern", "saveOnRefresh": "Nach jeder Aktualisierung", "saveOnExport": "Nur beim Export", "language": "Sprache", "hideSerials": "Seriennummern ausblenden", "reportTextSize": "Berichtsschriftgröße", "appearance": "Darstellung und Datenschutz", "storage": "Verlaufsspeicher", "dataAccess": "Hardware-Datenzugriff", "aboutSummary": "Ein schlankes Nur-Lese-Werkzeug für Laufwerks- und Akkuzustand mit Berichtsverlauf.", "developer": "Entwickler", "author": "ChengXin", "projectHome": "Projektseite", "issueFeedback": "Probleme und Vorschläge", "coolapk": "Coolapk · 程心ChengXin", "qq": "QQ-Gruppe · 1040456137", "email": "E-Mail · 2680149724@qq.com", "copyright": "© 2026 ChengXin. Alle Rechte vorbehalten.", "version": "Version %@", "changelog": "Versionshinweise", "license": "GNU-GPL-v3-Lizenz", "readOnlyNote": "Die App liest nur Informationen und führt keine Tests, Schreib-, Reparatur-, Lösch- oder Firmwarevorgänge aus.", "permissionNote": "Einige externe Laufwerke und Herstellerwerte können wegen macOS, Controller oder USB-Gehäuse fehlen.", "scanFailed": "Analyse fehlgeschlagen: %@", "copied": "Bericht kopiert", "exported": "Bericht exportiert", "done": "Fertig", "cancel": "Abbrechen"
         ],
         .korean: [
             "overviewLimitations": "macOS와 장치가 제공하는 정보는 모두 표시합니다. 드라이브나 연결 방식에 따라 온도, 사용 시간, 누적 읽기·쓰기 양은 제공되지 않을 수 있습니다.", "driveWorkingTimeExplanation": "이 값은 드라이브 펌웨어가 집계하며 컨트롤러가 저전력 상태인 시간은 포함하지 않을 수 있습니다. 컴퓨터가 켜져 있거나 실제로 사용된 시간과 같지 않습니다.", "batteryHealthExplanation": "배터리 건강도는 macOS가 보정한 최대 용량을 따릅니다. 온도, 충전 관리, 시스템 보정 및 반올림 때문에 완전 충전 용량 ÷ 설계 용량 계산과 약간 다를 수 있습니다.", "powerConnectedNotCharging": "전원이 연결되어 있습니다. 배터리가 가득 찼거나 macOS가 일시적으로 Mac에 직접 전원을 공급합니다.", "internalBattery": "내장 리튬 이온 배터리",
-            "appName": "드라이브 및 배터리 상태 보기", "systemLanguage": "시스템 언어", "overview": "개요", "history": "기록", "settings": "설정", "about": "정보", "menuFile": "파일", "menuEdit": "편집", "menuView": "보기", "menuWindow": "윈도우", "menuHelp": "도움말", "refresh": "새로 고침", "refreshing": "검사 중…", "exportReport": "보고서 내보내기", "copyReport": "보고서 복사", "lastUpdated": "%@ 업데이트", "noScan": "아직 상태 보고서가 없습니다", "noScanDetail": "새로 고쳐 이 Mac의 드라이브와 배터리 정보를 읽으십시오.", "drives": "드라이브", "batteries": "배터리", "noDrives": "보고된 물리 드라이브가 없습니다.", "noBattery": "이 Mac에는 배터리가 없습니다.",
+            "appName": "드라이브 및 배터리 상태 보기", "systemLanguage": "시스템 언어", "overview": "개요", "history": "기록", "historyNavigation": "기록", "settings": "설정", "about": "정보", "menuFile": "파일", "menuEdit": "편집", "menuView": "보기", "menuWindow": "윈도우", "menuHelp": "도움말", "refresh": "새로 고침", "refreshing": "검사 중…", "exportReport": "보고서 내보내기", "copyReport": "보고서 복사", "lastUpdated": "%@ 업데이트", "noScan": "아직 상태 보고서가 없습니다", "noScanDetail": "새로 고쳐 이 Mac의 드라이브와 배터리 정보를 읽으십시오.", "drives": "드라이브", "batteries": "배터리", "noDrives": "보고된 물리 드라이브가 없습니다.", "noBattery": "이 Mac에는 배터리가 없습니다.",
             "health": "건강", "good": "좋음", "warning": "주의", "critical": "심각", "unknown": "사용할 수 없음", "model": "모델", "capacity": "용량", "protocol": "연결", "firmware": "펌웨어", "serialNumber": "일련번호", "smartStatus": "S.M.A.R.T. 상태", "lifeRemaining": "예상 남은 수명", "temperature": "온도", "powerOnHours": "사용 시간", "powerCycles": "전원 켠 횟수", "totalRead": "총 읽기", "totalWritten": "총 쓰기", "unsafeShutdowns": "비정상 종료", "mediaErrors": "미디어 오류", "errorLogEntries": "오류 로그 항목", "internal": "내장", "solidState": "SSD", "manufacturer": "제조사", "chemistry": "배터리 유형", "designCapacity": "설계 용량", "fullChargeCapacity": "완전 충전 용량", "currentCharge": "현재 충전량", "cycleCount": "사이클 수", "batteryVoltage": "배터리 전압", "charging": "충전 중", "connected": "전원 연결", "yes": "예", "no": "아니요", "unavailable": "보고되지 않음", "hours": "%llu시간", "mAh": "%d mAh", "percent": "%.0f%%",
             "report": "상태 보고서", "generated": "생성", "computer": "컴퓨터", "systemNotes": "시스템 안내", "privacyNotice": "활성화하면 화면, 기록, 복사 및 내보낸 보고서에서 일련번호를 숨깁니다.", "systemLimitations": "macOS는 일반 앱에 모든 NVMe/USB S.M.A.R.T. 값을 공개하지 않으며, 누락된 값은 추정하지 않습니다.", "historyEmpty": "저장된 보고서 없음", "historyEmptyDetail": "새로 고칠 때마다 또는 내보낼 때만 저장할 수 있습니다.", "sourceRefresh": "새로 고침 후 저장", "sourceExport": "내보낼 때 저장", "delete": "삭제", "deleteConfirm": "이 보고서를 삭제할까요?", "deleteDetail": "저장된 기록만 삭제되며 내보낸 텍스트 파일은 유지됩니다.", "showInFinder": "Finder에서 보기", "chooseFolder": "선택…", "openFolder": "폴더 열기", "historyLocation": "기록 위치", "saveMode": "보고서 저장", "saveOnRefresh": "새로 고칠 때마다", "saveOnExport": "내보낼 때만", "language": "언어", "hideSerials": "일련번호 숨기기", "reportTextSize": "보고서 글자 크기", "appearance": "모양 및 개인정보", "storage": "기록 저장소", "dataAccess": "하드웨어 데이터 접근", "aboutSummary": "드라이브와 배터리 상태를 읽기 전용으로 확인하고 시간에 따른 변화를 기록하는 가벼운 도구입니다.", "developer": "개발자", "author": "ChengXin", "projectHome": "프로젝트 홈페이지", "issueFeedback": "문제 및 제안", "coolapk": "Coolapk · 程心ChengXin", "qq": "QQ 그룹 · 1040456137", "email": "이메일 · 2680149724@qq.com", "copyright": "© 2026 ChengXin. All rights reserved.", "version": "버전 %@", "changelog": "업데이트 기록", "license": "GNU GPL v3 라이선스", "readOnlyNote": "이 앱은 정보만 읽으며 테스트, 쓰기, 복구, 삭제 또는 펌웨어 업데이트를 하지 않습니다.", "permissionNote": "외장 드라이브와 제조사 전용 값은 macOS, 컨트롤러 또는 USB 케이스 때문에 제공되지 않을 수 있습니다.", "scanFailed": "검사를 완료할 수 없습니다: %@", "copied": "보고서를 복사했습니다", "exported": "보고서를 내보냈습니다", "done": "완료", "cancel": "취소"
         ],
         .japanese: [
             "overviewLimitations": "macOS とデバイスが提供できる情報をすべて表示しています。ドライブや接続方法によっては、温度、使用時間、累積読み書き量を取得できません。", "driveWorkingTimeExplanation": "この値はドライブのファームウェアが集計し、コントローラが低電力状態にある時間を含まない場合があります。コンピュータの起動時間や実際の使用時間とは一致しません。", "batteryHealthExplanation": "バッテリーの健康度は macOS が校正した最大容量に基づきます。温度、充電管理、校正、丸めにより、満充電容量÷設計容量の単純計算と少し異なる場合があります。", "powerConnectedNotCharging": "電源に接続されています。バッテリーが満充電か、macOS が一時的に Mac へ直接給電しています。", "internalBattery": "内蔵リチウムイオンバッテリー",
-            "appName": "ドライブとバッテリーの状態", "systemLanguage": "システム言語", "overview": "概要", "history": "履歴", "settings": "設定", "about": "このアプリについて", "menuFile": "ファイル", "menuEdit": "編集", "menuView": "表示", "menuWindow": "ウインドウ", "menuHelp": "ヘルプ", "refresh": "更新", "refreshing": "検査中…", "exportReport": "レポートを書き出す", "copyReport": "レポートをコピー", "lastUpdated": "%@ に更新", "noScan": "健康レポートはまだありません", "noScanDetail": "更新して、この Mac のドライブとバッテリー情報を読み取ります。", "drives": "ドライブ", "batteries": "バッテリー", "noDrives": "物理ドライブが報告されませんでした。", "noBattery": "この Mac にバッテリーはありません。",
+            "appName": "ドライブとバッテリーの状態", "systemLanguage": "システム言語", "overview": "概要", "history": "履歴", "historyNavigation": "履歴", "settings": "設定", "about": "このアプリについて", "menuFile": "ファイル", "menuEdit": "編集", "menuView": "表示", "menuWindow": "ウインドウ", "menuHelp": "ヘルプ", "refresh": "更新", "refreshing": "検査中…", "exportReport": "レポートを書き出す", "copyReport": "レポートをコピー", "lastUpdated": "%@ に更新", "noScan": "健康レポートはまだありません", "noScanDetail": "更新して、この Mac のドライブとバッテリー情報を読み取ります。", "drives": "ドライブ", "batteries": "バッテリー", "noDrives": "物理ドライブが報告されませんでした。", "noBattery": "この Mac にバッテリーはありません。",
             "health": "健康状態", "good": "良好", "warning": "注意", "critical": "重大", "unknown": "利用不可", "model": "モデル", "capacity": "容量", "protocol": "接続", "firmware": "ファームウェア", "serialNumber": "シリアル番号", "smartStatus": "S.M.A.R.T. 状態", "lifeRemaining": "推定残り寿命", "temperature": "温度", "powerOnHours": "使用時間", "powerCycles": "電源投入回数", "totalRead": "総読み込み量", "totalWritten": "総書き込み量", "unsafeShutdowns": "安全でないシャットダウン", "mediaErrors": "メディアエラー", "errorLogEntries": "エラーログエントリ", "internal": "内蔵", "solidState": "SSD", "manufacturer": "製造元", "chemistry": "バッテリー種類", "designCapacity": "設計容量", "fullChargeCapacity": "満充電容量", "currentCharge": "現在の充電量", "cycleCount": "充放電回数", "batteryVoltage": "バッテリー電圧", "charging": "充電中", "connected": "電源接続", "yes": "はい", "no": "いいえ", "unavailable": "報告なし", "hours": "%llu 時間", "mAh": "%d mAh", "percent": "%.0f%%",
             "report": "健康レポート", "generated": "生成日時", "computer": "コンピュータ", "systemNotes": "システム情報", "privacyNotice": "有効にすると、画面、履歴、コピーおよび書き出したレポートでシリアル番号を隠します。", "systemLimitations": "macOS は一般アプリにすべての NVMe/USB S.M.A.R.T. 値を公開しません。取得できない値は推測しません。", "historyEmpty": "保存済みレポートはありません", "historyEmptyDetail": "更新のたび、または書き出し時のみ保存できます。", "sourceRefresh": "更新後に保存", "sourceExport": "書き出し時に保存", "delete": "削除", "deleteConfirm": "この履歴レポートを削除しますか？", "deleteDetail": "Mac 内の保存記録を削除します。書き出したテキストファイルは削除しません。", "showInFinder": "Finder に表示", "chooseFolder": "選択…", "openFolder": "フォルダを開く", "historyLocation": "履歴の保存先", "saveMode": "レポートを保存", "saveOnRefresh": "更新のたび", "saveOnExport": "書き出し時のみ", "language": "言語", "hideSerials": "シリアル番号を隠す", "reportTextSize": "レポート文字サイズ", "appearance": "外観とプライバシー", "storage": "履歴ストレージ", "dataAccess": "ハードウェアデータへのアクセス", "aboutSummary": "ドライブとバッテリーの状態を読み取り専用で確認し、履歴から変化を追える軽量ツールです。", "developer": "開発者", "author": "ChengXin", "projectHome": "プロジェクトページ", "issueFeedback": "問題と提案", "coolapk": "Coolapk · 程心ChengXin", "qq": "QQ グループ · 1040456137", "email": "メール · 2680149724@qq.com", "copyright": "© 2026 ChengXin. All rights reserved.", "version": "バージョン %@", "changelog": "更新履歴", "license": "GNU GPL v3 ライセンス", "readOnlyNote": "本アプリは情報を読むだけで、テスト、書き込み、修復、消去、ファームウェア更新は行いません。", "permissionNote": "外付けドライブやメーカー固有の値は macOS、コントローラ、USB ケースにより取得できない場合があります。", "scanFailed": "検査を完了できませんでした：%@", "copied": "レポートをコピーしました", "exported": "レポートを書き出しました", "done": "完了", "cancel": "キャンセル"
         ]
@@ -327,10 +329,11 @@ enum L10n {
             "systemFullChargeInProgress": "macOS is temporarily allowing a full charge. Your %d%% limit is saved.",
             "systemCalibrationInProgress": "macOS is calibrating the battery and may charge it fully. Your %d%% limit is saved.",
             "systemCalibrationAwaitingConfirmation": "Confirming the system calibration state. Charge limiting remains paused.",
+            "toggleSidebar": "Toggle Sidebar",
+            "release112Updater": "Check for updates now shows release notes and downloads, installs and relaunches the app without opening a browser.",
             "release112Calibration": "Added system battery calibration recognition, a circular-arrow menu-bar icon, and a clear status message.",
             "release112SystemFull": "Recognizes temporary full charging selected in macOS while keeping the saved charge limit.",
-            "release112PauseFix": "Avoids reporting system calibration or temporary full charging as an engagement failure, and defers control during these states.",
-            "release112Verification": "Unknown states wait for confirmation; protection is verified again after the system ends its temporary state.",
+            "release112PauseFix": "System calibration or temporarily allowed full charging no longer incorrectly displays a charge protection failure.",
             "systemFullChargeAwaitingConfirmation": "Confirming the system charging state. Charge limiting remains paused.",
             "chargeLimitReached": "Charge limit reached (%d%%)", "adjustFixedLimit": "Adjust fixed charge limit",
             "chargeHelperUnavailable": "This Mac’s firmware does not expose a supported charging control method.",
@@ -372,10 +375,11 @@ enum L10n {
             "systemFullChargeInProgress": "系统已临时允许充满电，原 %d%% 上限设置已保留。",
             "systemCalibrationInProgress": "系统正在校准电池，暂时允许充满电。原 %d%% 上限设置已保留。",
             "systemCalibrationAwaitingConfirmation": "正在确认系统校准状态，暂不重新限充。原上限设置已保留。",
+            "toggleSidebar": "显示或收起侧边栏",
+            "release112Updater": "检查更新时可查看新版内容，并在应用内下载、安装及重新启动。",
             "release112Calibration": "新增系统电池校准状态识别、菜单栏循环箭头图标与简明说明。",
             "release112SystemFull": "识别 macOS“立即充满电”的临时停用状态，保留原充电上限设置。",
-            "release112PauseFix": "系统校准或临时允许充满时，不再误报限充失败或重复申请保护。",
-            "release112Verification": "状态未知时等待确认；系统结束临时状态后重新核验保护是否实际生效。",
+            "release112PauseFix": "系统校准或临时允许充满时，不再错误地显示充电保护失败。",
             "systemFullChargeAwaitingConfirmation": "正在确认系统充电状态，暂不重新限充。",
             "chargeLimitReached": "已到达设定电量（%d%%）", "adjustFixedLimit": "调整固定充电上限",
             "chargeHelperUnavailable": "这台 Mac 的固件未开放受支持的充电控制方式。",
@@ -416,10 +420,11 @@ enum L10n {
             "systemFullChargeInProgress": "macOS временно разрешает полную зарядку. Предел %d%% сохранён.",
             "systemCalibrationInProgress": "macOS калибрует аккумулятор и может зарядить его полностью. Предел %d%% сохранён.",
             "systemCalibrationAwaitingConfirmation": "Проверяется состояние калибровки. Ограничение зарядки пока приостановлено.",
+            "toggleSidebar": "Показать или скрыть боковую панель",
+            "release112Updater": "Проверка обновлений показывает список изменений и позволяет загрузить, установить обновление и перезапустить приложение без браузера.",
             "release112Calibration": "Добавлены распознавание системной калибровки, значок с круговыми стрелками и пояснение состояния.",
             "release112SystemFull": "Распознаётся временная полная зарядка, выбранная в macOS; заданный предел сохраняется.",
-            "release112PauseFix": "Системная калибровка и временная полная зарядка больше не выдаются за ошибку включения ограничения; управление откладывается.",
-            "release112Verification": "Неизвестное состояние ожидает подтверждения; после завершения временного режима защита проверяется повторно.",
+            "release112PauseFix": "Системная калибровка и временная полная зарядка больше не отображаются ошибочно как сбой защиты зарядки.",
             "systemFullChargeAwaitingConfirmation": "Проверяется состояние зарядки системы. Ограничение пока приостановлено.",
             "chargeLimitReached": "Достигнут предел заряда (%d%%)", "adjustFixedLimit": "Изменить постоянный предел",
             "chargeHelperUnavailable": "Прошивка этого Mac не предоставляет поддерживаемый способ управления зарядкой.", "chargeHelperBusy": "Применение защиты зарядки…",
@@ -456,10 +461,11 @@ enum L10n {
             "systemFullChargeInProgress": "macOS autorise temporairement une charge complète. Votre limite de %d%% est conservée.",
             "systemCalibrationInProgress": "macOS étalonne la batterie et peut la charger complètement. Votre limite de %d%% est conservée.",
             "systemCalibrationAwaitingConfirmation": "Vérification de l’étalonnage système. La limitation de charge reste en pause.",
+            "toggleSidebar": "Afficher ou masquer la barre latérale",
+            "release112Updater": "La recherche de mises à jour affiche les nouveautés et permet le téléchargement, l’installation et le redémarrage sans navigateur.",
             "release112Calibration": "Ajout de la détection de l’étalonnage système, d’une icône à flèches circulaires et d’une explication claire.",
             "release112SystemFull": "Reconnaissance de la charge complète temporaire choisie dans macOS, sans perdre la limite enregistrée.",
-            "release112PauseFix": "L’étalonnage et la charge complète temporaire ne sont plus signalés comme un échec ; le contrôle est suspendu pendant ces états.",
-            "release112Verification": "Un état inconnu attend confirmation ; la protection est revérifiée à la fin du mode temporaire du système.",
+            "release112PauseFix": "L’étalonnage système ou la charge complète temporaire ne sont plus signalés à tort comme un échec de protection de charge.",
             "systemFullChargeAwaitingConfirmation": "Vérification de la charge du système. La limitation reste en pause.",
             "chargeLimitReached": "Limite de charge atteinte (%d%%)", "adjustFixedLimit": "Modifier la limite fixe",
             "chargeHelperUnavailable": "Le programme interne de ce Mac n’expose aucune méthode de contrôle prise en charge.", "chargeHelperBusy": "Application de la protection…",
@@ -496,10 +502,11 @@ enum L10n {
             "systemFullChargeInProgress": "macOS erlaubt vorübergehend eine Vollladung. Die Grenze von %d%% bleibt gespeichert.",
             "systemCalibrationInProgress": "macOS kalibriert die Batterie und kann sie vollständig laden. Die Grenze von %d%% bleibt gespeichert.",
             "systemCalibrationAwaitingConfirmation": "Der System-Kalibrierungsstatus wird geprüft. Die Ladebegrenzung bleibt pausiert.",
+            "toggleSidebar": "Seitenleiste ein- oder ausblenden",
+            "release112Updater": "Die Updateprüfung zeigt Versionshinweise und ermöglicht Download, Installation und Neustart ohne Browser.",
             "release112Calibration": "Systemkalibrierung wird erkannt und durch ein Kreispfeil-Symbol mit klarer Statusmeldung angezeigt.",
             "release112SystemFull": "Vorübergehendes Vollladen über macOS wird erkannt; die gespeicherte Ladegrenze bleibt erhalten.",
-            "release112PauseFix": "Kalibrierung und vorübergehendes Vollladen werden nicht mehr als Aktivierungsfehler gemeldet; die Steuerung wird pausiert.",
-            "release112Verification": "Unbekannte Zustände warten auf Bestätigung; nach dem temporären Systemzustand wird der Schutz erneut geprüft.",
+            "release112PauseFix": "Systemkalibrierung oder vorübergehendes Vollladen werden nicht mehr fälschlich als Fehler des Ladeschutzes angezeigt.",
             "systemFullChargeAwaitingConfirmation": "Der System-Ladestatus wird geprüft. Die Ladebegrenzung bleibt pausiert.",
             "chargeLimitReached": "Ladegrenze erreicht (%d%%)", "adjustFixedLimit": "Feste Ladegrenze anpassen",
             "chargeHelperUnavailable": "Die Firmware dieses Mac stellt keine unterstützte Ladesteuerung bereit.", "chargeHelperBusy": "Ladeschutz wird angewendet…",
@@ -536,10 +543,11 @@ enum L10n {
             "systemFullChargeInProgress": "macOS가 일시적으로 완전 충전을 허용했습니다. 기존 %d%% 한도 설정은 유지됩니다.",
             "systemCalibrationInProgress": "macOS가 배터리를 보정 중이며 완전히 충전할 수 있습니다. 기존 %d%% 한도 설정은 유지됩니다.",
             "systemCalibrationAwaitingConfirmation": "시스템 배터리 보정 상태를 확인 중입니다. 충전 제한은 계속 일시 중지됩니다.",
+            "toggleSidebar": "사이드바 표시 또는 숨기기",
+            "release112Updater": "업데이트 확인 시 변경 내용을 표시하고 브라우저 없이 앱에서 다운로드, 설치 및 재시작할 수 있습니다.",
             "release112Calibration": "시스템 배터리 보정 감지, 원형 화살표 메뉴 막대 아이콘 및 상태 설명을 추가했습니다.",
             "release112SystemFull": "macOS에서 선택한 임시 완전 충전을 감지하고 기존 한도 설정을 유지합니다.",
-            "release112PauseFix": "시스템 보정이나 임시 완전 충전을 보호 활성화 오류로 표시하지 않으며 해당 상태에서는 제어를 보류합니다.",
-            "release112Verification": "알 수 없는 상태는 확인을 기다리며 시스템 임시 상태가 종료되면 보호를 다시 검증합니다.",
+            "release112PauseFix": "시스템 보정이나 임시 완전 충전 중에 충전 보호 실패가 잘못 표시되지 않도록 수정했습니다.",
             "systemFullChargeAwaitingConfirmation": "시스템 충전 상태를 확인 중입니다. 충전 제한은 일시 중지된 상태입니다.",
             "chargeLimitReached": "설정한 충전량에 도달함(%d%%)", "adjustFixedLimit": "고정 충전 한도 조절",
             "chargeHelperUnavailable": "이 Mac의 펌웨어에서 지원되는 충전 제어 방법을 제공하지 않습니다.", "chargeHelperBusy": "충전 보호 적용 중…",
@@ -576,10 +584,11 @@ enum L10n {
             "systemFullChargeInProgress": "macOSが一時的にフル充電を許可しています。上限%d%%の設定は保持されています。",
             "systemCalibrationInProgress": "macOSがバッテリーを校正しており、フル充電することがあります。上限%d%%の設定は保持されています。",
             "systemCalibrationAwaitingConfirmation": "システムのバッテリー校正状態を確認中です。充電制限は引き続き一時停止しています。",
+            "toggleSidebar": "サイドバーを表示／非表示",
+            "release112Updater": "更新内容の表示からダウンロード、インストール、再起動までアプリ内で行えるようになりました。",
             "release112Calibration": "システムのバッテリー校正検出、円形矢印のメニューバーアイコン、状態説明を追加しました。",
             "release112SystemFull": "macOSで選択された一時的なフル充電を認識し、上限設定を保持します。",
-            "release112PauseFix": "システム校正や一時的なフル充電を保護の有効化失敗と誤表示せず、その間は制御を保留します。",
-            "release112Verification": "不明な状態は確認を待ち、システムの一時状態が終了すると保護を再検証します。",
+            "release112PauseFix": "システム校正や一時的なフル充電中に、充電保護の失敗と誤表示しないよう修正しました。",
             "systemFullChargeAwaitingConfirmation": "システムの充電状態を確認中です。充電制限は引き続き一時停止しています。",
             "chargeLimitReached": "設定した充電量に到達（%d%%）", "adjustFixedLimit": "固定充電上限を調整",
             "chargeHelperUnavailable": "この Mac のファームウェアは対応する充電制御方法を公開していません。", "chargeHelperBusy": "充電保護を適用中…",

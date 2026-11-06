@@ -4,106 +4,77 @@
 
 简体中文 | [English](README_EN.md)
 
-一款面向 Windows 与 macOS 的开源硬件健康查看工具。它展示硬盘状态、电池健康度与设备信息，并支持历史记录、批量管理、报告导出、序列号隐私保护和七种界面语言。
-
-Windows 版使用 Go 开发；macOS 版采用原生 SwiftUI，提供同时兼容 Apple 芯片与 Intel Mac 的 Universal 2 应用。
+查看硬盘状态与电池健康，管理充电保护和历史报告。macOS 版采用原生 SwiftUI，Windows 版使用 Go，支持七种界面语言。
 
 ## 下载
 
-macOS 当前版本：**v1.1.2**；Windows 当前版本：**v1.0.6**。请前往 [Releases](../../releases/latest) 下载对应平台文件。
+macOS：**1.2** · Windows：**1.0.6**
 
-| 平台 | 下载文件 | 架构 | 系统要求 |
-| --- | --- | --- | --- |
-| macOS | [`DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg`](../../releases/download/v1.1.2/DriveBatteryHealthViewer_v1.1.2_macOS_Universal.dmg) | Apple Silicon + Intel | macOS 13 Ventura 或更高版本 |
-| Windows | [安装程序](../../releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | x64 | Windows 7 或更高版本 |
+| 平台 | 下载 | 系统要求 |
+| --- | --- | --- |
+| macOS | [下载 DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.2/DriveBatteryHealthViewer_v1.2_macOS_Universal.dmg) | macOS 13 或更高版本，Apple 芯片与 Intel Mac |
+| Windows | [下载安装程序](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | Windows 7 或更高版本，x64 |
 
-### macOS 安装
+[查看 macOS 1.2 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.2) · [全部发行版](https://github.com/xincheng1237/drive-battery-health-viewer/releases)
 
-1. 打开下载的 DMG。
-2. 将“硬盘与电池健康查看器”拖入“应用程序”文件夹。
-3. 从“应用程序”中启动软件。
+### 安装与更新
 
-当前 macOS 公开构建采用 ad-hoc 签名，尚未经过 Apple 公证。如果首次启动被系统阻止，请前往系统设置隐私与安全性确认打开。
+- **macOS**：打开 DMG，将应用拖入“应用程序”后启动。首次打开如需系统确认，可在“系统设置 → 隐私与安全性”中选择打开。
+- **升级旧版 macOS 应用**：退出旧版后安装 1.2。此后可在“设置 → 检查更新”中查看新版内容、下载并安装重启。
+- **Windows**：运行安装程序，按照向导完成安装。安装包提供兼容界面与现代界面；构建说明见 [BUILDING_WINDOWS.md](BUILDING_WINDOWS.md)。
 
-### Windows 安装
+## macOS 1.2
 
-Windows x64 版提供标准安装程序，无需解压 ZIP。默认启动已验证的兼容界面，确保不同 Windows 版本和高 DPI 设置下的布局保持一致；安装包同时包含可选的 WinUI 界面，可用 `DriveBatteryHealthViewer.exe --modern` 在 Windows 10 1809 及以上版本进行评估。部分硬件信息可能需要管理员权限；Windows 10 1809 及以上版本会启用受支持的原生存储接口，更早版本会自动使用兼容读取路径。
-
-### 版本归档
-
-构建物按版本、用途和 SHA-256 自动保存到不可覆盖的
-[`release-archive`](release-archive/) 目录。用户确认满意的版本、GitHub 正式发布版本、
-历史测试版和仅有哈希记录的版本分别标注在
-[`ARCHIVE_INDEX.md`](release-archive/ARCHIVE_INDEX.md) 与
-[`catalog.json`](release-archive/catalog.json) 中；可用
-[`verify-release-archive.ps1`](verify-release-archive.ps1) 进行完整性核对。
+- **新的界面设计**：概览、历史、设置采用紧凑的浮岛导航，常用报告操作集中在工具栏。
+- **四档显示大小**：在设置中选择小、标准、大或特大，文字与信息布局同步调整。
+- **历史报告阅读**：切换报告时平滑过渡，使用 − / ＋ 独立调整报告字号。
+- **设置与应用信息**：更新日志、检查更新及关于信息都可在设置中找到。
+- **应用内更新**：直接查看新版说明，下载完成后确认安装并重新启动。
+- **充电状态提示**：区分实际限充、系统临时满充与校准状态，并保留设定的充电上限。
 
 ## 界面预览
 
-### macOS 原生界面
-
-![macOS 概览界面](docs/screenshots/macos-overview-zh.png)
-
-![macOS 历史记录界面](docs/screenshots/macos-history-zh.png)
-
-<img src="docs/screenshots/macos-charge-protection-menu-zh.png" alt="macOS 菜单栏充电保护" width="480">
-
-### Windows 主界面
-
-![Windows 版硬盘与电池健康查看器](docs/screenshots/main-window-en.png)
-
-### Windows 历史记录
-
-![Windows 历史记录界面](docs/screenshots/history-window-en.png)
-
-## 主要功能
-
-- 查看硬盘型号、容量、连接方式、固件、序列号和系统提供的 S.M.A.R.T. 状态
-- 在硬件与系统允许时读取温度、工作时间、通电次数、总读取量和总写入量
-- 查看电池制造商、类型、设计容量、满充容量、健康度、电压、循环次数、电量和充电状态
-- 保存并浏览历史检测记录，支持多选、全选、批量导出和批量删除
-- 复制或导出 UTF-8 健康报告
-- 在界面、历史记录和导出报告中隐藏硬盘与电池序列号
-- 支持简体中文、英语、俄语、法语、德语、韩语和日语
-- 硬盘、S.M.A.R.T. 与健康信息保持只读，不进行测速、修复、擦除或固件更新
-- macOS v1.1.0 起为受支持的 Apple Silicon Mac 提供可选充电保护、菜单栏状态与快捷控制，并支持按时间范围导出隐私友好的诊断日志
-
-## 平台说明
-
 ### macOS
 
-- 原生 SwiftUI 界面，使用一个 Universal 2 安装包支持 Apple 芯片与 Intel Mac
-- 支持 macOS 13 及以上版本，并适配深色模式、系统强调色、键盘操作和 VoiceOver
-- 实时显示电池电量、充电状态，以及系统能够读取的硬盘和电池温度
-- 支持历史记录、报告导出、序列号隐藏和隐私友好的诊断日志
-- 内置只读 `smartctl`，不会测速、修复、擦除硬盘或更新固件
+![macOS 概览](docs/screenshots/macos-overview-zh.png)
 
-#### 充电保护兼容性
+<details>
+<summary>历史与设置</summary>
 
-| 设备与系统 | 可用方式 |
-| --- | --- |
-| Apple Silicon + macOS 13 至 26.3（macOS 15.8 除外） | 支持 80% / 85% / 90% / 95% / 100% 多档充电上限 |
-| Apple Silicon + macOS 15.8 | 使用 Apple 原生 80% 充电上限；选择 100% 可关闭充电保护 |
-| Apple Silicon + macOS 26.4 及以上 | 优先推荐 macOS 原生功能，也可由用户明确选择使用本软件管理 |
-| Intel Mac | 电池充电由 macOS 管理，不提供软件充电保护 |
+![macOS 历史](docs/screenshots/macos-history-zh.png)
 
-充电保护默认关闭，仅在用户主动启用后工作。应用更新时会自动检查充电辅助程序版本，并在需要时完整替换旧版本。
+![macOS 设置](docs/screenshots/macos-settings-zh.png)
 
-外接硬盘能够显示的信息取决于 macOS、连接方式、硬盘盒和驱动是否提供底层数据。系统没有报告的项目会保持为空，不会估算或虚构。
-
-“硬盘工作时间”由硬盘固件统计，不等同于电脑开机时间或实际使用时长。更详细的技术说明见 [`macos/README.md`](macos/README.md)。
+</details>
 
 ### Windows
 
-- RAID 模式或 Intel VMD/RST 可能影响完整 S.M.A.R.T. 信息读取
-- USB 转接设备可能不会提供全部硬盘数据
-- 部分旧版 Windows 或厂商驱动存在接口限制
+![Windows 主界面](docs/screenshots/main-window-en.png)
 
-这些情况通常属于系统、驱动、控制器或硬盘盒限制，并不代表硬件存在故障。
+![Windows 历史记录](docs/screenshots/history-window-en.png)
 
-## 隐私说明
+## 主要功能
 
-检测报告可能包含硬盘和电池序列号。公开发布、转发或上传报告前，建议启用软件中的“隐藏序列号”功能；macOS 版默认开启此保护。
+- 查看硬盘型号、容量、连接方式、固件、S.M.A.R.T. 状态、温度及读写统计。
+- 查看电池健康度、设计与满充容量、循环次数、电量、温度及充电状态。
+- 保存历史检测报告，支持多选、全选、批量导出和删除。
+- 复制或导出 UTF-8 报告；实时更新电量、供电状态及温度。
+- 隐藏界面、历史及导出报告中的序列号；macOS 默认开启。
+- 支持简体中文、英语、俄语、法语、德语、韩语和日语。
+
+## macOS 充电保护
+
+| 设备与系统 | 可用方式 |
+| --- | --- |
+| Apple 芯片 Mac，macOS 13 至 26.3（macOS 15.8 除外） | 80% / 85% / 90% / 95% / 100% 充电上限 |
+| Apple 芯片 Mac，macOS 15.8 | Apple 原生 80% 上限；选择 100% 恢复正常充电 |
+| Apple 芯片 Mac，macOS 26.4 及以上 | 系统充电上限或由本软件管理 |
+| Intel Mac | 电池信息查看，充电由 macOS 管理 |
+
+首次启用充电保护时，通过管理员授权安装充电辅助程序。菜单栏提供状态与快捷操作，“本次充满”完成后恢复原上限。系统临时满充或校准时，显示对应说明。
+
+更多功能与开发信息见 [macOS 说明](macos/README.md)。Windows 安装包归档见 [版本归档](release-archive/README.md)。
+
 
 ## 从源码构建
 
@@ -149,9 +120,3 @@ macOS 充电控制核心参考并重构了 TY-teo 的 [ChargeWatch](https://gith
 ## 版权
 
 © 2026 程心
-
-## macOS v1.1.2 充电状态提示
-
-系统临时允许充满电与系统电池校准分别识别，并保留原充电上限。校准时显示循环箭头电池图标和简短说明；读取未知时等待确认，不把超过上限直接解释为校准。系统临时满充期间尊重系统决定，拔电重接不擅自取消；系统明确解除后重新核验保护状态，真实失败仍会提示。
-
-校准通知映射目前仅在已验证的 macOS 15.8.1（24H212）启用，其他系统不据此推测校准状态；应用的其他功能仍遵循原兼容性范围。真实校准的完整周期尚未在本次发布中强制触发验证。技术依据与测试范围见 [系统充电状态说明](macos/docs/SYSTEM_CHARGING_STATES.md)。

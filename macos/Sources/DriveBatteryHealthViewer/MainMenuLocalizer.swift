@@ -214,10 +214,19 @@ enum MainMenuLocalizer {
             command(.quit, action: NSSelectorFromString("terminate:"), key: "q")
         ])
 
+        let displaySizes = submenu(.displaySizeMenu, zip(
+            [MenuRole.displaySmall, .displayStandard, .displayLarge, .displayExtraLarge], DisplaySize.allCases
+        ).map { role, size in
+            let item = command(role, action: #selector(MenuActionRouter.setDisplaySize(_:)), target: router)
+            item.representedObject = size.rawValue
+            return item
+        })
         let view = submenu(.viewMenu, [
-            command(.toggleSidebar, action: #selector(MenuActionRouter.toggleSidebar(_:)), key: "s", modifiers: [.control, .command], target: router),
-            command(.toggleToolbar, action: #selector(MenuActionRouter.toggleToolbar(_:)), target: router),
-            command(.customizeToolbar, action: NSSelectorFromString("runToolbarCustomizationPalette:")),
+            command(.overviewPage, action: #selector(MenuActionRouter.showOverview(_:)), key: "1", target: router),
+            command(.historyPage, action: #selector(MenuActionRouter.showHistory(_:)), key: "2", target: router),
+            command(.settingsPage, action: #selector(MenuActionRouter.showSettings(_:)), key: "3", target: router),
+            .separator(),
+            displaySizes,
             .separator(),
             command(.increaseReportText, action: #selector(MenuActionRouter.increaseReportText(_:)), key: "=", target: router),
             command(.decreaseReportText, action: #selector(MenuActionRouter.decreaseReportText(_:)), key: "-", target: router),
@@ -445,6 +454,14 @@ enum MainMenuLocalizer {
         case .issueFeedback: return L10n.text("menuFeedback", language)
         case .changelog: return L10n.text("viewChangelog", language)
         case .checkForUpdates: return L10n.text("checkForUpdates", language)
+        case .overviewPage: return L10n.text("overview", language)
+        case .historyPage: return L10n.text("historyNavigation", language)
+        case .settingsPage: return L10n.text("settings", language)
+        case .displaySizeMenu: return L10n.text("displaySize", language)
+        case .displaySmall: return L10n.text(DisplaySize.small.labelKey, language)
+        case .displayStandard: return L10n.text(DisplaySize.standard.labelKey, language)
+        case .displayLarge: return L10n.text(DisplaySize.large.labelKey, language)
+        case .displayExtraLarge: return L10n.text(DisplaySize.extraLarge.labelKey, language)
         case .exportDiagnosticLogs: return L10n.text("exportDiagnosticLogs", language)
         case .about:
             switch effective {
@@ -598,13 +615,21 @@ private final class MenuActionRouter: NSObject, NSMenuItemValidation {
     weak var model: AppModel?
 
     @objc func showAbout(_ sender: Any?) {
-        model?.destination = .about
+        model?.destination = .settings
+        model?.showsAbout = true
         NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc func showSettings(_ sender: Any?) {
         model?.destination = .settings
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func showOverview(_ sender: Any?) { model?.destination = .overview }
+    @objc func showHistory(_ sender: Any?) { model?.destination = .history }
+    @objc func setDisplaySize(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String, let size = DisplaySize(rawValue: value) else { return }
+        model?.displaySize = size
     }
 
     @objc func refresh(_ sender: Any?) { model?.refresh() }
@@ -616,10 +641,6 @@ private final class MenuActionRouter: NSObject, NSMenuItemValidation {
     @objc func resetReportText(_ sender: Any?) { model?.resetReportTextSize() }
     @objc func checkForUpdates(_ sender: Any?) { model?.checkForUpdates() }
     @objc func exportDiagnosticLogs(_ sender: Any?) { model?.presentDiagnosticExport() }
-
-    @objc func toggleSidebar(_ sender: Any?) {
-        NSApp.sendAction(NSSelectorFromString("toggleSidebar:"), to: nil, from: sender)
-    }
 
     @objc func performResponderAction(_ sender: NSMenuItem) {
         guard let selectorName = sender.representedObject as? String else { return }
@@ -648,7 +669,7 @@ private final class MenuActionRouter: NSObject, NSMenuItemValidation {
 
     @objc func showChangelog(_ sender: Any?) {
         guard let model else { return }
-        model.destination = .about
+        model.destination = .settings
         DispatchQueue.main.async {
             model.showsChangelog = true
             NSApp.activate(ignoringOtherApps: true)
@@ -664,12 +685,24 @@ private final class MenuActionRouter: NSObject, NSMenuItemValidation {
                 from: menuItem
             ) != nil
         }
+        let readingReport = model?.destination == .history || model?.showsTextReport == true
         switch menuItem.action {
+        case #selector(showOverview(_:)), #selector(showHistory(_:)), #selector(showSettings(_:)):
+            let destination: SidebarDestination = menuItem.action == #selector(showOverview(_:)) ? .overview :
+                (menuItem.action == #selector(showHistory(_:)) ? .history : .settings)
+            if ["1", "2", "3"].contains(menuItem.keyEquivalent) {
+                menuItem.state = model?.destination == destination ? .on : .off
+            }
+            return model != nil && model?.activeSheet == nil
+        case #selector(setDisplaySize(_:)):
+            menuItem.state = model?.displaySize.rawValue == (menuItem.representedObject as? String) ? .on : .off
+            return model != nil && model?.activeSheet == nil
         case #selector(refresh(_:)): return model?.isScanning == false
         case #selector(copyReport(_:)): return model?.currentSnapshot != nil
         case #selector(exportCurrentReport(_:)): return model?.currentSnapshot != nil
-        case #selector(increaseReportText(_:)): return (model?.reportTextSize ?? 22) < 22
-        case #selector(decreaseReportText(_:)): return (model?.reportTextSize ?? 11) > 11
+        case #selector(increaseReportText(_:)): return readingReport && (model?.reportTextSize ?? 22) < 22
+        case #selector(decreaseReportText(_:)): return readingReport && (model?.reportTextSize ?? 11) > 11
+        case #selector(resetReportText(_:)): return readingReport
         case #selector(checkForUpdates(_:)): return model?.isCheckingForUpdates == false
         default: return true
         }
@@ -688,6 +721,7 @@ private enum MenuRole: String {
     case speechMenu, startSpeaking, stopSpeaking, startDictation, emojiSymbols
     case showSidebar, hideSidebar, toggleSidebar, showToolbar, hideToolbar, toggleToolbar, customizeToolbar
     case enterFullScreen, exitFullScreen, toggleFullScreen, increaseReportText, decreaseReportText, resetReportText
+    case overviewPage, historyPage, settingsPage, displaySizeMenu, displaySmall, displayStandard, displayLarge, displayExtraLarge
     case refresh, copyReport
     case minimize, zoom, fill, center, moveResize, fullScreenTile, removeWindowSet, bringAllToFront
     case left, right, top, bottom, topLeft, topRight, bottomLeft, bottomRight, returnPreviousSize, leftOfScreen, rightOfScreen
@@ -740,7 +774,9 @@ private enum MenuRole: String {
         case .speechMenu:
             return [.startSpeaking, .stopSpeaking]
         case .viewMenu:
-            return [.showSidebar, .hideSidebar, .toggleSidebar, .showToolbar, .hideToolbar, .toggleToolbar, .customizeToolbar, .increaseReportText, .decreaseReportText, .resetReportText, .enterFullScreen, .exitFullScreen, .toggleFullScreen]
+            return [.overviewPage, .historyPage, .settingsPage, .displaySizeMenu, .showSidebar, .hideSidebar, .toggleSidebar, .showToolbar, .hideToolbar, .toggleToolbar, .customizeToolbar, .increaseReportText, .decreaseReportText, .resetReportText, .enterFullScreen, .exitFullScreen, .toggleFullScreen]
+        case .displaySizeMenu:
+            return [.displaySmall, .displayStandard, .displayLarge, .displayExtraLarge]
         case .reportMenu:
             return [.refresh, .copyReport]
         case .windowMenu:

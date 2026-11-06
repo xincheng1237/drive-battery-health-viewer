@@ -1,4 +1,4 @@
-# System charging states in macOS 1.1.2
+# System charging states
 
 The Helper reports user-selected full charging and system gauging separately. The application's saved limit expresses intent; it is not proof that charging is currently limited. Actual holding, a system pause, unavailable telemetry, and a control failure remain distinct.
 
@@ -37,4 +37,8 @@ Swift Testing covers reason separation, percentages including 100%, reconnect ob
 
 `./scripts/test-powerui-bridge.sh` uses an isolated fake client, fake notifications and fake OS build query. It verifies that user overrides, calibration, unsupported builds, failed reads and in-flight pauses do not issue unintended control writes. It never sends actual system notifications or SMC writes.
 
-A read-only probe on the release machine can verify the production reader's inactive/unknown values. A fresh real calibration episode cannot be safely forced just to test presentation; this release does not claim that every OS build, hardware model, sleep scenario or full calibration/recovery cycle has been verified.
+A read-only probe on the release machine can verify the production reader's inactive/unknown values. The automated suite uses injected notifications and status records. Hardware observations are recorded separately from those tests.
+
+## Overview charging explanation
+
+`BatteryPowerNoticeReason` selects the explanation from live battery information and a current Helper status. Active-limit wording requires both readings at the limit, a successful hold, the same applied configuration, an available controller, and a status age below 20 seconds. Native PowerUI additionally requires explicit inactive calibration and temporary-full-charge observations. Other plugged-in, non-charging states retain the ordinary system-status wording.

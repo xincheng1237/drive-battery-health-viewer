@@ -124,12 +124,12 @@ struct SystemCalibrationTests {
     func calibrationCopyAndReleaseNotesAreLocalized(_ language: AppLanguage) {
         let message = L10n.format("systemCalibrationInProgress", language, 80)
         #expect(message.contains("80%") && !message.contains("%d"))
-        for key in ["systemCalibrationAwaitingConfirmation", "release112Calibration", "release112SystemFull", "release112PauseFix", "release112Verification"] {
+        for key in ["systemCalibrationAwaitingConfirmation", "release112Calibration", "release112SystemFull", "release112PauseFix"] {
             #expect(L10n.text(key, language) != key)
         }
         let release = ChangelogRelease.localized(for: language)
-        #expect(release.first?.version == "1.1.2")
-        #expect(release.contains { $0.version == "1.1.0" })
+        #expect(release.first?.version == "1.2")
+        #expect(release.contains { $0.version == "1.1" })
     }
 
     @Test(arguments: [AgentLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])

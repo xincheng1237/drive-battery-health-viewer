@@ -1,6 +1,6 @@
 import Foundation
 
-let applicationVersion = "1.1.2"
+let applicationVersion = "1.2"
 
 enum HealthState: String, Codable, Sendable {
     case good
@@ -321,6 +321,8 @@ enum SidebarDestination: String, CaseIterable, Identifiable {
     case history
     case settings
     case about
+
+    static let mainCases: [SidebarDestination] = [.overview, .history, .settings]
 
     var id: String { rawValue }
     var symbol: String {

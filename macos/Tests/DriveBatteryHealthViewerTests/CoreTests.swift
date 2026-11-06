@@ -713,11 +713,11 @@ struct CoreTests {
         let plistData = try Data(contentsOf: macosRoot.appendingPathComponent("Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(plist["CFBundleVersion"] as? String == "16")
+        #expect(plist["CFBundleVersion"] as? String == "35")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
-            #expect(text.contains("bundle_build=\"16\""))
+            #expect(text.contains("bundle_build=\"35\""))
         }
     }
 
@@ -764,8 +764,8 @@ struct CoreTests {
             #expect(report.contains("••••••••"))
         }
         #expect(L10n.text("powerOnHours", .simplifiedChinese) == "工作时间")
-        #expect(L10n.text("driveWorkingTimeExplanation", .simplifiedChinese) == "硬盘工作时间由硬盘固件统计，可能不包含控制器处于低功耗状态的时间，不等同于电脑开机或实际使用时长。")
-        #expect(L10n.text("batteryHealthExplanation", .simplifiedChinese) == "电池健康度以 macOS 校准后的最大容量为准，受温度、充电管理、系统校准和取整影响，它与“满充容量÷设计容量”的直接计算结果可能存在细微差异。")
+        #expect(L10n.text("driveWorkingTimeExplanation", .simplifiedChinese) == "工作时间来自硬盘固件的累计统计。")
+        #expect(L10n.text("batteryHealthExplanation", .simplifiedChinese) == "电池健康度采用 macOS 提供的校准值。")
         #expect(L10n.text("powerConnectedNotCharging", .simplifiedChinese) == "已连接电源；当前电池已充满，或 macOS 根据当前状态暂时采用直接供电。")
         #expect(L10n.text("uninstallChargeHelper", .simplifiedChinese) == "停用并卸载充电辅助程序")
         #expect(L10n.text("chargeHelperAuthorizationTitle", .simplifiedChinese) == "需要管理员授权")
@@ -976,9 +976,9 @@ struct CoreTests {
     func testChangelogMerges1051Into106WithoutChangingOlderReleases() {
         for language in AppLanguage.allCases {
             let allReleases = ChangelogRelease.localized(for: language)
-            #expect(allReleases.first?.version == "1.1.2")
-            let releases = allReleases.filter { $0.version != "1.1.2" }
-            #expect(releases.map(\.version) == ["1.1.0", "1.0.6", "1.0.5", "1.0.4", "1.0.0"])
+            #expect(allReleases.first?.version == "1.2")
+            let releases = allReleases.filter { $0.version != "1.2" }
+            #expect(releases.map(\.version) == ["1.1", "1.0.6", "1.0.5", "1.0.4", "1.0.0"])
             #expect(releases[0].sections.map(\.kind) == [.feature, .improvement])
             #expect(releases[0].sections[0].kind.symbol == "checkmark.circle.fill")
             #expect(releases[0].sections[1].kind.symbol == "wand.and.stars")
@@ -990,7 +990,7 @@ struct CoreTests {
             #expect(releases[3].sections.map(\.kind) == [.feature, .fix])
             #expect(releases[4].sections.map(\.kind) == [.historical])
         }
-        let chinese = ChangelogRelease.localized(for: .simplifiedChinese).filter { $0.version != "1.1.2" }
+        let chinese = ChangelogRelease.localized(for: .simplifiedChinese).filter { $0.version != "1.2" }
         #expect(chinese[0].sections[0].items[0] == "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及启用保护期间持续可用的菜单栏状态与快捷控制。")
         #expect(chinese[0].sections[0].items[1] == "在 macOS 15.8 上新增 PowerUI 原生 80% 充电上限，仅开放系统实际支持的档位，并保持适配器供电。")
         #expect(chinese[0].sections[0].items.contains("为 iMac、Mac mini、Mac Studio 等桌面设备的“电池”部分设计了新的界面显示。"))
@@ -1076,10 +1076,7 @@ struct CoreTests {
         #expect(AppVersion("1.0.5")! == AppVersion("1.0.5.0")!)
         #expect(AppVersion("1.0.5-beta")! == AppVersion("1.0.5")!)
 
-        let data = Data(#"{"tag_name":"v1.0.6","html_url":"https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6","draft":false,"prerelease":false}"#.utf8)
-        let release = try GitHubReleaseChecker.decodeRelease(from: data)
-        #expect(release.version == "1.0.6")
-        #expect(release.pageURL.absoluteString.hasSuffix("/releases/tag/v1.0.6"))
+
     }
 
     @Test
@@ -1180,7 +1177,6 @@ struct CoreTests {
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/DriveBatteryHealthViewer/Views.swift")
         let source = try String(contentsOf: viewsURL, encoding: .utf8)
-        #expect(source.contains("AboutButton(symbol: \"arrow.clockwise\", title: model.t(\"checkForUpdates\")) { model.checkForUpdates() }"))
         #expect(source.contains(".listStyle(.plain)"))
         #expect(source.contains("VersionUpdateTip()"))
         #expect(source.contains("DetailItem(model.t(\"unsafeShutdowns\"), drive.unsafeShutdowns.map(String.init))"))
@@ -1213,39 +1209,42 @@ struct CoreTests {
         #expect(scroll.lowerBound < lazyStack.lowerBound)
         #expect(lazyStack.lowerBound < prompt.lowerBound)
         #expect(prompt.lowerBound < header.lowerBound)
-        #expect(overviewBody.contains(".opacity(loadedContentIsVisible ? 1 : 0)"))
         #expect(overviewBody.contains("@Environment(\\.accessibilityReduceMotion)"))
     }
 
     @Test @MainActor
-    func testUpdateCheckPresentsNewReleaseAndRecognizesCurrentVersion() async {
-        let suiteName = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(AppLanguage.english.rawValue, forKey: "language")
-        let release = AppReleaseInfo(
-            version: "1.0.6",
-            pageURL: URL(string: "https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.0.6")!
-        )
+    func testUpdateChecksUseTheInAppUpdaterAndAvoidDuplicateRequests() {
+        let suite = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let updater = StubApplicationUpdater()
+        let model = AppModel(defaults: defaults, updater: updater)
+        model.checkForUpdates()
+        #expect(updater.requests == 1)
+        #expect(model.isCheckingForUpdates)
+        model.checkForUpdates()
+        #expect(updater.requests == 1)
+        updater.finish()
+        #expect(!model.isCheckingForUpdates)
+        model.checkForUpdates()
+        #expect(updater.requests == 2)
+        #expect(model.alertMessage == nil)
+    }
 
-        let updateModel = AppModel(
-            defaults: defaults,
-            releaseChecker: StubReleaseChecker(release: release),
-            currentAppVersion: "1.0.5"
-        )
-        await updateModel.checkForUpdatesNow()
-        #expect(updateModel.availableUpdate?.version == "1.0.6")
-        #expect(updateModel.availableUpdate?.currentVersion == "1.0.5")
-        #expect(updateModel.alertMessage == nil)
-
-        let currentModel = AppModel(
-            defaults: defaults,
-            releaseChecker: StubReleaseChecker(release: release),
-            currentAppVersion: "1.0.6"
-        )
-        await currentModel.checkForUpdatesNow()
-        #expect(currentModel.availableUpdate == nil)
-        #expect(currentModel.alertMessage == "You’re using the latest version (v1.0.6).")
+    @Test @MainActor
+    func testUpdaterStartupFailureKeepsTheHostRunningAndAllowsRetry() {
+        let suite = "DriveBatteryHealthViewerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let updater = StubApplicationUpdater()
+        updater.fails = true
+        let model = AppModel(defaults: defaults, updater: updater)
+        model.checkForUpdates()
+        #expect(!model.isCheckingForUpdates)
+        #expect(model.alertMessage != nil)
+        updater.fails = false
+        model.checkForUpdates()
+        #expect(updater.requests == 1)
     }
 
     @Test @MainActor
@@ -2335,7 +2334,8 @@ struct CoreTests {
             contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryHealthViewer/Views.swift"),
             encoding: .utf8
         )
-        #expect(source.contains("Label(model.t(\"exportReport\"), systemImage: \"square.and.arrow.down\")"))
+        let toolbarSource = try String(contentsOf: macosRoot.appendingPathComponent("Sources/DriveBatteryHealthViewer/MainWindowController.swift"), encoding: .utf8)
+        #expect(toolbarSource.contains("(\"exportReport\", \"square.and.arrow.down\", #selector(exportReport))"))
         #expect(source.contains("DesktopMacEmptyCard()"))
         #expect(source.contains("desktopMacEmptyStateAnimationShown"))
         #expect(source.contains("Image(systemName: \"powerplug.fill\")"))
@@ -2587,10 +2587,23 @@ struct CoreTests {
     }
 }
 
-private struct StubReleaseChecker: AppReleaseChecking {
-    let release: AppReleaseInfo
-
-    func latestStableRelease() async throws -> AppReleaseInfo { release }
+@MainActor
+private final class StubApplicationUpdater: ApplicationUpdating {
+    var canCheckForUpdates = true
+    var availabilityChanged: ((Bool) -> Void)?
+    var requests = 0
+    var fails = false
+    func checkForUpdates() throws {
+        if fails { throw CocoaError(.fileReadCorruptFile) }
+        guard canCheckForUpdates else { return }
+        requests += 1
+        canCheckForUpdates = false
+        availabilityChanged?(false)
+    }
+    func finish() {
+        canCheckForUpdates = true
+        availabilityChanged?(true)
+    }
 }
 
 private struct FixtureRunner: CommandRunning {

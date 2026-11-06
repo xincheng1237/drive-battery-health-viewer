@@ -26,6 +26,11 @@ enum BackgroundRefreshPolicy {
     }
 }
 
+enum AppSheet: String, Identifiable {
+    case report, diagnosticExport, changelog, about
+    var id: String { rawValue }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var destination: SidebarDestination? = .overview
@@ -36,11 +41,25 @@ final class AppModel: ObservableObject {
     @Published private(set) var isScanning = false
     @Published var alertMessage: String?
     @Published var transientMessage: String?
-    @Published var showsChangelog = false
+    @Published var activeSheet: AppSheet?
+    var showsTextReport: Bool {
+        get { activeSheet == .report }
+        set { if newValue { activeSheet = .report } else if activeSheet == .report { activeSheet = nil } }
+    }
+    var showsChangelog: Bool {
+        get { activeSheet == .changelog }
+        set { if newValue { activeSheet = .changelog } else if activeSheet == .changelog { activeSheet = nil } }
+    }
+    var showsAbout: Bool {
+        get { activeSheet == .about }
+        set { if newValue { activeSheet = .about } else if activeSheet == .about { activeSheet = nil } }
+    }
     @Published private(set) var showsVersionUpdatePrompt = false
-    @Published var availableUpdate: AvailableAppUpdate?
     @Published private(set) var isCheckingForUpdates = false
-    @Published var showsDiagnosticExport = false
+    var showsDiagnosticExport: Bool {
+        get { activeSheet == .diagnosticExport }
+        set { if newValue { activeSheet = .diagnosticExport } else if activeSheet == .diagnosticExport { activeSheet = nil } }
+    }
 
     @Published var language: AppLanguage {
         didSet {
@@ -54,6 +73,9 @@ final class AppModel: ObservableObject {
     @Published var historySaveMode: HistorySaveMode {
         didSet { defaults.set(historySaveMode.rawValue, forKey: Keys.historySaveMode) }
     }
+    @Published var displaySize: DisplaySize {
+        didSet { defaults.set(displaySize.rawValue, forKey: Keys.displaySize) }
+    }
     @Published var reportTextSize: Double {
         didSet { defaults.set(reportTextSize, forKey: Keys.reportTextSize) }
     }
@@ -66,7 +88,7 @@ final class AppModel: ObservableObject {
 
     private let defaults: UserDefaults
     private let scanner: HardwareScanner
-    private let releaseChecker: any AppReleaseChecking
+    private var updater: (any ApplicationUpdating)?
     private let currentAppVersion: String
     let chargeProtection: ChargeProtectionManager
     private let diagnosticLogger: any DiagnosticLogging
@@ -80,7 +102,7 @@ final class AppModel: ObservableObject {
     init(
         defaults: UserDefaults = .standard,
         scanner: HardwareScanner = HardwareScanner(),
-        releaseChecker: any AppReleaseChecking = GitHubReleaseChecker(),
+        updater: (any ApplicationUpdating)? = nil,
         currentAppVersion: String? = nil,
         currentAppBuild: String? = nil,
         diagnosticLogger: any DiagnosticLogging = DiagnosticLogger.shared,
@@ -114,7 +136,7 @@ final class AppModel: ObservableObject {
         }
         self.defaults = defaults
         self.scanner = scanner
-        self.releaseChecker = releaseChecker
+        self.updater = updater
         self.diagnosticLogger = diagnosticLogger
         self.diagnosticExporter = diagnosticExporter
         self.chargeProtection = chargeProtection ?? ChargeProtectionManager(
@@ -125,6 +147,7 @@ final class AppModel: ObservableObject {
         language = AppLanguage(rawValue: defaults.string(forKey: Keys.language) ?? "") ?? .system
         hideSerials = defaults.object(forKey: Keys.hideSerials) as? Bool ?? true
         historySaveMode = HistorySaveMode(rawValue: defaults.string(forKey: Keys.historySaveMode) ?? "") ?? .refresh
+        displaySize = DisplaySize(rawValue: defaults.string(forKey: Keys.displaySize) ?? "") ?? .standard
         let size = defaults.double(forKey: Keys.reportTextSize)
         reportTextSize = size == 0 ? 13 : min(22, max(11, size))
         if let path = defaults.string(forKey: Keys.historyDirectory), !path.isEmpty {
@@ -348,13 +371,32 @@ final class AppModel: ObservableObject {
         reportTextSize = max(11, reportTextSize - 1)
     }
 
+    func selectHistoryReport(_ id: UUID?, animated: Bool) {
+        guard selectedHistoryID != id else { return }
+        var transaction = Transaction(animation: animated ? .timingCurve(0.25, 0.1, 0.25, 1, duration: 0.20) : nil)
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) { selectedHistoryID = id }
+    }
+
     func resetReportTextSize() {
         reportTextSize = 13
     }
 
     func checkForUpdates() {
-        guard !isCheckingForUpdates else { return }
-        Task { await checkForUpdatesNow() }
+        if updater == nil { updater = InAppUpdater() }
+        guard let updater else { return }
+        updater.availabilityChanged = { [weak self] available in
+            self?.isCheckingForUpdates = !available
+        }
+        do {
+            try updater.checkForUpdates()
+            isCheckingForUpdates = !updater.canCheckForUpdates
+        } catch {
+            isCheckingForUpdates = false
+            alertMessage = t("updateCheckFailed")
+            diagnosticLogger.log(.error, category: "update", event: "update_start_failed",
+                                 message: "The signed in-app updater could not be started.")
+        }
     }
 
     func dismissVersionUpdatePrompt() {
@@ -363,41 +405,7 @@ final class AppModel: ObservableObject {
 
     func presentChangelogFromVersionUpdatePrompt() {
         showsVersionUpdatePrompt = false
-        destination = .about
-        // Let NavigationSplitView finish switching destinations before the
-        // About view presents its sheet. This avoids a lost presentation on
-        // the first click while keeping the hint completely nonmodal.
-        DispatchQueue.main.async { [weak self] in
-            self?.showsChangelog = true
-        }
-    }
-
-    func checkForUpdatesNow() async {
-        guard !isCheckingForUpdates else { return }
-        isCheckingForUpdates = true
-        availableUpdate = nil
-        defer { isCheckingForUpdates = false }
-
-        do {
-            let release = try await releaseChecker.latestStableRelease()
-            guard let normalizedCurrentVersion = AppVersion.normalized(currentAppVersion),
-                  let current = AppVersion(normalizedCurrentVersion),
-                  let latest = AppVersion(release.version) else {
-                throw UpdateCheckError.invalidRelease
-            }
-            if current < latest {
-                availableUpdate = AvailableAppUpdate(
-                    currentVersion: normalizedCurrentVersion,
-                    version: release.version,
-                    pageURL: release.pageURL
-                )
-            } else {
-                alertMessage = L10n.format("alreadyLatestVersion", language, normalizedCurrentVersion)
-            }
-        } catch {
-            alertMessage = t("updateCheckFailed")
-            diagnosticLogger.log(.error, category: "update", event: "update_check_failed", message: "The update request or release response could not be processed.")
-        }
+        showsChangelog = true
     }
 
     func presentDiagnosticExport() {
@@ -559,11 +567,12 @@ final class AppModel: ObservableObject {
         static let hideSerials = "hideSerials"
         static let historySaveMode = "historySaveMode"
         static let reportTextSize = "reportTextSize"
+        static let displaySize = "displaySize"
         static let historyDirectory = "historyDirectory"
         static let lastLaunchedAppVersion = "lastLaunchedAppVersion"
         static let lastLaunchedAppReleaseIdentifier = "lastLaunchedAppReleaseIdentifier"
         static let preexistingPreferenceKeys = [
-            language, hideSerials, historySaveMode, reportTextSize, historyDirectory,
+            language, hideSerials, historySaveMode, reportTextSize, displaySize, historyDirectory,
             "chargeProtectionSectionExpanded", "chargeProtectionLastNativeLimitBoundary"
         ]
     }

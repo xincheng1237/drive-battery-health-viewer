@@ -30,9 +30,38 @@ enum DriveBatteryHealthViewerApplication {
     }
 }
 
+/// Debug-only isolated launch for exercising the actual application lifecycle.
+/// Release builds never select this path or read the QA environment variable.
+@MainActor
+private enum ApplicationLaunchContext {
+    static var isIsolatedReview: Bool {
+        #if DEBUG
+        return Bundle.main.bundleIdentifier == "com.chengxin.dbhv.ui-review"
+        #else
+        return false
+        #endif
+    }
+
+    static func makeModel() -> AppModel {
+        #if DEBUG
+        if isIsolatedReview {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DBHV-Isolated-UI-Review")
+            let defaults = UserDefaults(suiteName: "com.chengxin.dbhv.ui-review.preferences") ?? .standard
+            defaults.set(AppLanguage.simplifiedChinese.rawValue, forKey: "language")
+            defaults.set(directory.appendingPathComponent("history").path, forKey: "historyDirectory")
+            let logger = DiagnosticLogger(directory: directory.appendingPathComponent("logs"))
+            let manager = ChargeProtectionManager(defaults: defaults, logger: logger, isAppleSilicon: false,
+                                                   configurationDirectory: directory.appendingPathComponent("charge"))
+            return AppModel(defaults: defaults, diagnosticLogger: logger, chargeProtection: manager)
+        }
+        #endif
+        return AppModel()
+    }
+}
+
 @MainActor
 private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let model = AppModel()
+    private let model = ApplicationLaunchContext.makeModel()
     private var mainWindowController: NSWindowController?
     private var isCreatingMainWindow = false
     private var isClosingMainWindow = false
@@ -59,14 +88,16 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWind
         // AppKit may normalize application-menu metadata while finishing its
         // launch. Reapply titles in place once; the hierarchy never changes.
         MainMenuLocalizer.apply(model.language)
-        model.chargeProtection.ensureStatusAgentInstalled()
+        if !ApplicationLaunchContext.isIsolatedReview { model.chargeProtection.ensureStatusAgentInstalled() }
         showMainWindow()
         // Let the first window become usable before explaining a one-time
         // administrator request that may be needed to replace an older helper.
         // The system authorization dialog is never launched without this
         // explicit user-facing preflight.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            self?.model.chargeProtection.requestInstalledHelperUpdateAuthorizationIfNeeded()
+        if !ApplicationLaunchContext.isIsolatedReview {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.model.chargeProtection.requestInstalledHelperUpdateAuthorizationIfNeeded()
+            }
         }
     }
 
@@ -184,27 +215,9 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWind
         isCreatingMainWindow = true
         defer { isCreatingMainWindow = false }
 
-        let content = RootView()
-            .environmentObject(model)
-            .frame(minWidth: 720, maxWidth: .infinity, minHeight: 560, maxHeight: .infinity)
-        let controller = NSHostingController(rootView: content)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 780),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentViewController = controller
+        let windowController = MainWindowController(model: model)
+        guard let window = windowController.window else { return }
         window.delegate = self
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 720, height: 560)
-        window.title = model.t("overview")
-        window.titlebarAppearsTransparent = true
-        window.toolbarStyle = .unified
-        let frameName = "DriveBatteryHealthViewer.MainWindow"
-        if !window.setFrameUsingName(frameName) { window.center() }
-        window.setFrameAutosaveName(frameName)
-        let windowController = NSWindowController(window: window)
         mainWindowController = windowController
         windowController.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
