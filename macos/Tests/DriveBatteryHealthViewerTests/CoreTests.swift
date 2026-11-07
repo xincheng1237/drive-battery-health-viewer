@@ -713,11 +713,11 @@ struct CoreTests {
         let plistData = try Data(contentsOf: macosRoot.appendingPathComponent("Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(plist["CFBundleVersion"] as? String == "37")
+        #expect(plist["CFBundleVersion"] as? String == "38")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
-            #expect(text.contains("bundle_build=\"37\""))
+            #expect(text.contains("bundle_build=\"38\""))
         }
     }
 
@@ -976,8 +976,8 @@ struct CoreTests {
     func testChangelogMerges1051Into106WithoutChangingOlderReleases() {
         for language in AppLanguage.allCases {
             let allReleases = ChangelogRelease.localized(for: language)
-            #expect(allReleases.first?.version == "1.2.1")
-            let releases = allReleases.filter { !["1.2.1", "1.2"].contains($0.version) }
+            #expect(allReleases.first?.version == "1.3")
+            let releases = allReleases.filter { !["1.3", "1.2"].contains($0.version) }
             #expect(releases.map(\.version) == ["1.1", "1.0.6", "1.0.5", "1.0.4", "1.0.0"])
             #expect(releases[0].sections.map(\.kind) == [.feature, .improvement])
             #expect(releases[0].sections[0].kind.symbol == "checkmark.circle.fill")
@@ -990,7 +990,7 @@ struct CoreTests {
             #expect(releases[3].sections.map(\.kind) == [.feature, .fix])
             #expect(releases[4].sections.map(\.kind) == [.historical])
         }
-        let chinese = ChangelogRelease.localized(for: .simplifiedChinese).filter { !["1.2.1", "1.2"].contains($0.version) }
+        let chinese = ChangelogRelease.localized(for: .simplifiedChinese).filter { !["1.3", "1.2"].contains($0.version) }
         #expect(chinese[0].sections[0].items[0] == "新增 Apple Silicon Mac 电池充电保护，支持 80% 至 100% 固定充电上限、“本次充满”以及启用保护期间持续可用的菜单栏状态与快捷控制。")
         #expect(chinese[0].sections[0].items[1] == "在 macOS 15.8 上新增 PowerUI 原生 80% 充电上限，仅开放系统实际支持的档位，并保持适配器供电。")
         #expect(chinese[0].sections[0].items.contains("为 iMac、Mac mini、Mac Studio 等桌面设备的“电池”部分设计了新的界面显示。"))

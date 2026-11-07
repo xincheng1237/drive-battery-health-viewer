@@ -58,7 +58,7 @@ struct Interface12Tests {
         #expect(reopened.reportTextSize == 17)
         #expect(SidebarDestination.mainCases == [.overview, .history, .settings])
         for language in AppLanguage.allCases {
-            #expect(ChangelogRelease.localized(for: language).first?.version == "1.2.1")
+            #expect(ChangelogRelease.localized(for: language).first?.version == "1.3")
             #expect(!ChangelogRelease.localized(for: language).contains { $0.version == "1.1.2" })
             for size in DisplaySize.allCases { #expect(L10n.text(size.labelKey, language) != size.labelKey) }
         }

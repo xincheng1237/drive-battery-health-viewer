@@ -2016,9 +2016,17 @@ struct ChangelogRelease: Identifiable {
     let sections: [ChangelogSection]
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
-        [ChangelogRelease(version: "1.2.1", sections: [
-            ChangelogSection(kind: .feature, items: [L10n.text("release121AutomaticUpdates", language)]),
-            ChangelogSection(kind: .fix, items: [L10n.text("release121ChargeEvidence", language), L10n.text("release121PowerSource", language)])
+        [ChangelogRelease(version: applicationVersion, sections: [
+            ChangelogSection(kind: .improvement, items: [
+                L10n.text("release13AutomaticUpdates", language),
+                L10n.text("release13UnconfirmedCharge", language)
+            ]),
+            ChangelogSection(kind: .performance, items: [L10n.text("release13Performance", language)]),
+            ChangelogSection(kind: .fix, items: [
+                L10n.text("release13ChargeEvidence", language),
+                L10n.text("release13PowerUIStatus", language),
+                L10n.text("release13PowerSource", language)
+            ])
         ]), ChangelogRelease(version: "1.2", sections: [
             ChangelogSection(kind: .feature, items: [L10n.text("release12Design", language), L10n.text("release12Display", language), L10n.text("release12Settings", language), L10n.text("release112Calibration", language), L10n.text("release112SystemFull", language), L10n.text("release112Updater", language)]),
             ChangelogSection(kind: .fix, items: [L10n.text("release112PauseFix", language), L10n.text("release12QuitFix", language)])
@@ -2229,6 +2237,7 @@ enum ChangelogItemKind: String, Identifiable {
     var id: String { rawValue }
     case feature
     case improvement
+    case performance
     case fix
     case historical
 
@@ -2236,6 +2245,7 @@ enum ChangelogItemKind: String, Identifiable {
         switch self {
         case .feature: return "checkmark.circle.fill"
         case .improvement: return "wand.and.stars"
+        case .performance: return "speedometer"
         case .fix: return "wrench.and.screwdriver.fill"
         case .historical: return "checkmark.circle.fill"
         }
@@ -2245,6 +2255,7 @@ enum ChangelogItemKind: String, Identifiable {
         switch self {
         case .feature: return .green
         case .improvement: return .blue
+        case .performance: return .teal
         case .fix: return .orange
         case .historical: return .green
         }
@@ -2273,6 +2284,7 @@ enum ChangelogItemKind: String, Identifiable {
         case (.feature, .english), (.feature, .system): return "New Features"
         case (.improvement, .english), (.improvement, .system): return "Improvements"
         case (.fix, .english), (.fix, .system): return "Fixes"
+        case (.performance, _): return L10n.text("changelogPerformance", language)
         case (.historical, _): return ""
         }
     }

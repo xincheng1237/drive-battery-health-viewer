@@ -16,7 +16,7 @@ struct UpdateAndWindowTests {
         let data = try Data(contentsOf: package.appendingPathComponent("Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(info["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(info["CFBundleVersion"] as? String == "37")
+        #expect(info["CFBundleVersion"] as? String == "38")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
@@ -152,6 +152,18 @@ struct UpdateAndWindowTests {
         if language == .simplifiedChinese {
             #expect(release.sections.flatMap(\.items).contains("系统校准或临时允许充满时，不再错误地显示充电保护失败。"))
         }
+    }
+
+    @Test(arguments: [AppLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])
+    func version13NotesGroupImprovementsPerformanceAndFixes(_ language: AppLanguage) throws {
+        let releases = ChangelogRelease.localized(for: language)
+        let latest = try #require(releases.first)
+        #expect(latest.version == "1.3")
+        #expect(!releases.contains { $0.version == "1.2.1" })
+        #expect(latest.sections.map(\.kind) == [.improvement, .performance, .fix])
+        #expect(latest.sections.map { $0.items.count } == [2, 1, 3])
+        #expect(ChangelogItemKind.performance.title(for: language) != "changelogPerformance")
+        #expect(NSImage(systemSymbolName: ChangelogItemKind.performance.symbol, accessibilityDescription: nil) != nil)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_EXPORT_CHANGELOG"] != nil))
