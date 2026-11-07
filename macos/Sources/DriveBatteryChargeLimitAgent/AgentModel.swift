@@ -205,6 +205,9 @@ enum ChargeLimitAgentPresentationState: Equatable {
         now: Date = Date()
     ) -> Self {
         let status = status.flatMap { $0.isFresh(at: now) ? $0 : nil }
+        if currentChargeProtectionError(configuration: configuration, status: status, now: now) != nil {
+            return .attentionRequired
+        }
         switch resolvedSystemCalibration(configuration: configuration, status: status, now: now) {
         case .calibrating?: return .systemCalibration
         case .awaitingConfirmation?: return .systemCalibrationAwaitingConfirmation
@@ -214,9 +217,6 @@ enum ChargeLimitAgentPresentationState: Equatable {
         case .chargingToFull?: return .systemTemporaryFullCharge
         case .awaitingConfirmation?: return .systemFullChargeAwaitingConfirmation
         default: break
-        }
-        if currentChargeProtectionError(configuration: configuration, status: status, now: now) != nil {
-            return .attentionRequired
         }
         if configuration.enabled, configuration.fixedLimit != .oneHundred,
            !hasCurrentChargeProtectionReport(configuration: configuration, status: status, now: now) {
