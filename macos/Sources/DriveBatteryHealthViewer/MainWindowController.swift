@@ -7,6 +7,7 @@ import SwiftUI
 /// SwiftUI pages cannot install a second toolbar or move content into chrome.
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
+    static let minimumContentWidth: CGFloat = 600
     private let model: AppModel
     private let containerController = NSViewController()
     private let contentSurface = ContentEdgeView()
@@ -17,6 +18,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private let progress = NSProgressIndicator()
     private var buttons: [String: ToolbarIconButton] = [:]
     private var observation: AnyCancellable?
+    private var resizeObservation: AnyCancellable?
     private var updateScheduled = false
     private var lastPrivacyState: Bool?
     private let toolbarID = NSToolbar.Identifier("DBHV.NativeMainToolbar.v1")
@@ -36,7 +38,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                               styleMask: MainWindowLayout.styleMask, backing: .buffered, defer: false)
         super.init(window: window)
         window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: 720, height: 520)
+        window.contentMinSize = NSSize(width: Self.minimumContentWidth, height: 520)
         MainWindowLayout.configure(window)
 
         let container = NSView()
@@ -91,6 +93,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
             if !window.setFrameUsingName(name) { window.center() }
             window.setFrameAutosaveName(name)
         }
+        resizeObservation = NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: window)
+            .sink { [weak self] _ in self?.updateToolbarAlignment() }
+        updateToolbarAlignment()
         refreshToolbarState()
         observation = model.objectWillChange.sink { [weak self] _ in
             guard let self, !self.updateScheduled else { return }
@@ -103,6 +108,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     required init?(coder: NSCoder) { nil }
+
+    private func updateToolbarAlignment() {
+        guard let window, let toolbar = window.toolbar else { return }
+        // Let the toolbar flow after the window controls when the centered
+        // navigation and the five overview actions need the same space.
+        let centered: Set<NSToolbarItem.Identifier> = window.frame.width >= 720 ? [navigationID] : []
+        if toolbar.centeredItemIdentifiers != centered { toolbar.centeredItemIdentifiers = centered }
+    }
 
     private func configureNavigationHeader() {
         navigationHeader.update(model: model)

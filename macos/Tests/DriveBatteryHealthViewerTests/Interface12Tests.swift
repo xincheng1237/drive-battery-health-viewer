@@ -5,7 +5,7 @@ import Testing
 
 @Suite("1.2 display sizes and settings", .serialized)
 struct Interface12Tests {
-    @MainActor private func fixture() async throws -> (MainWindowController, AppModel, UserDefaults, String, Update12Stub) {
+    @MainActor private func fixture(isAppleSilicon: Bool = false) async throws -> (MainWindowController, AppModel, UserDefaults, String, Update12Stub) {
         _ = NSApplication.shared
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("DBHV12-\(UUID())")
         let suite = "DBHV12.\(UUID())"
@@ -13,7 +13,8 @@ struct Interface12Tests {
         defaults.set("zh-Hans", forKey: "language")
         defaults.set(folder.appendingPathComponent("history").path, forKey: "historyDirectory")
         let logger = DiagnosticLogger(directory: folder.appendingPathComponent("logs"))
-        let manager = ChargeProtectionManager(defaults: defaults, logger: logger, isAppleSilicon: false,
+        let manager = ChargeProtectionManager(defaults: defaults, logger: logger, isAppleSilicon: isAppleSilicon,
+                                               operatingSystemVersion: .init(majorVersion: 15, minorVersion: 8, patchVersion: 0),
                                                configurationDirectory: folder.appendingPathComponent("charge"))
         let updater = Update12Stub()
         let model = AppModel(defaults: defaults, scanner: HardwareScanner(runner: Interface12Runner(), smartctlPaths: ["/usr/bin/true"]),
@@ -275,6 +276,151 @@ struct Interface12Tests {
                 try #require(bitmap.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent(name))
             }
         }
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_BUILD40_WINDOWS"] != nil))
+    @MainActor func renderAndVerifyCompactWindows() async throws {
+        let folder = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["DBHV_BUILD40_WINDOWS"]))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let (controller, model, defaults, suite, _) = try await fixture()
+        let window = try #require(controller.window)
+        defer { window.close(); model.stopChargeProtectionMonitoring(); defaults.removePersistentDomain(forName: suite) }
+        controller.showWindow(nil)
+        model.dismissVersionUpdatePrompt()
+        model.selectHistoryReport(model.history.first?.id, animated: false)
+        #expect(window.contentMinSize.width == MainWindowController.minimumContentWidth)
+        #expect(!model.chargeProtection.isSectionExpanded)
+        #expect(!model.chargeProtection.availability.permitsSoftwareControls)
+        #expect(!model.chargeProtection.showsHelperStatusUnconfirmed)
+        let export = model.historyDirectory.deletingLastPathComponent().appendingPathComponent("intel-report.txt")
+        model.exportCurrentReport(to: export)
+        #expect((try? Data(contentsOf: export).isEmpty) == false)
+
+        func capture(_ target: NSWindow, _ name: String) throws {
+            target.contentView?.layoutSubtreeIfNeeded()
+            target.displayIfNeeded()
+            let frame = try #require(target.contentView?.superview)
+            let bitmap = try #require(frame.bitmapImageRepForCachingDisplay(in: frame.bounds))
+            target.effectiveAppearance.performAsCurrentDrawingAppearance { frame.cacheDisplay(in: frame.bounds, to: bitmap) }
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent(name + ".png"))
+        }
+
+        func scroll(_ host: NSView, fraction: CGFloat) throws {
+            let scroll = try #require(views(host).compactMap { $0 as? NSScrollView }.first)
+            let doc = try #require(scroll.documentView)
+            let clip = scroll.contentView
+            let travel = max(0, doc.bounds.height - clip.bounds.height)
+            let offset = doc.isFlipped ? fraction : 1 - fraction
+            clip.scroll(to: NSPoint(x: 0, y: travel * offset))
+            scroll.reflectScrolledClipView(clip)
+        }
+
+        func scrollToBottom(_ host: NSView) async throws {
+            // Lazy cards can update the scroll range after the initial jump.
+            for _ in 0..<4 {
+                try scroll(host, fraction: 1)
+                try await Task.sleep(for: .milliseconds(120))
+            }
+        }
+
+        let minimum = MainWindowController.minimumContentWidth
+        for width in [800, 720, 660, minimum] {
+            window.setFrame(NSRect(x: 45, y: 55, width: width, height: 700), display: true)
+            #expect(abs(window.frame.width - width) < 1)
+            for page in SidebarDestination.mainCases {
+                model.destination = page
+                try await Task.sleep(for: .milliseconds(110))
+                try capture(window, "\(Int(width))-light-standard-\(page.rawValue)")
+            }
+        }
+        window.setFrame(NSRect(x: 45, y: 55, width: minimum, height: 520), display: true)
+        for dark in [false, true] {
+            let theme = dark ? "dark" : "light"
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            for size in DisplaySize.allCases {
+                model.displaySize = size
+                for page in SidebarDestination.mainCases {
+                    model.destination = page
+                    try await Task.sleep(for: .milliseconds(100))
+                    try capture(window, "min-\(theme)-\(size.rawValue)-\(page.rawValue)")
+                }
+            }
+        }
+
+        model.destination = .overview
+        model.displaySize = .extraLarge
+        for language in AppLanguage.allCases where language != .system {
+            model.language = language
+            try await Task.sleep(for: .milliseconds(110))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            let header = controller.navigationHeader
+            let nav = header.convert(header.bounds, to: nil)
+            #expect(!header.visibleRect.isEmpty && header.visibleRect.width >= header.bounds.width - 1)
+            let left = try #require(window.standardWindowButton(.zoomButton))
+            let traffic = left.convert(left.bounds, to: nil)
+            #expect(nav.minX >= traffic.maxX, "Toolbar overlaps the traffic lights in \(language)")
+            let actions = controller.actionFramesInWindow().values
+            #expect(actions.count == 5)
+            for action in actions {
+                #expect(action.width >= 31 && action.minX >= nav.maxX && action.maxX <= window.frame.width + 1,
+                        "Overview toolbar clipping or overlap in \(language): \(action), navigation: \(nav)")
+            }
+            for button in views(try #require(window.contentView?.superview)) where button.identifier?.rawValue.hasPrefix("DBHV.Toolbar.") == true {
+                #expect(!button.isHidden && button.visibleRect.width >= button.bounds.width - 1)
+            }
+            model.activeSheet = .changelog
+            try await Task.sleep(for: .milliseconds(230))
+            let sheet = try #require(window.attachedSheet)
+            #expect(sheet.frame.width <= window.frame.width)
+            #expect(!sheet.preventsApplicationTerminationWhenModal)
+            try capture(sheet, "min-changelog-dark-extraLarge-\(language.rawValue)")
+            model.activeSheet = nil
+            try await Task.sleep(for: .milliseconds(200))
+        }
+
+        model.language = .simplifiedChinese
+        model.displaySize = .standard
+        window.appearance = NSAppearance(named: .aqua)
+        model.activeSheet = .changelog
+        try await Task.sleep(for: .milliseconds(260))
+        let changelog = try #require(window.attachedSheet)
+        try capture(changelog, "min-changelog-light-standard-1.3")
+        let changelogContent = try #require(changelog.contentView)
+        for fraction in [0.25, 0.34, 0.42] {
+            try scroll(changelogContent, fraction: fraction)
+            try await Task.sleep(for: .milliseconds(130))
+            try capture(changelog, "min-changelog-light-scroll-\(Int(fraction * 100))")
+        }
+        model.activeSheet = nil
+        try await Task.sleep(for: .milliseconds(210))
+        model.activeSheet = .report
+        try await Task.sleep(for: .milliseconds(230))
+        let report = try #require(window.attachedSheet)
+        #expect(report.frame.width <= window.frame.width)
+        try capture(report, "min-report")
+        model.activeSheet = nil
+        try await Task.sleep(for: .milliseconds(230))
+        try await scrollToBottom(controller.detailController.view)
+        try await Task.sleep(for: .milliseconds(110))
+        try capture(window, "min-intel-collapsed")
+        model.chargeProtection.setSectionExpanded(true)
+        try await Task.sleep(for: .milliseconds(260))
+        try await scrollToBottom(controller.detailController.view)
+        try await Task.sleep(for: .milliseconds(100))
+        try capture(window, "min-intel-expanded")
+
+        let (silicon, siliconModel, siliconDefaults, siliconSuite, _) = try await fixture(isAppleSilicon: true)
+        let siliconWindow = try #require(silicon.window)
+        defer { siliconWindow.close(); siliconModel.stopChargeProtectionMonitoring(); siliconDefaults.removePersistentDomain(forName: siliconSuite) }
+        #expect(siliconModel.chargeProtection.availability.permitsSoftwareControls)
+        siliconModel.displaySize = .extraLarge
+        silicon.showWindow(nil)
+        siliconWindow.setFrame(NSRect(x: 45, y: 55, width: minimum, height: 640), display: true)
+        try await Task.sleep(for: .milliseconds(210))
+        try await scrollToBottom(silicon.detailController.view)
+        try await Task.sleep(for: .milliseconds(110))
+        try capture(siliconWindow, "min-apple-silicon-charge")
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_CHANGELOG_PREVIEW"] != nil))

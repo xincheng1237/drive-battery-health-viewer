@@ -7,6 +7,12 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
+        GeometryReader { geometry in
+            content(size: geometry.size)
+        }
+    }
+
+    private func content(size: CGSize) -> some View {
         ZStack {
             destinationView
                 .id(model.destination ?? .overview)
@@ -53,15 +59,20 @@ struct RootView: View {
         .sheet(item: $model.activeSheet) { sheet in
             Group { switch sheet {
             case .report:
-                if let snapshot = model.currentSnapshot { TextReportView(snapshot: snapshot).environmentObject(model) }
+                if let snapshot = model.currentSnapshot { TextReportView(panelSize: panelSize(for: size, preferred: CGSize(width: 720, height: 560)), snapshot: snapshot).environmentObject(model) }
             case .diagnosticExport: DiagnosticExportView().environmentObject(model)
-            case .changelog: ChangelogView().environmentObject(model)
-            case .about: AboutView().environmentObject(model)
+            case .changelog: ChangelogView(panelSize: panelSize(for: size, preferred: CGSize(width: 650, height: 560))).environmentObject(model)
+            case .about: AboutView(panelSize: panelSize(for: size, preferred: CGSize(width: 640, height: 620))).environmentObject(model)
             } }
             .background(SheetTerminationPolicy(preventsTermination: sheet == .diagnosticExport))
         }
         .interfaceFont(.body)
         .environment(\.displaySize, model.displaySize)
+    }
+
+    private func panelSize(for available: CGSize, preferred: CGSize) -> CGSize {
+        CGSize(width: min(preferred.width, max(380, available.width - 32)),
+               height: min(preferred.height, max(360, available.height - 44)))
     }
 
     @ViewBuilder
@@ -280,7 +291,7 @@ struct DriveCard: View {
                 .frame(minWidth: 400 * displaySize.scale)
             }
             VStack(alignment: .leading, spacing: 16 * displaySize.scale) {
-                HStack(spacing: 24 * displaySize.scale) { gauge; header }
+                HStack(alignment: .center, spacing: 16 * displaySize.scale) { gauge; header }
                 Divider()
                 DetailGrid(items: driveDetails)
             }
@@ -292,13 +303,24 @@ struct DriveCard: View {
         HealthGauge(percent: drive.lifeRemainingPercent, state: drive.healthState, title: model.t("health"))
     }
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 3 * displaySize.scale) {
-                Text(drive.model).interfaceFont(.headline).fixedSize(horizontal: false, vertical: true)
-                Text(drive.deviceIdentifier).interfaceFont(.caption, design: .monospaced).foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                identity.fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
+                HealthBadge(state: drive.healthState).fixedSize()
             }
-            Spacer(minLength: 8)
-            HealthBadge(state: drive.healthState).fixedSize()
+            VStack(alignment: .leading, spacing: 6 * displaySize.scale) {
+                identity
+                HealthBadge(state: drive.healthState).fixedSize()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 3 * displaySize.scale) {
+            Text(drive.model).interfaceFont(.headline).fixedSize(horizontal: false, vertical: true)
+            Text(drive.deviceIdentifier).interfaceFont(.caption, design: .monospaced).foregroundStyle(.secondary)
         }
     }
 
@@ -384,7 +406,7 @@ struct BatteryCard: View {
                     .frame(minWidth: 400 * displaySize.scale)
                 }
                 VStack(alignment: .leading, spacing: 16 * displaySize.scale) {
-                    HStack(spacing: 24 * displaySize.scale) { gauge; header }
+                    HStack(alignment: .center, spacing: 16 * displaySize.scale) { gauge; header }
                     Divider()
                     details
                 }
@@ -405,22 +427,34 @@ struct BatteryCard: View {
         HealthGauge(percent: battery.healthPercent, state: battery.healthState, title: model.t("health"))
     }
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 3 * displaySize.scale) {
-                Text(battery.name).interfaceFont(.headline).fixedSize(horizontal: false, vertical: true)
-                if let current = battery.currentCapacityPercent {
-                    HStack(spacing: 5 * displaySize.scale) {
-                        BatteryStatusIcon(percent: current, isCharging: battery.isCharging == true,
-                                          externalConnected: battery.externalConnected == true)
-                        Text(L10n.format("percent", model.language, Double(current))).interfaceFont(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                identity.fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
+                HealthBadge(state: battery.healthState).fixedSize()
             }
-            Spacer(minLength: 8)
-            HealthBadge(state: battery.healthState).fixedSize()
+            VStack(alignment: .leading, spacing: 6 * displaySize.scale) {
+                identity
+                HealthBadge(state: battery.healthState).fixedSize()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 3 * displaySize.scale) {
+            Text(battery.name).interfaceFont(.headline).fixedSize(horizontal: false, vertical: true)
+            if let current = battery.currentCapacityPercent {
+                HStack(spacing: 5 * displaySize.scale) {
+                    BatteryStatusIcon(percent: current, isCharging: battery.isCharging == true,
+                                      externalConnected: battery.externalConnected == true)
+                    Text(L10n.format("percent", model.language, Double(current))).interfaceFont(.caption)
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var details: some View {
         VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
             DetailGrid(items: batteryDetails)
@@ -707,6 +741,12 @@ struct ChargeProtectionSection: View {
             Divider()
             Label(model.t("chargeProtection"), systemImage: "battery.100percent.bolt")
                 .interfaceFont(.subheadline, weight: .semibold)
+            if manager.availability == .unsupportedHardware && !manager.isSectionExpanded {
+                Text(model.t("intelChargingManagedSummary"))
+                    .interfaceFont(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if manager.isSectionExpanded {
                 Group {
                     switch manager.availability {
@@ -784,7 +824,7 @@ struct ChargeProtectionSection: View {
             Text(model.t("intelChargingManagedDetail"))
                 .interfaceFont(.footnote)
                 .foregroundStyle(.secondary)
-            Button(model.t("openBatterySettings")) { manager.openSystemBatterySettings() }
+            Button(model.t("intelOpenBatterySettings")) { manager.openSystemBatterySettings() }
         }
     }
 
@@ -1369,51 +1409,25 @@ struct HistoryView: View {
             if model.history.isEmpty {
                 EmptyState(title: model.t("historyEmpty"), detail: model.t("historyEmptyDetail"), symbol: "clock.arrow.circlepath")
             } else {
-                HSplitView {
-                    VStack(spacing: 0 * displaySize.scale) {
-                        historySelectionBar
-                        Divider()
-                        historyList
-                    }
-                    .frame(minWidth: 220 * displaySize.scale, idealWidth: 300 * displaySize.scale, maxWidth: 420 * displaySize.scale)
-
-                    if let record = model.selectedHistory {
-                        VStack(spacing: 0 * displaySize.scale) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2 * displaySize.scale) {
-                                    Text(model.t("report")).interfaceFont(.headline)
-                                    Text(record.snapshot.generatedAt.formattedReportDate()).interfaceFont(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 8)
-                                ReportFontControls()
-                                if !isSelecting {
-                                    Button(role: .destructive) { showsDeleteConfirmation = true } label: {
-                                        Image(systemName: "trash")
-                                    }
-                                    .help(model.t("delete"))
-                                    .accessibilityLabel(model.t("delete"))
-                                }
+                GeometryReader { geometry in
+                    if geometry.size.width >= 545 * displaySize.scale {
+                        HSplitView {
+                            historySidebar
+                                .frame(minWidth: 220 * displaySize.scale, idealWidth: 300 * displaySize.scale,
+                                       maxWidth: 420 * displaySize.scale)
+                            if let record = model.selectedHistory {
+                                reportPane(record).frame(minWidth: 280 * displaySize.scale)
                             }
-                            .interfacePadding(16)
-                            Divider()
-                            ZStack {
-                            ScrollView([.vertical, .horizontal]) {
-                                Text(ReportRenderer.render(snapshot: record.snapshot, language: model.language, hideSerials: model.hideSerials))
-                                    .font(.system(size: model.reportTextSize, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                                    .interfacePadding(18)
-                            }
-                                .id(record.id)
-                                .transition(.asymmetric(
-                                    insertion: .opacity.combined(with: .offset(y: 10)),
-                                    removal: .opacity))
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-
                         }
-                        .frame(minWidth: 280 * displaySize.scale)
+                    } else {
+                        VSplitView {
+                            historySidebar
+                                .frame(minHeight: 120, idealHeight: min(220, geometry.size.height * 0.34),
+                                       maxHeight: model.selectedHistory == nil ? .infinity : max(150, geometry.size.height * 0.46))
+                            if let record = model.selectedHistory {
+                                reportPane(record).frame(minHeight: 200)
+                            }
+                        }
                     }
                 }
             }
@@ -1435,6 +1449,66 @@ struct HistoryView: View {
             Button(model.t("cancel"), role: .cancel) { }
         } message: {
             Text(isSelecting ? model.t("deleteSelectedDetail") : model.t("deleteDetail"))
+        }
+    }
+
+    private var historySidebar: some View {
+        VStack(spacing: 0) {
+            historySelectionBar
+            Divider()
+            historyList
+        }
+    }
+
+    private func reportPane(_ record: HistoryRecord) -> some View {
+        VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    reportTitle(record).fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    reportActions.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 8 * displaySize.scale) {
+                    reportTitle(record)
+                    reportActions
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .interfacePadding(16)
+            Divider()
+            ZStack {
+                ScrollView([.vertical, .horizontal]) {
+                    Text(ReportRenderer.render(snapshot: record.snapshot, language: model.language, hideSerials: model.hideSerials))
+                        .font(.system(size: model.reportTextSize, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .interfacePadding(18)
+                }
+                .id(record.id)
+                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 10)), removal: .opacity))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        }
+    }
+
+    private func reportTitle(_ record: HistoryRecord) -> some View {
+        VStack(alignment: .leading, spacing: 2 * displaySize.scale) {
+            Text(model.t("report")).interfaceFont(.headline)
+            Text(record.snapshot.generatedAt.formattedReportDate()).interfaceFont(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var reportActions: some View {
+        HStack {
+            ReportFontControls()
+            if !isSelecting {
+                Button(role: .destructive) { showsDeleteConfirmation = true } label: {
+                    Image(systemName: "trash")
+                }
+                .help(model.t("delete"))
+                .accessibilityLabel(model.t("delete"))
+            }
         }
     }
 
@@ -1794,10 +1868,16 @@ struct PreferencesView: View {
     }
 
     private var historyFolderActions: some View {
-        HStack(spacing: 8 * displaySize.scale) {
-            Button(model.t("openFolder")) { NSWorkspace.shared.open(model.historyDirectory) }
-            Button(model.t("chooseFolder"), action: chooseHistoryFolder)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8 * displaySize.scale) { historyFolderButtons.fixedSize() }
+            VStack(alignment: .leading, spacing: 8 * displaySize.scale) { historyFolderButtons }
         }
+    }
+
+    @ViewBuilder
+    private var historyFolderButtons: some View {
+        Button(model.t("openFolder")) { NSWorkspace.shared.open(model.historyDirectory) }
+        Button(model.t("chooseFolder"), action: chooseHistoryFolder)
     }
 
     private func chooseHistoryFolder() {
@@ -1814,6 +1894,7 @@ struct PreferencesView: View {
 }
 
 struct AboutView: View {
+    var panelSize = CGSize(width: 640, height: 620)
     @Environment(\.displaySize) private var displaySize
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -1860,7 +1941,7 @@ struct AboutView: View {
         HStack { Spacer(); Button(model.t("done")) { dismiss() }.keyboardShortcut(.cancelAction) }
             .interfacePadding(16)
         }
-        .frame(width: 640, height: 620)
+        .frame(width: panelSize.width, height: panelSize.height)
     }
 }
 
@@ -1933,6 +2014,7 @@ struct AboutButton: View {
 }
 
 struct TextReportView: View {
+    var panelSize = CGSize(width: 720, height: 560)
     @Environment(\.displaySize) private var displaySize
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -1957,11 +2039,12 @@ struct TextReportView: View {
                     .interfacePadding(20)
             }
         }
-        .frame(minWidth: 720, minHeight: 560)
+        .frame(width: panelSize.width, height: panelSize.height)
     }
 }
 
 struct ChangelogView: View {
+    var panelSize = CGSize(width: 650, height: 560)
     @Environment(\.displaySize) private var displaySize
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -1989,9 +2072,15 @@ struct ChangelogView: View {
                                         .interfacePadding(.top, 2)
                                 }
                                 ForEach(section.items, id: \.self) { item in
-                                    Label(item, systemImage: section.kind.symbol)
-                                        .foregroundStyle(.primary, section.kind.color)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    Label {
+                                        Text(item).fixedSize(horizontal: false, vertical: true)
+                                    } icon: {
+                                        Image(systemName: section.kind.symbol)
+                                            .foregroundStyle(.primary, section.kind.color)
+                                            .frame(width: 18 * displaySize.scale)
+                                            .accessibilityHidden(true)
+                                    }
+                                    .labelStyle(ChangelogRowLabelStyle(spacing: 8 * displaySize.scale))
                                 }
                             }
                         }
@@ -2006,7 +2095,18 @@ struct ChangelogView: View {
             .mask(ScrollEdgeFade(length: 12 * displaySize.scale))
         }
         .interfacePadding(28)
-        .frame(width: 650, height: 560)
+        .frame(width: panelSize.width, height: panelSize.height)
+    }
+}
+
+private struct ChangelogRowLabelStyle: LabelStyle {
+    let spacing: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: spacing) {
+            configuration.icon
+            configuration.title
+        }
     }
 }
 
@@ -2017,23 +2117,39 @@ struct ChangelogRelease: Identifiable {
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
         [ChangelogRelease(version: applicationVersion, sections: [
-            ChangelogSection(kind: .feature, items: [L10n.text("release13AutomaticUpdates", language)]),
             ChangelogSection(kind: .performance, items: [
+                L10n.text("release13Monitoring", language),
                 L10n.text("release13Performance", language),
                 L10n.text("release13ComponentRefresh", language)
             ]),
             ChangelogSection(kind: .improvement, items: [
-                L10n.text("release13UpdateReminder", language),
-                L10n.text("release13UnconfirmedCharge", language)
+                L10n.text("release13AutomaticUpdates", language),
+                L10n.text("release13UnconfirmedCharge", language),
+                L10n.text("release13NarrowWindow", language)
             ]),
             ChangelogSection(kind: .fix, items: [
                 L10n.text("release13ChargeEvidence", language),
                 L10n.text("release13PowerUIStatus", language),
+                L10n.text("release13TemporaryFull", language),
+                L10n.text("release13IndependentError", language),
                 L10n.text("release13PowerSource", language)
             ])
         ]), ChangelogRelease(version: "1.2", sections: [
-            ChangelogSection(kind: .feature, items: [L10n.text("release12Design", language), L10n.text("release12Display", language), L10n.text("release12Settings", language), L10n.text("release112Calibration", language), L10n.text("release112SystemFull", language), L10n.text("release112Updater", language)]),
-            ChangelogSection(kind: .fix, items: [L10n.text("release112PauseFix", language), L10n.text("release12QuitFix", language)])
+            ChangelogSection(kind: .feature, items: [
+                L10n.text("release12Design", language),
+                L10n.text("release12Display", language),
+                L10n.text("release112Calibration", language),
+                L10n.text("release112SystemFull", language)
+            ]),
+            ChangelogSection(kind: .improvement, items: [
+                L10n.text("release12Settings", language),
+                L10n.text("release12Layout", language),
+                L10n.text("release112Updater", language)
+            ]),
+            ChangelogSection(kind: .fix, items: [
+                L10n.text("release112PauseFix", language),
+                L10n.text("release12QuitFix", language)
+            ])
         ])] + legacyLocalized(for: language)
     }
 

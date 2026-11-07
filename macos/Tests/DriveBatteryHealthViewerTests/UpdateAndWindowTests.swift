@@ -16,7 +16,7 @@ struct UpdateAndWindowTests {
         let data = try Data(contentsOf: package.appendingPathComponent("Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(info["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(info["CFBundleVersion"] as? String == "39")
+        #expect(info["CFBundleVersion"] as? String == "40")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
@@ -143,18 +143,16 @@ struct UpdateAndWindowTests {
     }
 
     @Test(arguments: [AppLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])
-    func requestedReleaseNotesHaveNoImprovementSection(_ language: AppLanguage) throws {
+    func version12NotesUseApprovedSections(_ language: AppLanguage) throws {
         let release = try #require(ChangelogRelease.localized(for: language).first { $0.version == "1.2" })
-        #expect(release.sections.map(\.kind) == [.feature, .fix])
-        #expect(release.sections.flatMap(\.items).count == 8)
+        #expect(release.sections.map(\.kind) == [.feature, .improvement, .fix])
+        #expect(release.sections.flatMap(\.items).count == 9)
         #expect(release.sections.first?.items.prefix(3) == [
-            L10n.text("release12Design", language), L10n.text("release12Display", language), L10n.text("release12Settings", language)
+            L10n.text("release12Design", language), L10n.text("release12Display", language), L10n.text("release112Calibration", language)
         ][...])
         #expect(L10n.text("release112Updater", language) != "release112Updater")
         #expect(release.sections.last?.items == [L10n.text("release112PauseFix", language), L10n.text("release12QuitFix", language)])
-        if language == .simplifiedChinese {
-            #expect(release.sections.flatMap(\.items).contains("系统校准或临时允许充满时，不再错误地显示充电保护失败。"))
-        }
+
     }
 
     @Test(arguments: [AppLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])
@@ -163,8 +161,8 @@ struct UpdateAndWindowTests {
         let latest = try #require(releases.first)
         #expect(latest.version == "1.3")
         #expect(!releases.contains { $0.version == "1.2.1" })
-        #expect(latest.sections.map(\.kind) == [.feature, .performance, .improvement, .fix])
-        #expect(latest.sections.map { $0.items.count } == [1, 2, 2, 3])
+        #expect(latest.sections.map(\.kind) == [.performance, .improvement, .fix])
+        #expect(latest.sections.map { $0.items.count } == [3, 3, 5])
         #expect(ChangelogItemKind.performance.title(for: language) != "changelogPerformance")
         #expect(NSImage(systemSymbolName: ChangelogItemKind.performance.symbol, accessibilityDescription: nil) != nil)
     }
@@ -172,10 +170,14 @@ struct UpdateAndWindowTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_EXPORT_CHANGELOG"] != nil))
     func exportActualReleaseNotesForSignedAppcast() throws {
         let languages: [AppLanguage] = [.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese]
-        let result = languages.map { language -> [String: Any] in
-            let release = ChangelogRelease.localized(for: language)[0]
-            return ["language": language.rawValue, "version": release.version,
-                    "sections": release.sections.map { ["title": $0.kind.title(for: language), "items": $0.items] }]
+        let versions = ProcessInfo.processInfo.environment["DBHV_EXPORT_CHANGELOG_VERSIONS"]?
+            .split(separator: ",").map(String.init) ?? [applicationVersion]
+        let result = try versions.flatMap { version in
+            try languages.map { language -> [String: Any] in
+                let release = try #require(ChangelogRelease.localized(for: language).first { $0.version == version })
+                return ["language": language.rawValue, "version": release.version,
+                        "sections": release.sections.map { ["title": $0.kind.title(for: language), "items": $0.items] }]
+            }
         }
         let output = try #require(ProcessInfo.processInfo.environment["DBHV_EXPORT_CHANGELOG"])
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: output))
