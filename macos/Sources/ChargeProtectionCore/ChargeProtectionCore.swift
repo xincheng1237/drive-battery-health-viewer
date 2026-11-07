@@ -74,6 +74,7 @@ public struct ChargeProtectionConfiguration: Codable, Equatable, Sendable {
     /// change helper enforcement, so hiding the icon never disables protection.
     public var showMenuBarStatus: Bool
     public var updatedAt: Date
+    public var revision: UUID?
 
     public init(
         enabled: Bool = false,
@@ -81,7 +82,8 @@ public struct ChargeProtectionConfiguration: Codable, Equatable, Sendable {
         temporaryFullCharge: Bool = false,
         managementMode: ChargeProtectionMode = .softwareAvailable,
         showMenuBarStatus: Bool = true,
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        revision: UUID? = nil
     ) {
         self.schema = Self.schemaVersion
         self.enabled = enabled
@@ -90,12 +92,18 @@ public struct ChargeProtectionConfiguration: Codable, Equatable, Sendable {
         self.managementMode = managementMode
         self.showMenuBarStatus = showMenuBarStatus
         self.updatedAt = updatedAt
+        self.revision = revision
+    }
+
+    public mutating func renewRevision(now: Date = Date()) {
+        updatedAt = now
+        revision = UUID()
     }
 
     public var isValid: Bool { schema == Self.schemaVersion }
 
     private enum CodingKeys: String, CodingKey {
-        case schema, enabled, fixedLimit, temporaryFullCharge, managementMode, showMenuBarStatus, updatedAt
+        case schema, enabled, fixedLimit, temporaryFullCharge, managementMode, showMenuBarStatus, updatedAt, revision
     }
 
     public init(from decoder: Decoder) throws {
@@ -112,6 +120,7 @@ public struct ChargeProtectionConfiguration: Codable, Equatable, Sendable {
         // preserve the documented default instead of becoming unreadable.
         showMenuBarStatus = try container.decodeIfPresent(Bool.self, forKey: .showMenuBarStatus) ?? true
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        revision = try container.decodeIfPresent(UUID.self, forKey: .revision)
     }
 }
 
@@ -404,6 +413,7 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
     public var fixedLimit: FixedChargeLimit
     public var temporaryFullCharge: Bool
     public var configurationUpdatedAt: Date?
+    public var configurationRevision: UUID?
     public var holding: Bool
     public var adapterConnected: Bool?
     public var batteryPercentage: Int?
@@ -421,6 +431,7 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
         fixedLimit: FixedChargeLimit,
         temporaryFullCharge: Bool,
         configurationUpdatedAt: Date? = nil,
+        configurationRevision: UUID? = nil,
         holding: Bool,
         adapterConnected: Bool?,
         batteryPercentage: Int?,
@@ -436,6 +447,7 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
         self.fixedLimit = fixedLimit
         self.temporaryFullCharge = temporaryFullCharge
         self.configurationUpdatedAt = configurationUpdatedAt
+        self.configurationRevision = configurationRevision
         self.holding = holding
         self.adapterConnected = adapterConnected
         self.batteryPercentage = batteryPercentage
@@ -487,10 +499,22 @@ public func matchingAppliedChargeStatus(
     now: Date = Date(),
     maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
 ) -> ChargeProtectionStatus? {
-    guard configuration.isValid, configuration.enabled,
-          let status, status.installed, status.enabled,
+    guard configuration.enabled else { return nil }
+    return matchingChargeConfigurationReport(configuration: configuration, status: status,
+                                             now: now, maximumStatusAge: maximumStatusAge)
+}
+
+public func matchingChargeConfigurationReport(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date(),
+    maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
+) -> ChargeProtectionStatus? {
+    guard configuration.isValid,
+          let status, status.installed, status.enabled == configuration.enabled,
           status.fixedLimit == configuration.fixedLimit,
           let appliedAt = status.configurationUpdatedAt, appliedAt <= now,
+          status.configurationRevision == configuration.revision,
           abs(appliedAt.timeIntervalSince(configuration.updatedAt)) < 1,
           status.isFresh(at: now, maximumAge: maximumStatusAge) else { return nil }
     return status
@@ -503,6 +527,7 @@ public func hasCurrentChargeProtectionReport(
 ) -> Bool {
     guard let status = matchingAppliedChargeStatus(configuration: configuration, status: status, now: now) else { return false }
     guard status.controlMethod == .powerUIOptimized80 else { return true }
+    if configuration.temporaryFullCharge && status.temporaryFullCharge { return true }
     // A known pause is actionable even if the other signal is unknown.
     return status.systemCalibration?.defersChargeControl == true ||
         status.systemChargeOverride?.defersChargeControl == true ||

@@ -874,7 +874,7 @@ struct ChargeProtectionSection: View {
                         limit: manager.configuration.fixedLimit.rawValue,
                         language: model.language
                     )
-                } else if manager.configuration.temporaryFullCharge, manager.status != nil {
+                } else if manager.isTemporaryFullChargeConfirmed {
                     Label(model.t("temporaryFullInProgress"), systemImage: "battery.100percent.bolt")
                         .interfaceFont(.footnote)
                         .foregroundStyle(.secondary)
@@ -901,7 +901,7 @@ struct ChargeProtectionSection: View {
                     .interfaceFont(.footnote)
                     .foregroundStyle(.orange)
             }
-            if let error = manager.errorMessage ?? manager.status?.lastError, !error.isEmpty {
+            if let error = manager.errorMessage ?? manager.currentHelperError, !error.isEmpty {
                 Label(model.t("chargeOperationFailed"), systemImage: "exclamationmark.triangle")
                     .interfaceFont(.footnote)
                     .foregroundStyle(.red)

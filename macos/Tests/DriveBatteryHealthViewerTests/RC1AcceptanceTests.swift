@@ -127,6 +127,25 @@ struct RC1AcceptanceTests {
         #expect(ChargeLimitAgentPresentationState.resolve(configuration: config, status: report, now: now) == .systemCalibration)
     }
 
+    @Test
+    func oldRevisionWithSameTimestampCannotConfirmHold() {
+        let now = Date()
+        let original = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty, updatedAt: now, revision: UUID())
+        var current = original
+        current.renewRevision(now: now)
+        var report = ChargeProtectionStatus(
+            helperVersion: "fixture", timestamp: now, installed: true, enabled: true, fixedLimit: .eighty,
+            temporaryFullCharge: false, configurationUpdatedAt: now, configurationRevision: original.revision,
+            holding: true, adapterConnected: true, batteryPercentage: 80, controlMethod: .chte
+        )
+        #expect(!hasCurrentChargeProtectionReport(configuration: current, status: report, now: now))
+        #expect(!shouldPresentChargeLimitStatusItem(configuration: current, status: report, now: now))
+        report.configurationRevision = nil
+        #expect(!shouldPresentChargeLimitStatusItem(configuration: current, status: report, now: now))
+        report.configurationRevision = current.revision
+        #expect(shouldPresentChargeLimitStatusItem(configuration: current, status: report, now: now))
+    }
+
     @Test func sevenAgentTranslationsExist() {
         for language in [AgentLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese] {
             let title = AgentL10n.text("unconfirmed", language: language)

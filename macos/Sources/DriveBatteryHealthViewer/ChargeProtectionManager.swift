@@ -128,7 +128,7 @@ final class ChargeProtectionManager: ObservableObject {
             loaded.temporaryFullCharge = false
         }
         availability = resolvedAvailability
-        loaded.updatedAt = Date()
+        loaded.renewRevision()
         configuration = loaded
 
         if let stored = defaults.object(forKey: Self.sectionExpandedDefaultsKey) as? Bool {
@@ -217,9 +217,19 @@ final class ChargeProtectionManager: ObservableObject {
             helperReportsConnectedAdapter(configuration: configuration, status: status)
     }
 
+    var currentHelperError: String? {
+        matchingChargeConfigurationReport(configuration: configuration, status: status)?.lastError
+    }
+
+    var isTemporaryFullChargeConfirmed: Bool {
+        guard configuration.temporaryFullCharge,
+              let report = matchingAppliedChargeStatus(configuration: configuration, status: status) else { return false }
+        return report.temporaryFullCharge && report.lastError == nil && report.controlMethod != .unavailable
+    }
+
     var showsHelperStatusUnconfirmed: Bool {
         availability.permitsSoftwareControls && configuration.enabled &&
-            configuration.fixedLimit != .oneHundred && !isBusy && status?.lastError == nil &&
+            configuration.fixedLimit != .oneHundred && !isBusy && currentHelperError == nil &&
             !hasCurrentChargeProtectionReport(configuration: configuration, status: status)
     }
 
@@ -436,7 +446,7 @@ final class ChargeProtectionManager: ObservableObject {
         errorMessage = nil
         configuration.enabled = false
         configuration.temporaryFullCharge = false
-        configuration.updatedAt = Date()
+        configuration.renewRevision()
         try? persistConfiguration()
 
         guard rootComponentsPresent else {
@@ -528,7 +538,7 @@ final class ChargeProtectionManager: ObservableObject {
         errorMessage = nil
         configuration.enabled = false
         configuration.temporaryFullCharge = false
-        configuration.updatedAt = Date()
+        configuration.renewRevision()
         try? persistConfiguration()
 
         let finish: () -> Void = { [weak self] in
@@ -620,7 +630,7 @@ final class ChargeProtectionManager: ObservableObject {
             }
             configuration.enabled = enableAfterInstallation
             if enableAfterInstallation { configuration.temporaryFullCharge = false }
-            configuration.updatedAt = Date()
+            configuration.renewRevision()
             try persistConfiguration()
         } catch {
             configuration.enabled = false
@@ -651,6 +661,7 @@ final class ChargeProtectionManager: ObservableObject {
                 )
             } else {
                 self.configuration.enabled = false
+                self.configuration.renewRevision()
                 try? self.persistConfiguration()
                 self.errorMessage = message ?? "The charge helper could not be installed."
                 let detail = DiagnosticLogger.redact(message ?? "No installer error text was returned.")
@@ -667,7 +678,7 @@ final class ChargeProtectionManager: ObservableObject {
             isAppleSilicon: isAppleSilicon,
             operatingSystemVersion: operatingSystemVersion
         )
-        updated.updatedAt = Date()
+        updated.renewRevision()
         guard updated.isValid else { return }
         do {
             configuration = updated
@@ -691,7 +702,9 @@ final class ChargeProtectionManager: ObservableObject {
         // both interfaces remain in sync without either process overwriting a
         // more recent user action.
         if var diskConfiguration = Self.loadConfiguration(from: configurationURL, decoder: decoder),
-           diskConfiguration.updatedAt > configuration.updatedAt {
+           diskConfiguration.updatedAt > configuration.updatedAt ||
+            (diskConfiguration.revision != nil && diskConfiguration.revision != configuration.revision &&
+             diskConfiguration.updatedAt == Date(timeIntervalSince1970: floor(configuration.updatedAt.timeIntervalSince1970))) {
             let normalized = ChargeLimitCapabilityPolicy.normalized(
                 diskConfiguration.fixedLimit,
                 isAppleSilicon: isAppleSilicon,
@@ -705,7 +718,7 @@ final class ChargeProtectionManager: ObservableObject {
                     diskConfiguration.enabled = false
                     diskConfiguration.temporaryFullCharge = false
                 }
-                diskConfiguration.updatedAt = Date()
+                diskConfiguration.renewRevision()
                 try? Self.writeSecureConfiguration(
                     diskConfiguration,
                     to: configurationURL,
@@ -719,7 +732,8 @@ final class ChargeProtectionManager: ObservableObject {
            let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data),
            decoded.isFresh(at: now) {
             status = decoded
-            if let helperConfigurationDate = decoded.configurationUpdatedAt,
+            if configuration.revision == nil, decoded.configurationRevision == nil,
+               let helperConfigurationDate = decoded.configurationUpdatedAt,
                helperConfigurationDate <= now,
                helperConfigurationDate >= configuration.updatedAt,
                decoded.temporaryFullCharge != configuration.temporaryFullCharge {

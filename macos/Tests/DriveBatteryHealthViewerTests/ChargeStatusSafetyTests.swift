@@ -72,7 +72,7 @@ struct ChargeStatusSafetyTests {
         let fixture = try ChargeStatusFixture()
         defer { fixture.cleanUp() }
         let manager = fixture.manager()
-        let now = Date()
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         var stale = sampleChargeStatus(at: now.addingTimeInterval(-20))
         stale.configurationUpdatedAt = now.addingTimeInterval(-30)
         stale.temporaryFullCharge = true
@@ -91,7 +91,8 @@ struct ChargeStatusSafetyTests {
         #expect(!manager.hasHelperAdapterObservation)
 
         var current = sampleChargeStatus(at: now)
-        current.configurationUpdatedAt = manager.configuration.updatedAt
+        current.configurationUpdatedAt = now
+        current.configurationRevision = manager.configuration.revision
         try fixture.write(current)
         manager.reloadStatus(now: now)
         #expect(manager.status?.timestamp == now)

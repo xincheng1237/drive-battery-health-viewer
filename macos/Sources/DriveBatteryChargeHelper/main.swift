@@ -829,6 +829,7 @@ private struct StatusSnapshot: Equatable {
     let fixedLimit: FixedChargeLimit
     let temporaryFullCharge: Bool
     let configurationUpdatedAt: Date?
+    let configurationRevision: UUID?
     let holding: Bool
     let adapterConnected: Bool?
     let batteryPercentage: Int?
@@ -848,6 +849,7 @@ private struct StatusSnapshot: Equatable {
         fixedLimit = status.fixedLimit
         temporaryFullCharge = status.temporaryFullCharge
         configurationUpdatedAt = status.configurationUpdatedAt
+        configurationRevision = status.configurationRevision
         holding = status.holding
         adapterConnected = status.adapterConnected
         batteryPercentage = status.batteryPercentage
@@ -916,6 +918,7 @@ private func writeSystemChargingPauseStatus(
         fixedLimit: configuration.fixedLimit,
         temporaryFullCharge: configuration.temporaryFullCharge,
         configurationUpdatedAt: configuration.updatedAt,
+        configurationRevision: configuration.revision,
         holding: false,
         adapterConnected: battery?.charge.adapterConnected,
         batteryPercentage: battery?.charge.percentage,
@@ -999,6 +1002,7 @@ private func writeTerminalStatus(
         fixedLimit: configuration.fixedLimit,
         temporaryFullCharge: false,
         configurationUpdatedAt: configuration.updatedAt,
+        configurationRevision: configuration.revision,
         holding: false,
         adapterConnected: nil,
         batteryPercentage: nil,
@@ -1245,6 +1249,7 @@ while true {
                 fixedLimit: .eighty,
                 temporaryFullCharge: false,
                 configurationUpdatedAt: configuration.updatedAt,
+                configurationRevision: configuration.revision,
                 holding: maintenance.holding,
                 adapterConnected: nil,
                 batteryPercentage: nil,
@@ -1268,6 +1273,7 @@ while true {
             fixedLimit: configuration.fixedLimit,
             temporaryFullCharge: configuration.temporaryFullCharge,
             configurationUpdatedAt: configuration.updatedAt,
+            configurationRevision: configuration.revision,
             holding: false,
             adapterConnected: nil,
             batteryPercentage: nil,
@@ -1298,6 +1304,7 @@ while true {
                 fixedLimit: configuration.fixedLimit,
                 temporaryFullCharge: configuration.temporaryFullCharge,
                 configurationUpdatedAt: configuration.updatedAt,
+                configurationRevision: configuration.revision,
                 holding: false,
                 adapterConnected: battery.charge.adapterConnected,
                 batteryPercentage: battery.charge.percentage,
@@ -1313,7 +1320,7 @@ while true {
             holdingLimit = nil
             if battery.charge.fullyCharged || battery.charge.percentage >= 100 {
                 configuration.temporaryFullCharge = false
-                configuration.updatedAt = Date()
+                configuration.renewRevision()
                 guard writeConfiguration(
                     configuration,
                     to: arguments.configurationURL,
@@ -1339,6 +1346,7 @@ while true {
                     fixedLimit: .eighty,
                     temporaryFullCharge: true,
                     configurationUpdatedAt: configuration.updatedAt,
+                    configurationRevision: configuration.revision,
                     holding: false,
                     adapterConnected: battery.charge.adapterConnected,
                     batteryPercentage: battery.charge.percentage,
@@ -1418,6 +1426,7 @@ while true {
             fixedLimit: .eighty,
             temporaryFullCharge: false,
             configurationUpdatedAt: configuration.updatedAt,
+            configurationRevision: configuration.revision,
             holding: holding && battery.charge.percentage >= FixedChargeLimit.eighty.rawValue,
             adapterConnected: battery.charge.adapterConnected,
             batteryPercentage: battery.charge.percentage,
@@ -1463,7 +1472,7 @@ while true {
             JSONLineLogger.write("info", category: "charge", event: "limit_increased_resumed", message: "The fixed charge limit was raised and charging resumed toward the new target.")
         case .temporaryFullCompleted:
             configuration.temporaryFullCharge = false
-            configuration.updatedAt = Date()
+            configuration.renewRevision()
             if !writeConfiguration(configuration, to: arguments.configurationURL, ownerUID: arguments.ownerUID) {
                 restoreAndExit(
                     .unsafeConfiguration,
@@ -1487,6 +1496,7 @@ while true {
         fixedLimit: configuration.fixedLimit,
         temporaryFullCharge: decision.temporaryFullChargeAfterDecision,
         configurationUpdatedAt: configuration.updatedAt,
+        configurationRevision: configuration.revision,
         holding: holdingLimit != nil,
         adapterConnected: battery.charge.adapterConnected,
         batteryPercentage: battery.charge.percentage,

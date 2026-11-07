@@ -249,7 +249,6 @@ final class ChargeLimitAgentModel: ObservableObject {
     private let isAppleSilicon: Bool
     private let operatingSystemVersion: OperatingSystemVersion
     private var pollingTask: Task<Void, Never>?
-    private var lastObservedConfigurationDate: Date?
     private var lastLanguagePreference: AgentLanguage?
 
     init(
@@ -411,9 +410,8 @@ final class ChargeLimitAgentModel: ObservableObject {
                 decoded.enabled = false
                 decoded.temporaryFullCharge = false
             }
-            if lastObservedConfigurationDate != decoded.updatedAt {
+            if configuration != decoded {
                 configuration = decoded
-                lastObservedConfigurationDate = decoded.updatedAt
             }
         }
         if let data = try? Data(contentsOf: helperStatusURL),
@@ -435,7 +433,7 @@ final class ChargeLimitAgentModel: ObservableObject {
             isAppleSilicon: isAppleSilicon,
             operatingSystemVersion: operatingSystemVersion
         )
-        updated.updatedAt = Date()
+        updated.renewRevision()
         guard updated.isValid else { return }
         do {
             let directory = configurationURL.deletingLastPathComponent()
@@ -444,7 +442,6 @@ final class ChargeLimitAgentModel: ObservableObject {
             try encoder.encode(updated).write(to: configurationURL, options: .atomic)
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configurationURL.path)
             configuration = updated
-            lastObservedConfigurationDate = updated.updatedAt
         } catch {
             // The root helper fails safe and restores normal charging if it can
             // no longer read a valid configuration. This UI never weakens file
