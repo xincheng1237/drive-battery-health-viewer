@@ -2016,7 +2016,10 @@ struct ChangelogRelease: Identifiable {
     let sections: [ChangelogSection]
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
-        [ChangelogRelease(version: "1.2", sections: [
+        [ChangelogRelease(version: "1.2.1", sections: [
+            ChangelogSection(kind: .feature, items: [L10n.text("release121AutomaticUpdates", language)]),
+            ChangelogSection(kind: .fix, items: [L10n.text("release121ChargeEvidence", language), L10n.text("release121PowerSource", language)])
+        ]), ChangelogRelease(version: "1.2", sections: [
             ChangelogSection(kind: .feature, items: [L10n.text("release12Design", language), L10n.text("release12Display", language), L10n.text("release12Settings", language), L10n.text("release112Calibration", language), L10n.text("release112SystemFull", language), L10n.text("release112Updater", language)]),
             ChangelogSection(kind: .fix, items: [L10n.text("release112PauseFix", language), L10n.text("release12QuitFix", language)])
         ])] + legacyLocalized(for: language)

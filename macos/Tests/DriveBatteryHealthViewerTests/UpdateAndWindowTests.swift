@@ -16,7 +16,7 @@ struct UpdateAndWindowTests {
         let data = try Data(contentsOf: package.appendingPathComponent("Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(info["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(info["CFBundleVersion"] as? String == "36")
+        #expect(info["CFBundleVersion"] as? String == "37")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
@@ -141,7 +141,7 @@ struct UpdateAndWindowTests {
 
     @Test(arguments: [AppLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])
     func requestedReleaseNotesHaveNoImprovementSection(_ language: AppLanguage) throws {
-        let release = try #require(ChangelogRelease.localized(for: language).first)
+        let release = try #require(ChangelogRelease.localized(for: language).first { $0.version == "1.2" })
         #expect(release.sections.map(\.kind) == [.feature, .fix])
         #expect(release.sections.flatMap(\.items).count == 8)
         #expect(release.sections.first?.items.prefix(3) == [

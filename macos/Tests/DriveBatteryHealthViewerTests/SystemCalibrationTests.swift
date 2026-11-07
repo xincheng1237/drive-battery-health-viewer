@@ -128,7 +128,7 @@ struct SystemCalibrationTests {
             #expect(L10n.text(key, language) != key)
         }
         let release = ChangelogRelease.localized(for: language)
-        #expect(release.first?.version == "1.2")
+        #expect(release.first?.version == "1.2.1")
         #expect(release.contains { $0.version == "1.1" })
     }
 
