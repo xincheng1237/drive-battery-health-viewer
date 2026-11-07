@@ -218,13 +218,11 @@ final class ChargeProtectionManager: ObservableObject {
     }
 
     var currentHelperError: String? {
-        matchingChargeConfigurationReport(configuration: configuration, status: status)?.lastError
+        currentChargeProtectionError(configuration: configuration, status: status)
     }
 
     var isTemporaryFullChargeConfirmed: Bool {
-        guard configuration.temporaryFullCharge,
-              let report = matchingAppliedChargeStatus(configuration: configuration, status: status) else { return false }
-        return report.temporaryFullCharge && report.lastError == nil && report.controlMethod != .unavailable
+        confirmsTemporaryFullCharge(configuration: configuration, status: status)
     }
 
     var showsHelperStatusUnconfirmed: Bool {

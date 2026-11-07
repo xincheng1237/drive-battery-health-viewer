@@ -142,7 +142,13 @@ struct RC1AcceptanceTests {
         #expect(!shouldPresentChargeLimitStatusItem(configuration: current, status: report, now: now))
         report.configurationRevision = nil
         #expect(!shouldPresentChargeLimitStatusItem(configuration: current, status: report, now: now))
+        report.configurationRevision = original.revision
+        report.lastError = "Previous revision"
+        #expect(currentChargeProtectionError(configuration: current, status: report, now: now) == nil)
+        #expect(ChargeLimitAgentPresentationState.resolve(configuration: current, status: report, now: now) == .protectionUnconfirmed)
         report.configurationRevision = current.revision
+        #expect(currentChargeProtectionError(configuration: current, status: report, now: now) == "Previous revision")
+        report.lastError = nil
         #expect(shouldPresentChargeLimitStatusItem(configuration: current, status: report, now: now))
     }
 

@@ -526,12 +526,34 @@ public func hasCurrentChargeProtectionReport(
     now: Date = Date()
 ) -> Bool {
     guard let status = matchingAppliedChargeStatus(configuration: configuration, status: status, now: now) else { return false }
+    guard status.controlMethod != .unavailable,
+          status.temporaryFullCharge == configuration.temporaryFullCharge else { return false }
     guard status.controlMethod == .powerUIOptimized80 else { return true }
-    if configuration.temporaryFullCharge && status.temporaryFullCharge { return true }
+    if configuration.temporaryFullCharge { return true }
     // A known pause is actionable even if the other signal is unknown.
     return status.systemCalibration?.defersChargeControl == true ||
         status.systemChargeOverride?.defersChargeControl == true ||
         (status.systemCalibration == .inactive && status.systemChargeOverride == .inactive)
+}
+
+public func currentChargeProtectionError(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> String? {
+    guard let message = matchingChargeConfigurationReport(configuration: configuration, status: status, now: now)?
+        .lastError?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty else { return nil }
+    return message
+}
+
+public func confirmsTemporaryFullCharge(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> Bool {
+    guard configuration.temporaryFullCharge,
+          let report = matchingAppliedChargeStatus(configuration: configuration, status: status, now: now) else { return false }
+    return report.temporaryFullCharge && report.lastError == nil && report.controlMethod != .unavailable
 }
 
 public func shouldPresentChargeLimitStatusItem(
