@@ -79,9 +79,31 @@ struct Fixture {
         } else if scenario == "restart" {
             defaults.set(Date(), forKey: "SULastCheckTime")
         }
+        if scenario == "upgrade-legacy" {
+            let driver = RecordingDriver()
+            driver.cancelDownload = true
+            // The published 1.2 config starts Sparkle on explicit request.
+            let legacy = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: nil)
+            try legacy.start()
+            legacy.checkForUpdates()
+            let deadline = ContinuousClock.now + .seconds(15)
+            while !driver.events.contains("finished"), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            precondition(driver.events.filter { $0 == "manual" }.count == 1, "\(driver.events)")
+            precondition(driver.events.contains("found:39:1") && driver.events.contains("download-cancel"), "\(driver.events)")
+            precondition(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String == "35")
+            print("PASS 1.2 (35) manual selection of signed 1.3 (39), download canceled")
+            return
+        }
         let driver = RecordingDriver()
         driver.cancelDownload = scenario == "download"
-        let updater = InAppUpdater(standardDriver: driver)
+        let quietWindowCheck = scenario == "quiet-standard"
+        let app = quietWindowCheck ? NSApplication.shared : nil
+        let wasActive = app?.isActive
+        let visibleWindows = app?.windows.filter { $0.isVisible }.count
+        let keyWindow = app?.keyWindow
+        let updater = InAppUpdater(standardDriver: quietWindowCheck ? nil : driver)
         var updates: [AvailableAppUpdate] = []
         var emptyResults = 0
         updater.scheduledResult = {
@@ -96,6 +118,27 @@ struct Fixture {
             while !condition() && clock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
         }
         switch scenario {
+        case "quiet-standard":
+            try await wait(24) { !updates.isEmpty }
+            precondition(updates == [AvailableAppUpdate(version: "1.3.1", build: "40")])
+            try await Task.sleep(for: .milliseconds(350))
+            precondition(app?.isActive == wasActive && app?.keyWindow === keyWindow)
+            precondition(app?.modalWindow == nil && app?.windows.filter { $0.isVisible }.count == visibleWindows)
+        case "upgrade-queued":
+            let coordination = URL(fileURLWithPath: CommandLine.arguments[2]).deletingLastPathComponent()
+            let started = coordination.appendingPathComponent("queue-started")
+            let release = coordination.appendingPathComponent("queue-release")
+            try await wait(20) { FileManager.default.fileExists(atPath: started.path) }
+            precondition(FileManager.default.fileExists(atPath: started.path))
+            precondition(updates.isEmpty && driver.events.isEmpty)
+            try updater.checkForUpdates()
+            try updater.checkForUpdates()
+            try await Task.sleep(for: .milliseconds(350))
+            precondition(driver.events.isEmpty && !updater.canCheckForUpdates)
+            try Data().write(to: release)
+            try await wait(15) { driver.events.contains("finished") && updater.canCheckForUpdates }
+            precondition(updates == [AvailableAppUpdate(version: "1.3", build: "39")], "\(updates)")
+            precondition(driver.events.filter { $0 == "manual" }.count == 1 && driver.events.contains("found:39:1"), "\(driver.events)")
         case "new", "running", "download", "higher":
             if scenario == "running" {
                 try await Task.sleep(for: .seconds(1))

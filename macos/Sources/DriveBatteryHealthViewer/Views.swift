@@ -2017,11 +2017,15 @@ struct ChangelogRelease: Identifiable {
 
     static func localized(for language: AppLanguage) -> [ChangelogRelease] {
         [ChangelogRelease(version: applicationVersion, sections: [
+            ChangelogSection(kind: .feature, items: [L10n.text("release13AutomaticUpdates", language)]),
+            ChangelogSection(kind: .performance, items: [
+                L10n.text("release13Performance", language),
+                L10n.text("release13ComponentRefresh", language)
+            ]),
             ChangelogSection(kind: .improvement, items: [
-                L10n.text("release13AutomaticUpdates", language),
+                L10n.text("release13UpdateReminder", language),
                 L10n.text("release13UnconfirmedCharge", language)
             ]),
-            ChangelogSection(kind: .performance, items: [L10n.text("release13Performance", language)]),
             ChangelogSection(kind: .fix, items: [
                 L10n.text("release13ChargeEvidence", language),
                 L10n.text("release13PowerUIStatus", language),

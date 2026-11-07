@@ -63,7 +63,7 @@ final class InAppUpdater: NSObject, AutomaticallyCheckingForUpdates, SPUUpdaterD
         try updater.start()
         started = true
         observation = updater.observe(\.canCheckForUpdates, options: [.new]) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.availabilityChanged?(self?.canCheckForUpdates ?? true) }
+            MainActor.assumeIsolated { self?.scheduleManualCheckIfReady() }
         }
     }
 
@@ -99,8 +99,12 @@ final class InAppUpdater: NSObject, AutomaticallyCheckingForUpdates, SPUUpdaterD
                 scheduledResult?(nil)
             }
         }
-        // Sparkle completes its own cycle first. Coalesce any clicks made during
-        // a background check into one user-initiated check on the next turn.
+        scheduleManualCheckIfReady()
+    }
+
+    private func scheduleManualCheckIfReady() {
+        // Sparkle can become available without a cycle-completion callback.
+        // Let the current cycle unwind before consuming the one pending request.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if self.manualCheckQueued, !self.updater.sessionInProgress, self.updater.canCheckForUpdates {

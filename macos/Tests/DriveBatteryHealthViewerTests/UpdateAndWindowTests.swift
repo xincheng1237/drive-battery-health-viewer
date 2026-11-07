@@ -16,7 +16,7 @@ struct UpdateAndWindowTests {
         let data = try Data(contentsOf: package.appendingPathComponent("Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(info["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(info["CFBundleVersion"] as? String == "38")
+        #expect(info["CFBundleVersion"] as? String == "39")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
@@ -85,22 +85,23 @@ struct UpdateAndWindowTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         defaults.set(folder.appendingPathComponent("history").path, forKey: "historyDirectory")
         let logger = UpdateTestLogger()
-        func model(_ build: String, _ updater: UpdateTestUpdater) -> AppModel {
+        func model(_ version: String, _ build: String, _ updater: UpdateTestUpdater) -> AppModel {
             let manager = ChargeProtectionManager(defaults: defaults, logger: logger,
                                                   configurationDirectory: folder.appendingPathComponent("charge"),
                                                   statusURL: folder.appendingPathComponent("helper.json"))
-            return AppModel(defaults: defaults, updater: updater, currentAppVersion: "1.2.1",
+            return AppModel(defaults: defaults, updater: updater, currentAppVersion: version,
                             currentAppBuild: build, diagnosticLogger: logger, chargeProtection: manager)
         }
-        let old = model("36", UpdateTestUpdater())
+        let old = model("1.2", "35", UpdateTestUpdater())
         old.stopChargeProtectionMonitoring()
         let mock = UpdateTestUpdater()
-        let first = model("37", mock)
+        let first = model("1.3", "39", mock)
         defer { first.stopChargeProtectionMonitoring() }
         first.destination = .history
         first.startAutomaticUpdateChecks()
         #expect(mock.starts == 1)
-        let next = AvailableAppUpdate(version: "1.2.1", build: "38")
+        #expect(first.showsVersionUpdatePrompt)
+        let next = AvailableAppUpdate(version: "1.3.1", build: "40")
         mock.scheduledResult?(next)
         #expect(first.availableAppUpdate == next)
         #expect(first.overviewAvailableAppUpdate == nil)
@@ -112,12 +113,14 @@ struct UpdateAndWindowTests {
         #expect(first.availableAppUpdate == nil)
 
         let afterRestart = UpdateTestUpdater()
-        let second = model("37", afterRestart)
+        let second = model("1.3", "39", afterRestart)
         defer { second.stopChargeProtectionMonitoring() }
         second.startAutomaticUpdateChecks()
         afterRestart.scheduledResult?(next)
         #expect(second.overviewAvailableAppUpdate == nil)
-        let later = AvailableAppUpdate(version: "1.2.1", build: "39")
+        afterRestart.scheduledResult?(AvailableAppUpdate(version: "1.3", build: "39"))
+        #expect(second.overviewAvailableAppUpdate == nil)
+        let later = AvailableAppUpdate(version: "1.3.1", build: "41")
         afterRestart.scheduledResult?(later)
         #expect(second.overviewAvailableAppUpdate == later)
         second.checkForUpdates()
@@ -160,8 +163,8 @@ struct UpdateAndWindowTests {
         let latest = try #require(releases.first)
         #expect(latest.version == "1.3")
         #expect(!releases.contains { $0.version == "1.2.1" })
-        #expect(latest.sections.map(\.kind) == [.improvement, .performance, .fix])
-        #expect(latest.sections.map { $0.items.count } == [2, 1, 3])
+        #expect(latest.sections.map(\.kind) == [.feature, .performance, .improvement, .fix])
+        #expect(latest.sections.map { $0.items.count } == [1, 2, 2, 3])
         #expect(ChangelogItemKind.performance.title(for: language) != "changelogPerformance")
         #expect(NSImage(systemSymbolName: ChangelogItemKind.performance.symbol, accessibilityDescription: nil) != nil)
     }
