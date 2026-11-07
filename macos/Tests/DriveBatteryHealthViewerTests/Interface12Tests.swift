@@ -387,7 +387,7 @@ struct Interface12Tests {
         let changelog = try #require(window.attachedSheet)
         try capture(changelog, "min-changelog-light-standard-1.3")
         let changelogContent = try #require(changelog.contentView)
-        for fraction in [0.25, 0.34, 0.42] {
+        for fraction in [0.13, 0.16, 0.19, 0.22] {
             try scroll(changelogContent, fraction: fraction)
             try await Task.sleep(for: .milliseconds(130))
             try capture(changelog, "min-changelog-light-scroll-\(Int(fraction * 100))")
