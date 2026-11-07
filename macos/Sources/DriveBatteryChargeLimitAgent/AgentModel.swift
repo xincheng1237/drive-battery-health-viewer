@@ -205,9 +205,6 @@ enum ChargeLimitAgentPresentationState: Equatable {
         now: Date = Date()
     ) -> Self {
         let status = status.flatMap { $0.isFresh(at: now) ? $0 : nil }
-        if configuration.enabled, configuration.fixedLimit != .oneHundred, status == nil {
-            return .protectionUnconfirmed
-        }
         if let error = status?.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
            !error.isEmpty {
             return .attentionRequired
@@ -222,7 +219,11 @@ enum ChargeLimitAgentPresentationState: Equatable {
         case .awaitingConfirmation?: return .systemFullChargeAwaitingConfirmation
         default: break
         }
-        if configuration.temporaryFullCharge, status != nil { return .temporaryFullCharge }
+        if configuration.enabled, configuration.fixedLimit != .oneHundred,
+           !hasCurrentChargeProtectionReport(configuration: configuration, status: status, now: now) {
+            return .protectionUnconfirmed
+        }
+        if configuration.temporaryFullCharge, status?.temporaryFullCharge == true { return .temporaryFullCharge }
         if shouldPresentChargeLimitStatusItem(configuration: configuration, status: status, now: now) {
             return .limitReached
         }

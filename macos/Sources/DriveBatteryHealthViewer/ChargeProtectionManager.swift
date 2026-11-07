@@ -219,7 +219,8 @@ final class ChargeProtectionManager: ObservableObject {
 
     var showsHelperStatusUnconfirmed: Bool {
         availability.permitsSoftwareControls && configuration.enabled &&
-            configuration.fixedLimit != .oneHundred && !isBusy && status == nil
+            configuration.fixedLimit != .oneHundred && !isBusy && status?.lastError == nil &&
+            !hasCurrentChargeProtectionReport(configuration: configuration, status: status)
     }
 
     func startMonitoring() {

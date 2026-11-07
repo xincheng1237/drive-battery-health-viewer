@@ -14,7 +14,7 @@ struct SystemChargeOverrideTests {
             fixedLimit: .eighty, temporaryFullCharge: false,
             configurationUpdatedAt: configuration.updatedAt,
             holding: false, adapterConnected: true, batteryPercentage: 80,
-            controlMethod: .powerUIOptimized80, systemChargeOverride: .chargingToFull
+            controlMethod: .powerUIOptimized80, systemChargeOverride: .chargingToFull, systemCalibration: .inactive
         )
         return (configuration, status)
     }

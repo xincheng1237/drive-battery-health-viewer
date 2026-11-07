@@ -1940,10 +1940,11 @@ struct CoreTests {
             enabled: true,
             fixedLimit: .eighty,
             temporaryFullCharge: false,
+            configurationUpdatedAt: configuration.updatedAt,
             holding: true,
             adapterConnected: true,
             batteryPercentage: 80,
-            controlMethod: .powerUIOptimized80
+            controlMethod: .powerUIOptimized80, systemChargeOverride: .inactive, systemCalibration: .inactive
         )
         #expect(
             ChargeLimitAgentPresentationState.resolve(
@@ -2008,10 +2009,13 @@ struct CoreTests {
         )
         var temporaryFull = configuration
         temporaryFull.temporaryFullCharge = true
+        var fullReport = holding
+        fullReport.temporaryFullCharge = true
+        fullReport.holding = false
         #expect(
             ChargeLimitAgentPresentationState.resolve(
                 configuration: temporaryFull,
-                status: holding
+                status: fullReport
             ) == .temporaryFullCharge
         )
         var failed = holding

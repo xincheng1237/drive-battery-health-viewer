@@ -473,15 +473,40 @@ private func matchingSystemControlStatus(
     now: Date,
     maximumStatusAge: TimeInterval
 ) -> ChargeProtectionStatus? {
-    guard configuration.enabled, configuration.fixedLimit == .eighty,
+    guard configuration.fixedLimit == .eighty,
+          let status = matchingAppliedChargeStatus(configuration: configuration, status: status,
+                                                  now: now, maximumStatusAge: maximumStatusAge),
+          status.controlMethod == .powerUIOptimized80 else { return nil }
+    return status
+}
+
+/// Match the applied revision, accounting for the on-disk ISO8601 precision.
+public func matchingAppliedChargeStatus(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date(),
+    maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
+) -> ChargeProtectionStatus? {
+    guard configuration.isValid, configuration.enabled,
           let status, status.installed, status.enabled,
-          status.controlMethod == .powerUIOptimized80,
           status.fixedLimit == configuration.fixedLimit,
-          let appliedConfigurationDate = status.configurationUpdatedAt,
-          // JSON's ISO8601 configuration timestamp is rounded to seconds.
-          abs(appliedConfigurationDate.timeIntervalSince(configuration.updatedAt)) < 1,
+          let appliedAt = status.configurationUpdatedAt, appliedAt <= now,
+          abs(appliedAt.timeIntervalSince(configuration.updatedAt)) < 1,
           status.isFresh(at: now, maximumAge: maximumStatusAge) else { return nil }
     return status
+}
+
+public func hasCurrentChargeProtectionReport(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> Bool {
+    guard let status = matchingAppliedChargeStatus(configuration: configuration, status: status, now: now) else { return false }
+    guard status.controlMethod == .powerUIOptimized80 else { return true }
+    // A known pause is actionable even if the other signal is unknown.
+    return status.systemCalibration?.defersChargeControl == true ||
+        status.systemChargeOverride?.defersChargeControl == true ||
+        (status.systemCalibration == .inactive && status.systemChargeOverride == .inactive)
 }
 
 public func shouldPresentChargeLimitStatusItem(
@@ -490,20 +515,21 @@ public func shouldPresentChargeLimitStatusItem(
     now: Date = Date(),
     maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
 ) -> Bool {
-    guard configuration.enabled, !configuration.temporaryFullCharge,
-          resolvedSystemCalibration(configuration: configuration, status: status, now: now,
-                                    maximumStatusAge: maximumStatusAge)?.defersChargeControl != true,
-          resolvedSystemChargeOverride(configuration: configuration, status: status, now: now,
-                                       maximumStatusAge: maximumStatusAge)?.defersChargeControl != true,
-          let status,
-          status.installed,
-          status.enabled,
-          status.fixedLimit == configuration.fixedLimit,
-          status.holding,
-          status.adapterConnected == true,
-          status.isFresh(at: now, maximumAge: maximumStatusAge),
-          let batteryPercentage = status.batteryPercentage else { return false }
-    return batteryPercentage >= configuration.fixedLimit.rawValue
+    guard configuration.fixedLimit != .oneHundred, !configuration.temporaryFullCharge,
+          configuration.managementMode == .softwareAvailable || configuration.managementMode == .softwareManaged,
+          let status = matchingAppliedChargeStatus(configuration: configuration, status: status,
+                                                  now: now, maximumStatusAge: maximumStatusAge),
+          !status.temporaryFullCharge, status.lastError == nil, status.controlMethod != .unavailable,
+          status.holding, status.adapterConnected == true,
+          let percentage = status.batteryPercentage,
+          (configuration.fixedLimit.rawValue...100).contains(percentage),
+          status.systemCalibration?.defersChargeControl != true,
+          status.systemChargeOverride?.defersChargeControl != true else { return false }
+    if status.controlMethod == .powerUIOptimized80 {
+        return configuration.fixedLimit == .eighty && status.systemCalibration == .inactive &&
+            status.systemChargeOverride == .inactive
+    }
+    return true
 }
 
 public func shouldPresentCalibrationStatusItem(

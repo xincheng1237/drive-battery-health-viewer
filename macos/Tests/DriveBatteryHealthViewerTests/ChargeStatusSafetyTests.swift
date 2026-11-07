@@ -55,6 +55,7 @@ struct ChargeStatusSafetyTests {
         let now = Date(timeIntervalSince1970: 2_000_000_000)
         let config = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty, updatedAt: now)
         var status = sampleChargeStatus(at: now.addingTimeInterval(offset))
+        status.configurationUpdatedAt = now
         let expected = offset <= 0 && offset > -20
         #expect(shouldPresentChargeLimitStatusItem(configuration: config, status: status, now: now) == expected)
         #expect(helperReportsConnectedAdapter(configuration: config, status: status, now: now) == expected)
@@ -71,7 +72,7 @@ struct ChargeStatusSafetyTests {
         let fixture = try ChargeStatusFixture()
         defer { fixture.cleanUp() }
         let manager = fixture.manager()
-        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let now = Date()
         var stale = sampleChargeStatus(at: now.addingTimeInterval(-20))
         stale.configurationUpdatedAt = now.addingTimeInterval(-30)
         stale.temporaryFullCharge = true
@@ -89,7 +90,9 @@ struct ChargeStatusSafetyTests {
         #expect(!manager.shouldShowLimitReachedStatusItem)
         #expect(!manager.hasHelperAdapterObservation)
 
-        try fixture.write(sampleChargeStatus(at: now))
+        var current = sampleChargeStatus(at: now)
+        current.configurationUpdatedAt = manager.configuration.updatedAt
+        try fixture.write(current)
         manager.reloadStatus(now: now)
         #expect(manager.status?.timestamp == now)
         #expect(!manager.showsHelperStatusUnconfirmed)
@@ -116,7 +119,9 @@ struct ChargeStatusSafetyTests {
         let fixture = try ChargeStatusFixture()
         defer { fixture.cleanUp() }
         let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
-        try fixture.write(sampleChargeStatus(at: now))
+        var current = sampleChargeStatus(at: now)
+        current.configurationUpdatedAt = fixture.configurationDate
+        try fixture.write(current)
         let agent = ChargeLimitAgentModel(configurationDirectory: fixture.directory, statusURL: fixture.statusURL,
                                           operatingSystemVersion: .init(majorVersion: 15, minorVersion: 7, patchVersion: 0))
         agent.reload(now: now)
@@ -133,7 +138,8 @@ struct ChargeStatusSafetyTests {
             now: now.addingTimeInterval(20)
         ) == .protectionUnconfirmed)
 
-        try fixture.write(sampleChargeStatus(at: now.addingTimeInterval(20)))
+        current.timestamp = now.addingTimeInterval(20)
+        try fixture.write(current)
         agent.reload(now: now.addingTimeInterval(20))
         #expect(agent.status?.timestamp == now.addingTimeInterval(20))
         #expect(ChargeLimitAgentPresentationState.resolve(
@@ -209,7 +215,7 @@ private struct SyntheticHardware: HardwareScanning {
 
 private func sampleChargeStatus(at date: Date) -> ChargeProtectionStatus {
     ChargeProtectionStatus(helperVersion: "fixture", timestamp: date, installed: true, enabled: true,
-                           fixedLimit: .eighty, temporaryFullCharge: false, holding: true,
+                           fixedLimit: .eighty, temporaryFullCharge: false, configurationUpdatedAt: date, holding: true,
                            adapterConnected: true, batteryPercentage: 82, controlMethod: .chieFallback)
 }
 
@@ -218,6 +224,7 @@ private struct ChargeStatusFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DBHV-charge-tests-\(UUID())")
     let suite = "DBHV-charge-tests-\(UUID())"
     let defaults: UserDefaults
+    let configurationDate = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
     var statusURL: URL { directory.appendingPathComponent("status.json") }
 
     init() throws {
@@ -227,7 +234,7 @@ private struct ChargeStatusFixture {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        let config = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty)
+        let config = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty, updatedAt: configurationDate)
         try encoder.encode(config).write(to: directory.appendingPathComponent("configuration.json"))
         try write(sampleChargeStatus(at: Date()))
     }
