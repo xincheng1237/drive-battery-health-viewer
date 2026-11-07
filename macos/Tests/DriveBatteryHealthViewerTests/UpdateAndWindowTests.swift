@@ -15,8 +15,8 @@ struct UpdateAndWindowTests {
     @Test func updatePolicyRequiresSignedFeedAndArchiveAndExplicitUserAction() throws {
         let data = try Data(contentsOf: package.appendingPathComponent("Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-        #expect(info["CFBundleShortVersionString"] as? String == "1.2")
-        #expect(info["CFBundleVersion"] as? String == "35")
+        #expect(info["CFBundleShortVersionString"] as? String == applicationVersion)
+        #expect(info["CFBundleVersion"] as? String == "36")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
@@ -58,8 +58,9 @@ struct UpdateAndWindowTests {
         for language in ["en", "zh-Hans", "ru", "fr", "de", "ko", "ja"] {
             #expect(descriptions.contains { ($0 as? XMLElement)?.attribute(forName: "xml:lang")?.stringValue == language })
         }
-        let version = try #require(info["CFBundleShortVersionString"] as? String)
-        let build = try #require(info["CFBundleVersion"] as? String)
+        // The public signed feed still points to the published build.
+        let version = "1.2"
+        let build = "35"
         #expect(try document.nodes(forXPath: "/rss/channel/item/sparkle:version").first?.stringValue == build)
         #expect(try document.nodes(forXPath: "/rss/channel/item/sparkle:shortVersionString").first?.stringValue == version)
         let enclosure = try #require(document.nodes(forXPath: "/rss/channel/item/enclosure").first as? XMLElement)

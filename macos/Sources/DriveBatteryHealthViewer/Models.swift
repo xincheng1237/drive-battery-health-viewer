@@ -1,6 +1,6 @@
 import Foundation
 
-let applicationVersion = "1.2"
+let applicationVersion = "1.2.1"
 
 enum HealthState: String, Codable, Sendable {
     case good
