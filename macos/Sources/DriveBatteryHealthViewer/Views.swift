@@ -741,12 +741,6 @@ struct ChargeProtectionSection: View {
             Divider()
             Label(model.t("chargeProtection"), systemImage: "battery.100percent.bolt")
                 .interfaceFont(.subheadline, weight: .semibold)
-            if manager.availability == .unsupportedHardware && !manager.isSectionExpanded {
-                Text(model.t("intelChargingManagedSummary"))
-                    .interfaceFont(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if manager.isSectionExpanded {
                 Group {
                     switch manager.availability {
