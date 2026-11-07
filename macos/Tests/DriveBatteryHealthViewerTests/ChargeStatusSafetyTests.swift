@@ -1,4 +1,5 @@
 import ChargeProtectionCore
+import Combine
 import Foundation
 import Testing
 @testable import DriveBatteryHealthViewer
@@ -113,6 +114,39 @@ struct ChargeStatusSafetyTests {
         manager.disable()
         #expect(!manager.configuration.enabled)
         #expect(!manager.showsHelperStatusUnconfirmed)
+    }
+
+    @Test
+    func identicalHelperPollsPublishOnlyChangedValues() throws {
+        let fixture = try ChargeStatusFixture()
+        defer { fixture.cleanUp() }
+        let manager = fixture.manager()
+        let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+        var report = sampleChargeStatus(at: now)
+        report.configurationRevision = manager.configuration.revision
+        try fixture.write(report)
+        manager.reloadStatus(now: now)
+        var emissions = 0
+        let subscription = manager.objectWillChange.sink { emissions += 1 }
+        defer { subscription.cancel() }
+        for _ in 0..<1000 { manager.reloadStatus(now: now) }
+        print("IDENTICAL_HELPER_POLLS=1000 MANAGER_PUBLICATIONS=\(emissions)")
+        #expect(emissions == 0)
+        #expect(manager.status?.timestamp == now)
+        let beforeChange = emissions
+        report.holding = false
+        try fixture.write(report)
+        manager.reloadStatus(now: now)
+        #expect(emissions > beforeChange)
+        #expect(manager.status?.holding == false)
+        report.timestamp = now.addingTimeInterval(1)
+        try fixture.write(report)
+        manager.reloadStatus(now: now.addingTimeInterval(1))
+        #expect(manager.status?.timestamp == report.timestamp)
+        manager.reloadStatus(now: now.addingTimeInterval(20))
+        #expect(manager.status != nil)
+        manager.reloadStatus(now: now.addingTimeInterval(21))
+        #expect(manager.status == nil)
     }
 
     @Test

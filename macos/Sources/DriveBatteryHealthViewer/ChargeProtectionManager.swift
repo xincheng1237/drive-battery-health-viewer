@@ -694,9 +694,11 @@ final class ChargeProtectionManager: ObservableObject {
     }
 
     func reloadStatus(now: Date = Date()) {
-        isInstalled = fileManager.fileExists(atPath: Self.launchDaemonPath) &&
+        let installed = fileManager.fileExists(atPath: Self.launchDaemonPath) &&
             fileManager.fileExists(atPath: Self.helperExecutablePath)
-        hasInstalledComponents = rootComponentsPresent || userAgentComponentsPresent
+        if isInstalled != installed { isInstalled = installed }
+        let componentsPresent = rootComponentsPresent || userAgentComponentsPresent
+        if hasInstalledComponents != componentsPresent { hasInstalledComponents = componentsPresent }
         // The independent per-user menu-bar agent can change the limit while
         // the main application is open. Adopt only a newer, validated file so
         // both interfaces remain in sync without either process overwriting a
@@ -731,7 +733,7 @@ final class ChargeProtectionManager: ObservableObject {
         if let data = try? Data(contentsOf: helperStatusURL),
            let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data),
            decoded.isFresh(at: now) {
-            status = decoded
+            if status != decoded { status = decoded }
             if configuration.revision == nil, decoded.configurationRevision == nil,
                let helperConfigurationDate = decoded.configurationUpdatedAt,
                helperConfigurationDate <= now,
@@ -741,7 +743,7 @@ final class ChargeProtectionManager: ObservableObject {
                 configuration.updatedAt = helperConfigurationDate
                 try? persistConfiguration()
             }
-        } else {
+        } else if status != nil {
             status = nil
         }
     }
