@@ -70,6 +70,7 @@ struct ChargeLimitAgentPopoverView: View {
     private var presentationSystemImage: String {
         switch model.presentationState {
         case .protectionActive: return "battery.75percent"
+        case .protectionUnconfirmed: return "questionmark.circle"
         case .limitReached: return "battery.100percent"
         case .temporaryFullCharge, .systemTemporaryFullCharge: return "bolt.fill"
         case .systemFullChargeAwaitingConfirmation: return "clock"

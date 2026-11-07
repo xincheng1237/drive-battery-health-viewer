@@ -32,6 +32,7 @@ enum AgentL10n {
         .english: [
             "reached": "Charge limit reached (%d%%)",
             "active": "Charge protection enabled (%d%% limit)",
+            "unconfirmed": "Charge protection status unconfirmed",
             "temporaryFullActive": "Charging to full this time",
             "systemFullActive": "Full charge temporarily allowed by macOS",
             "calibrationActive": "System battery calibration",
@@ -53,6 +54,7 @@ enum AgentL10n {
         .simplifiedChinese: [
             "reached": "已到达设定电量（%d%%）",
             "active": "充电保护已启用（上限 %d%%）",
+            "unconfirmed": "充电保护状态待确认",
             "temporaryFullActive": "本次正在充满",
             "systemFullActive": "系统临时允许充满",
             "calibrationActive": "系统正在校准电池",
@@ -74,6 +76,7 @@ enum AgentL10n {
         .russian: [
             "reached": "Достигнут предел заряда (%d%%)",
             "active": "Защита зарядки включена (предел %d%%)",
+            "unconfirmed": "Состояние защиты зарядки не подтверждено",
             "temporaryFullActive": "Выполняется разовая полная зарядка",
             "systemFullActive": "macOS временно разрешает полную зарядку",
             "calibrationActive": "Системная калибровка аккумулятора",
@@ -93,6 +96,7 @@ enum AgentL10n {
         .french: [
             "reached": "Limite de charge atteinte (%d%%)",
             "active": "Protection de charge activée (limite de %d %%)",
+            "unconfirmed": "État de la protection de charge à confirmer",
             "temporaryFullActive": "Charge complète en cours pour cette fois",
             "systemFullActive": "Charge complète temporairement autorisée",
             "calibrationActive": "Étalonnage système de la batterie",
@@ -112,6 +116,7 @@ enum AgentL10n {
         .german: [
             "reached": "Ladegrenze erreicht (%d%%)",
             "active": "Ladeschutz aktiviert (Grenze: %d %%)",
+            "unconfirmed": "Ladeschutzstatus nicht bestätigt",
             "temporaryFullActive": "Dieses Mal wird vollständig geladen",
             "systemFullActive": "Vollladung durch macOS vorübergehend erlaubt",
             "calibrationActive": "System-Batteriekalibrierung",
@@ -131,6 +136,7 @@ enum AgentL10n {
         .korean: [
             "reached": "설정한 충전량에 도달함(%d%%)",
             "active": "충전 보호가 켜짐(한도 %d%%)",
+            "unconfirmed": "충전 보호 상태 확인 대기 중",
             "temporaryFullActive": "이번에는 완전 충전 중",
             "systemFullActive": "시스템이 일시적으로 완전 충전 허용",
             "calibrationActive": "시스템 배터리 보정 중",
@@ -150,6 +156,7 @@ enum AgentL10n {
         .japanese: [
             "reached": "設定した充電量に到達（%d%%）",
             "active": "充電保護が有効（上限 %d%%）",
+            "unconfirmed": "充電保護の状態は未確認です",
             "temporaryFullActive": "今回だけ満充電中",
             "systemFullActive": "システムが一時的にフル充電を許可",
             "calibrationActive": "システムによるバッテリー校正中",
@@ -183,6 +190,7 @@ enum AgentL10n {
 
 enum ChargeLimitAgentPresentationState: Equatable {
     case protectionActive
+    case protectionUnconfirmed
     case limitReached
     case temporaryFullCharge
     case systemTemporaryFullCharge
@@ -193,24 +201,29 @@ enum ChargeLimitAgentPresentationState: Equatable {
 
     static func resolve(
         configuration: ChargeProtectionConfiguration,
-        status: ChargeProtectionStatus?
+        status: ChargeProtectionStatus?,
+        now: Date = Date()
     ) -> Self {
+        let status = status.flatMap { $0.isFresh(at: now) ? $0 : nil }
+        if configuration.enabled, configuration.fixedLimit != .oneHundred, status == nil {
+            return .protectionUnconfirmed
+        }
         if let error = status?.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
            !error.isEmpty {
             return .attentionRequired
         }
-        switch resolvedSystemCalibration(configuration: configuration, status: status) {
+        switch resolvedSystemCalibration(configuration: configuration, status: status, now: now) {
         case .calibrating?: return .systemCalibration
         case .awaitingConfirmation?: return .systemCalibrationAwaitingConfirmation
         default: break
         }
-        switch resolvedSystemChargeOverride(configuration: configuration, status: status) {
+        switch resolvedSystemChargeOverride(configuration: configuration, status: status, now: now) {
         case .chargingToFull?: return .systemTemporaryFullCharge
         case .awaitingConfirmation?: return .systemFullChargeAwaitingConfirmation
         default: break
         }
         if configuration.temporaryFullCharge, status != nil { return .temporaryFullCharge }
-        if shouldPresentChargeLimitStatusItem(configuration: configuration, status: status) {
+        if shouldPresentChargeLimitStatusItem(configuration: configuration, status: status, now: now) {
             return .limitReached
         }
         return .protectionActive
@@ -328,6 +341,8 @@ final class ChargeLimitAgentModel: ObservableObject {
         switch presentationState {
         case .protectionActive:
             return AgentL10n.active(configuration.fixedLimit.rawValue, language: language)
+        case .protectionUnconfirmed:
+            return AgentL10n.text("unconfirmed", language: language)
         case .limitReached:
             return AgentL10n.reached(configuration.fixedLimit.rawValue, language: language)
         case .temporaryFullCharge:

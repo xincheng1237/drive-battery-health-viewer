@@ -126,11 +126,20 @@ struct ChargeStatusSafetyTests {
         agent.reload(now: now.addingTimeInterval(20))
         #expect(agent.status == nil)
         #expect(!agent.shouldShowStatusItem)
-        #expect(agent.presentationState == .protectionActive)
+        #expect(agent.presentationState == .protectionUnconfirmed)
+        #expect(agent.statusItemLabel == AgentL10n.text("unconfirmed", language: agent.language))
+        #expect(ChargeLimitAgentPresentationState.resolve(
+            configuration: agent.configuration, status: sampleChargeStatus(at: now),
+            now: now.addingTimeInterval(20)
+        ) == .protectionUnconfirmed)
 
         try fixture.write(sampleChargeStatus(at: now.addingTimeInterval(20)))
         agent.reload(now: now.addingTimeInterval(20))
         #expect(agent.status?.timestamp == now.addingTimeInterval(20))
+        #expect(ChargeLimitAgentPresentationState.resolve(
+            configuration: agent.configuration, status: agent.status,
+            now: now.addingTimeInterval(20)
+        ) == .limitReached)
     }
 
     @Test

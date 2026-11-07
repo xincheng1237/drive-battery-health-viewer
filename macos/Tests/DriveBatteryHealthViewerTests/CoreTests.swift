@@ -1932,7 +1932,7 @@ struct CoreTests {
             ChargeLimitAgentPresentationState.resolve(
                 configuration: configuration,
                 status: nil
-            ) == .protectionActive
+            ) == .protectionUnconfirmed
         )
         let holding = ChargeProtectionStatus(
             helperVersion: "test",
