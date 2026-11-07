@@ -1562,7 +1562,7 @@ struct CoreTests {
     }
 
     @Test
-    func testFreshHelperAdapterReadingCorrectsCHIEPublicBatteryState() {
+    func testFreshHelperAdapterReadingIsAnIndependentObservation() {
         let now = Date(timeIntervalSince1970: 2_000_000_000)
         let configuration = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty)
         let fresh = ChargeProtectionStatus(
@@ -1577,8 +1577,7 @@ struct CoreTests {
             batteryPercentage: 83,
             controlMethod: .chieFallback
         )
-        #expect(resolvedExternalPowerConnection(
-            systemReportedConnection: false,
+        #expect(helperReportsConnectedAdapter(
             configuration: configuration,
             status: fresh,
             now: now
@@ -1586,8 +1585,7 @@ struct CoreTests {
 
         var heartbeatFresh = fresh
         heartbeatFresh.timestamp = now.addingTimeInterval(-15)
-        #expect(resolvedExternalPowerConnection(
-            systemReportedConnection: false,
+        #expect(helperReportsConnectedAdapter(
             configuration: configuration,
             status: heartbeatFresh,
             now: now
@@ -1595,8 +1593,7 @@ struct CoreTests {
 
         var stale = fresh
         stale.timestamp = now.addingTimeInterval(-21)
-        #expect(!resolvedExternalPowerConnection(
-            systemReportedConnection: false,
+        #expect(!helperReportsConnectedAdapter(
             configuration: configuration,
             status: stale,
             now: now
@@ -1604,8 +1601,7 @@ struct CoreTests {
 
         var disabled = configuration
         disabled.enabled = false
-        #expect(!resolvedExternalPowerConnection(
-            systemReportedConnection: false,
+        #expect(!helperReportsConnectedAdapter(
             configuration: disabled,
             status: fresh,
             now: now

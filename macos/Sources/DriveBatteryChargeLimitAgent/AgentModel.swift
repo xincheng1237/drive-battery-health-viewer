@@ -209,7 +209,7 @@ enum ChargeLimitAgentPresentationState: Equatable {
         case .awaitingConfirmation?: return .systemFullChargeAwaitingConfirmation
         default: break
         }
-        if configuration.temporaryFullCharge { return .temporaryFullCharge }
+        if configuration.temporaryFullCharge, status != nil { return .temporaryFullCharge }
         if shouldPresentChargeLimitStatusItem(configuration: configuration, status: status) {
             return .limitReached
         }
@@ -377,7 +377,7 @@ final class ChargeLimitAgentModel: ObservableObject {
         updateConfiguration { $0.showMenuBarStatus = visible }
     }
 
-    private func reload() {
+    func reload(now: Date = Date()) {
         let currentLanguage = AgentLanguage.current()
         if lastLanguagePreference != currentLanguage {
             language = currentLanguage
@@ -401,7 +401,8 @@ final class ChargeLimitAgentModel: ObservableObject {
             }
         }
         if let data = try? Data(contentsOf: helperStatusURL),
-           let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data) {
+           let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data),
+           decoded.isFresh(at: now) {
             if status != decoded { status = decoded }
         } else {
             if status != nil { status = nil }

@@ -5,6 +5,24 @@ extension L10n {
         let languages: [AppLanguage] = [.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese]
         let rows: [String: [String]] = [
             "chargeProtectionHoldingNotice": ["Power is connected. The charge limit is active, so charging is paused.", "已连接电源，充电上限保护正在生效，当前暂停充电。", "Питание подключено. Зарядка приостановлена действующим ограничением заряда.", "Alimentation branchée. La limite de charge est active et suspend la recharge.", "Netzteil angeschlossen. Die aktive Ladegrenze pausiert das Laden.", "전원이 연결되어 있습니다. 충전 상한 보호가 작동하여 충전이 일시 중지되었습니다.", "電源に接続されています。充電上限保護が働いているため、充電を一時停止しています。"],
+            "helperAdapterObservation": [
+                "The charge helper detects a power adapter.",
+                "充电辅助程序检测到电源适配器。",
+                "Помощник зарядки обнаружил адаптер питания.",
+                "L’assistant de charge détecte un adaptateur secteur.",
+                "Das Ladehilfsprogramm erkennt ein Netzteil.",
+                "충전 도우미가 전원 어댑터를 감지했습니다.",
+                "充電ヘルパーが電源アダプタを検出しています。"
+            ],
+            "helperStatusUnconfirmed": [
+                "Waiting for a current report from the charge helper. Charge protection is unconfirmed.",
+                "暂未收到充电辅助程序的有效状态，无法确认充电保护是否生效。",
+                "Ожидаются актуальные данные от помощника зарядки. Работа защиты пока не подтверждена.",
+                "En attente d’un état récent de l’assistant de charge. La protection reste à confirmer.",
+                "Aktueller Status des Ladehilfsprogramms ausstehend. Der Ladeschutz ist noch nicht bestätigt.",
+                "충전 도우미의 최신 상태를 기다리고 있습니다. 충전 보호가 작동 중인지 아직 확인할 수 없습니다.",
+                "充電ヘルパーからの最新の報告を待っています。充電保護の状態は未確認です。"
+            ],
             "privacyNotice": ["Hide serial numbers in the interface, history, and exported reports.", "在界面、历史及导出报告中隐藏序列号。", "Скрывать серийные номера в интерфейсе, истории и экспортированных отчётах.", "Masque les numéros de série dans l’interface, l’historique et les rapports exportés.", "Seriennummern in Oberfläche, Verlauf und exportierten Berichten ausblenden.", "화면, 기록 및 내보낸 보고서에서 일련번호를 숨깁니다.", "画面・履歴・書き出したレポートのシリアル番号を隠します。"],
             "displaySize": ["Display size", "显示大小", "Размер интерфейса", "Taille d’affichage", "Darstellungsgröße", "화면 표시 크기", "表示サイズ"],
             "displaySize_small": ["Small", "小", "Мелкий", "Petite", "Klein", "작게", "小"],

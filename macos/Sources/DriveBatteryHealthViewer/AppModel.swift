@@ -87,7 +87,7 @@ final class AppModel: ObservableObject {
     }
 
     private let defaults: UserDefaults
-    private let scanner: HardwareScanner
+    private let scanner: any HardwareScanning
     private var updater: (any ApplicationUpdating)?
     private let currentAppVersion: String
     let chargeProtection: ChargeProtectionManager
@@ -101,7 +101,7 @@ final class AppModel: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
-        scanner: HardwareScanner = HardwareScanner(),
+        scanner: any HardwareScanning = HardwareScanner(),
         updater: (any ApplicationUpdating)? = nil,
         currentAppVersion: String? = nil,
         currentAppBuild: String? = nil,
@@ -214,12 +214,7 @@ final class AppModel: ObservableObject {
                 }
                 return
             }
-            var merged = snapshot.preservingUnavailableValues(from: self.currentSnapshot)
-            if self.chargeProtection.confirmsExternalPowerConnection {
-                for index in merged.batteries.indices {
-                    merged.batteries[index].externalConnected = true
-                }
-            }
+            let merged = snapshot.preservingUnavailableValues(from: self.currentSnapshot)
             self.currentSnapshot = merged
             self.isScanning = false
             self.refreshTask = nil
@@ -253,15 +248,9 @@ final class AppModel: ObservableObject {
                     let battery = await self.scanner.readLiveBatteryState()
                     guard !Task.isCancelled, self.liveHardwareGeneration == generation else { return }
                     if let battery, let latestSnapshot = self.currentSnapshot {
-                        var updated = latestSnapshot.updatingLiveHardwareState(
+                        self.currentSnapshot = latestSnapshot.updatingLiveHardwareState(
                             LiveHardwareState(battery: battery, driveTemperatures: [:])
                         )
-                        if self.chargeProtection.confirmsExternalPowerConnection {
-                            for index in updated.batteries.indices {
-                                updated.batteries[index].externalConnected = true
-                            }
-                        }
-                        self.currentSnapshot = updated
                     }
                     do {
                         try await Task.sleep(nanoseconds: 2_000_000_000)

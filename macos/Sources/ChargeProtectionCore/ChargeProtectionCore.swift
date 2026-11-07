@@ -388,6 +388,15 @@ public struct SystemCalibrationTracker {
 }
 
 public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
+    public static let freshnessWindow: TimeInterval = 20
+
+    /// Age zero is valid. The upper limit is exclusive and future reports
+    /// provide no evidence of current state.
+    public func isFresh(at now: Date, maximumAge: TimeInterval = freshnessWindow) -> Bool {
+        let age = now.timeIntervalSince(timestamp)
+        return age >= 0 && age < maximumAge
+    }
+
     public var helperVersion: String
     public var timestamp: Date
     public var installed: Bool
@@ -442,7 +451,7 @@ public func resolvedSystemChargeOverride(
     configuration: ChargeProtectionConfiguration,
     status: ChargeProtectionStatus?,
     now: Date = Date(),
-    maximumStatusAge: TimeInterval = 20
+    maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
 ) -> SystemChargeOverrideState? {
     matchingSystemControlStatus(configuration: configuration, status: status, now: now,
                                 maximumStatusAge: maximumStatusAge)?.systemChargeOverride
@@ -452,7 +461,7 @@ public func resolvedSystemCalibration(
     configuration: ChargeProtectionConfiguration,
     status: ChargeProtectionStatus?,
     now: Date = Date(),
-    maximumStatusAge: TimeInterval = 20
+    maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
 ) -> SystemCalibrationState? {
     matchingSystemControlStatus(configuration: configuration, status: status, now: now,
                                 maximumStatusAge: maximumStatusAge)?.systemCalibration
@@ -471,8 +480,7 @@ private func matchingSystemControlStatus(
           let appliedConfigurationDate = status.configurationUpdatedAt,
           // JSON's ISO8601 configuration timestamp is rounded to seconds.
           abs(appliedConfigurationDate.timeIntervalSince(configuration.updatedAt)) < 1,
-          now.timeIntervalSince(status.timestamp) >= 0,
-          now.timeIntervalSince(status.timestamp) < maximumStatusAge else { return nil }
+          status.isFresh(at: now, maximumAge: maximumStatusAge) else { return nil }
     return status
 }
 
@@ -480,7 +488,7 @@ public func shouldPresentChargeLimitStatusItem(
     configuration: ChargeProtectionConfiguration,
     status: ChargeProtectionStatus?,
     now: Date = Date(),
-    maximumStatusAge: TimeInterval = 20
+    maximumStatusAge: TimeInterval = ChargeProtectionStatus.freshnessWindow
 ) -> Bool {
     guard configuration.enabled, !configuration.temporaryFullCharge,
           resolvedSystemCalibration(configuration: configuration, status: status, now: now,
@@ -493,7 +501,7 @@ public func shouldPresentChargeLimitStatusItem(
           status.fixedLimit == configuration.fixedLimit,
           status.holding,
           status.adapterConnected == true,
-          abs(now.timeIntervalSince(status.timestamp)) < maximumStatusAge,
+          status.isFresh(at: now, maximumAge: maximumStatusAge),
           let batteryPercentage = status.batteryPercentage else { return false }
     return batteryPercentage >= configuration.fixedLimit.rawValue
 }
@@ -507,22 +515,13 @@ public func shouldPresentCalibrationStatusItem(
         resolvedSystemCalibration(configuration: configuration, status: status, now: now)?.defersChargeControl == true
 }
 
-/// Resolves the user-facing adapter state when a CHIE fallback deliberately
-/// makes AppleSmartBattery report `ExternalConnected=false`. The helper has an
-/// independent SMC adapter reading, but it is trusted only while protection is
-/// enabled and the observation is recent; stale state can never make an
-/// unplugged adapter appear connected.
-public func resolvedExternalPowerConnection(
-    systemReportedConnection: Bool,
+/// A separate adapter observation for presentation alongside the system reading.
+public func helperReportsConnectedAdapter(
     configuration: ChargeProtectionConfiguration,
     status: ChargeProtectionStatus?,
-    now: Date = Date(),
-    maximumStatusAge: TimeInterval = 20
+    now: Date = Date()
 ) -> Bool {
-    if systemReportedConnection { return true }
-    guard configuration.enabled,
-          let status,
-          status.adapterConnected == true,
-          abs(now.timeIntervalSince(status.timestamp)) < maximumStatusAge else { return false }
-    return true
+    guard configuration.enabled, let status, status.installed, status.enabled,
+          status.adapterConnected == true else { return false }
+    return status.isFresh(at: now)
 }

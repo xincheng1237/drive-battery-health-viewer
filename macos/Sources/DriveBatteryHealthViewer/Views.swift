@@ -323,6 +323,21 @@ struct BatteryPowerNotice: View {
     }
 }
 
+private struct BatteryAdapterObservation: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var manager: ChargeProtectionManager
+    let systemConnection: Bool?
+
+    var body: some View {
+        if systemConnection != true && manager.hasHelperAdapterObservation {
+            Text(model.t("helperAdapterObservation"))
+                .interfaceFont(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct BatteryCard: View {
     @Environment(\.displaySize) private var displaySize
     @EnvironmentObject private var model: AppModel
@@ -386,6 +401,7 @@ struct BatteryCard: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
             DetailGrid(items: batteryDetails)
+            BatteryAdapterObservation(manager: model.chargeProtection, systemConnection: battery.externalConnected)
             ChargeProtectionSection(manager: model.chargeProtection)
         }
     }
@@ -681,6 +697,12 @@ struct ChargeProtectionSection: View {
                 }
                 .transition(disclosureTransition)
             }
+            if manager.showsHelperStatusUnconfirmed {
+                Label(model.t("helperStatusUnconfirmed"), systemImage: "info.circle")
+                    .interfaceFont(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Button {
                 withAnimation(disclosureAnimation) {
@@ -852,7 +874,7 @@ struct ChargeProtectionSection: View {
                         limit: manager.configuration.fixedLimit.rawValue,
                         language: model.language
                     )
-                } else if manager.configuration.temporaryFullCharge {
+                } else if manager.configuration.temporaryFullCharge, manager.status != nil {
                     Label(model.t("temporaryFullInProgress"), systemImage: "battery.100percent.bolt")
                         .interfaceFont(.footnote)
                         .foregroundStyle(.secondary)

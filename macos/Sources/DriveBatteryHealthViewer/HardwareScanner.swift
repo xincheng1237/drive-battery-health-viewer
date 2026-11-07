@@ -176,7 +176,13 @@ private final class BoundedPipeDrain: @unchecked Sendable {
     }
 }
 
-struct HardwareScanner: Sendable {
+protocol HardwareScanning: Sendable {
+    func scan() async -> HealthSnapshot
+    func readLiveBatteryState() async -> BatteryLiveState?
+    func readLiveDriveTemperatures(driveIdentifiers: [String]) async -> [String: Double]
+}
+
+struct HardwareScanner: HardwareScanning {
     private let runner: CommandRunning
     private let smartctlPaths: [String]?
     private let logger: any DiagnosticLogging

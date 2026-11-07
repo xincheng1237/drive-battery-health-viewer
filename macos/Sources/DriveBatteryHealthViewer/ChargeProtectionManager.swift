@@ -57,6 +57,7 @@ final class ChargeProtectionManager: ObservableObject {
     private let defaults: UserDefaults
     private let logger: any DiagnosticLogging
     private let configurationURL: URL
+    private let helperStatusURL: URL
     private var pollingTask: Task<Void, Never>?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -69,7 +70,8 @@ final class ChargeProtectionManager: ObservableObject {
         logger: any DiagnosticLogging = DiagnosticLogger.shared,
         isAppleSilicon: Bool = dbhvCurrentArchitectureIsAppleSilicon,
         operatingSystemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
-        configurationDirectory: URL? = nil
+        configurationDirectory: URL? = nil,
+        statusURL: URL? = nil
     ) {
         self.fileManager = fileManager
         self.defaults = defaults
@@ -79,6 +81,7 @@ final class ChargeProtectionManager: ObservableObject {
         let directory = configurationDirectory ?? fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/DriveBatteryHealthViewer/ChargeProtection", isDirectory: true)
         configurationURL = directory.appendingPathComponent("configuration.json")
+        helperStatusURL = statusURL ?? Self.statusURL
         encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
@@ -209,16 +212,14 @@ final class ChargeProtectionManager: ObservableObject {
         return requiresAdministratorAuthorizationToEnable
     }
 
-    /// The helper reads the adapter through its SMC path even when CHIE/CHTE
-    /// intentionally makes AppleSmartBattery publish ExternalConnected=false.
-    /// Accept only a fresh positive observation; a stale helper status must
-    /// never make an unplugged adapter appear connected.
-    var confirmsExternalPowerConnection: Bool {
-        resolvedExternalPowerConnection(
-            systemReportedConnection: false,
-            configuration: configuration,
-            status: status
-        )
+    var hasHelperAdapterObservation: Bool {
+        availability.permitsSoftwareControls &&
+            helperReportsConnectedAdapter(configuration: configuration, status: status)
+    }
+
+    var showsHelperStatusUnconfirmed: Bool {
+        availability.permitsSoftwareControls && configuration.enabled &&
+            configuration.fixedLimit != .oneHundred && !isBusy && status == nil
     }
 
     func startMonitoring() {
@@ -680,7 +681,7 @@ final class ChargeProtectionManager: ObservableObject {
         try Self.writeSecureConfiguration(configuration, to: configurationURL, encoder: encoder, fileManager: fileManager)
     }
 
-    private func reloadStatus() {
+    func reloadStatus(now: Date = Date()) {
         isInstalled = fileManager.fileExists(atPath: Self.launchDaemonPath) &&
             fileManager.fileExists(atPath: Self.helperExecutablePath)
         hasInstalledComponents = rootComponentsPresent || userAgentComponentsPresent
@@ -713,10 +714,12 @@ final class ChargeProtectionManager: ObservableObject {
             }
             configuration = diskConfiguration
         }
-        if let data = try? Data(contentsOf: Self.statusURL),
-           let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data) {
+        if let data = try? Data(contentsOf: helperStatusURL),
+           let decoded = try? decoder.decode(ChargeProtectionStatus.self, from: data),
+           decoded.isFresh(at: now) {
             status = decoded
             if let helperConfigurationDate = decoded.configurationUpdatedAt,
+               helperConfigurationDate <= now,
                helperConfigurationDate >= configuration.updatedAt,
                decoded.temporaryFullCharge != configuration.temporaryFullCharge {
                 configuration.temporaryFullCharge = decoded.temporaryFullCharge

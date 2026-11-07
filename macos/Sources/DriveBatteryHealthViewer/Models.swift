@@ -170,7 +170,12 @@ extension HealthSnapshot {
         }
 
         if warnings.contains(where: { $0.hasPrefix("Battery information:") }) {
-            merged.batteries = previous.batteries
+            merged.batteries = previous.batteries.map { old in
+                var battery = old
+                battery.isCharging = nil
+                battery.externalConnected = nil
+                return battery
+            }
             return merged
         }
         merged.batteries = batteries.map { fresh in
@@ -191,8 +196,7 @@ extension HealthSnapshot {
             value.voltageMillivolts = value.voltageMillivolts ?? old.voltageMillivolts
             value.designVoltageMillivolts = value.designVoltageMillivolts ?? old.designVoltageMillivolts
             value.temperatureCelsius = value.temperatureCelsius ?? old.temperatureCelsius
-            value.isCharging = value.isCharging ?? old.isCharging
-            value.externalConnected = value.externalConnected ?? old.externalConnected
+            // Power readings describe this scan, even when a field is absent.
             if value.healthState == .unknown { value.healthState = old.healthState }
             return value
         }
