@@ -55,6 +55,21 @@ struct Fixture {
             return
         }
         let scenario = CommandLine.arguments[1]
+        if scenario == "install-handoff-mock" {
+            let standard = RecordingDriver()
+            let driver = QuietScheduledUpdateDriver(standard: standard)
+            driver.showUserInitiatedUpdateCheck(cancellation: {})
+            var choice: SPUUserUpdateChoice?
+            driver.showReady(toInstallAndRelaunch: { choice = $0 })
+            precondition(choice == .dismiss)
+            driver.showInstallingUpdate(withApplicationTerminated: false, retryTerminatingApplication: {})
+            var acknowledged = false
+            driver.showUpdateInstalledAndRelaunched(false, acknowledgement: { acknowledged = true })
+            driver.dismissUpdateInstallation()
+            precondition(acknowledged && standard.events == ["manual", "ready", "installing", "installed", "finished"])
+            print("PASS mock install handoff \(standard.events)")
+            return
+        }
         let bundleID = Bundle.main.bundleIdentifier!
         let defaults = UserDefaults.standard
         defer { defaults.removePersistentDomain(forName: bundleID) }

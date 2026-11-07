@@ -26,6 +26,7 @@ subprocess.run(["/usr/bin/swiftc", "-parse-as-library", "-F", str(framework.pare
 shutil.copytree(framework, base / "Sparkle.framework", symlinks=True)
 # The key helper uses only CryptoKit and this disposable path. No Keychain.
 env = dict(os.environ, DYLD_FRAMEWORK_PATH=str(base))
+subprocess.run([str(base / "Fixture"), "install-handoff-mock"], env=env, check=True)
 key = output / "temporary-test-key"
 os.umask(0o077)
 public = subprocess.check_output([str(base / "Fixture"), "key", str(key)], env=env, text=True).strip()

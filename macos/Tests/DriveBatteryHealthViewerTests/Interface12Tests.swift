@@ -207,6 +207,43 @@ struct Interface12Tests {
         #expect(standard.state == .on, "Settings changes must also update the menu checkmark")
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_RC2_UPDATE_PREVIEWS"] != nil))
+    @MainActor func renderAutomaticUpdateReminderInNativeWindow() async throws {
+        let (controller, model, defaults, suite, updater) = try await fixture()
+        let window = try #require(controller.window)
+        defer { window.close(); model.stopLiveHardwareMonitoring(); model.stopChargeProtectionMonitoring(); defaults.removePersistentDomain(forName: suite) }
+        let folder = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["DBHV_RC2_UPDATE_PREVIEWS"]))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        controller.showWindow(nil)
+        window.setFrame(NSRect(x: 40, y: 60, width: 720, height: 760), display: true)
+        model.dismissVersionUpdatePrompt()
+        model.startAutomaticUpdateChecks()
+        model.destination = .history
+        let keyBefore = NSApp.keyWindow
+        updater.scheduledResult?(AvailableAppUpdate(version: "1.2.1", build: "38"))
+        #expect(NSApp.keyWindow === keyBefore)
+        #expect(model.destination == .history && window.attachedSheet == nil)
+        model.destination = .overview
+        for dark in [false, true] {
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            for size in DisplaySize.allCases {
+                model.displaySize = size
+                for language in AppLanguage.allCases where language != .system {
+                    model.language = language
+                    try await Task.sleep(for: .milliseconds(70))
+                    window.contentView?.layoutSubtreeIfNeeded()
+                    window.displayIfNeeded()
+                    #expect(window.attachedSheet == nil && model.destination == .overview)
+                    let frame = try #require(window.contentView?.superview)
+                    let bitmap = try #require(frame.bitmapImageRepForCachingDisplay(in: frame.bounds))
+                    window.effectiveAppearance.performAsCurrentDrawingAppearance { frame.cacheDisplay(in: frame.bounds, to: bitmap) }
+                    let name = "\(dark ? "dark" : "light")-\(size.rawValue)-\(language.rawValue).png"
+                    try #require(bitmap.representation(using: .png, properties: [:])).write(to: folder.appendingPathComponent(name))
+                }
+            }
+        }
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_RELEASE_SCREENSHOTS"] != nil))
     @MainActor func exportReleaseScreenshotsInBothReadmeLanguages() async throws {
         let (controller, model, defaults, suite, _) = try await fixture()
@@ -393,7 +430,10 @@ struct Interface12Tests {
 
 }
 
-@MainActor private final class Update12Stub: ApplicationUpdating {
+@MainActor private final class Update12Stub: AutomaticallyCheckingForUpdates {
+    var automaticallyChecks = true
+    var scheduledResult: ((AvailableAppUpdate?) -> Void)?
+    func start() throws {}
     var canCheckForUpdates = true
     var availabilityChanged: ((Bool) -> Void)?
     var requests = 0
