@@ -90,6 +90,9 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWind
         MainMenuLocalizer.apply(model.language)
         if !ApplicationLaunchContext.isIsolatedReview { model.chargeProtection.ensureStatusAgentInstalled() }
         showMainWindow()
+        if !ApplicationLaunchContext.isIsolatedReview {
+            DispatchQueue.main.async { [weak self] in self?.model.startAutomaticUpdateChecks() }
+        }
         // Let the first window become usable before explaining a one-time
         // administrator request that may be needed to replace an older helper.
         // The system authorization dialog is never launched without this

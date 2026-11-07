@@ -55,6 +55,9 @@ final class AppModel: ObservableObject {
         set { if newValue { activeSheet = .about } else if activeSheet == .about { activeSheet = nil } }
     }
     @Published private(set) var showsVersionUpdatePrompt = false
+    @Published private(set) var availableAppUpdate: AvailableAppUpdate?
+    var overviewAvailableAppUpdate: AvailableAppUpdate? { showsVersionUpdatePrompt ? nil : availableAppUpdate }
+    @Published private(set) var automaticallyChecksForUpdates = true
     @Published private(set) var isCheckingForUpdates = false
     var showsDiagnosticExport: Bool {
         get { activeSheet == .diagnosticExport }
@@ -371,12 +374,51 @@ final class AppModel: ObservableObject {
         reportTextSize = 13
     }
 
-    func checkForUpdates() {
-        if updater == nil { updater = InAppUpdater() }
-        guard let updater else { return }
-        updater.availabilityChanged = { [weak self] available in
-            self?.isCheckingForUpdates = !available
+    func startAutomaticUpdateChecks() {
+        guard let updater = configuredUpdater() as? any AutomaticallyCheckingForUpdates else { return }
+        do {
+            try updater.start()
+            automaticallyChecksForUpdates = updater.automaticallyChecks
+        } catch {
+            diagnosticLogger.log(.warning, category: "update", event: "update_background_start_failed",
+                                 message: "The signed in-app updater could not start its background schedule.")
         }
+    }
+
+    func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
+        guard let updater = configuredUpdater() as? any AutomaticallyCheckingForUpdates else { return }
+        updater.automaticallyChecks = enabled
+        automaticallyChecksForUpdates = updater.automaticallyChecks
+        if !automaticallyChecksForUpdates { availableAppUpdate = nil }
+    }
+
+    func dismissAvailableAppUpdate() {
+        guard let update = availableAppUpdate else { return }
+        defaults.set(update.build, forKey: Keys.dismissedAvailableUpdateBuild)
+        availableAppUpdate = nil
+    }
+
+    private func configuredUpdater() -> any ApplicationUpdating {
+        let updater = self.updater ?? InAppUpdater()
+        self.updater = updater
+        updater.availabilityChanged = { [weak self] available in
+            guard let self else { return }
+            let checking = !available
+            if self.isCheckingForUpdates != checking { self.isCheckingForUpdates = checking }
+        }
+        (updater as? any AutomaticallyCheckingForUpdates)?.scheduledResult = { [weak self] update in
+            guard let self, self.automaticallyChecksForUpdates else { return }
+            let dismissed = self.defaults.string(forKey: Keys.dismissedAvailableUpdateBuild)
+            let next = update.flatMap { item in
+                dismissed.map { isNewerSparkleBuild(item.build, than: $0) } ?? true ? item : nil
+            }
+            if self.availableAppUpdate != next { self.availableAppUpdate = next }
+        }
+        return updater
+    }
+
+    func checkForUpdates() {
+        let updater = configuredUpdater()
         do {
             try updater.checkForUpdates()
             isCheckingForUpdates = !updater.canCheckForUpdates
@@ -552,6 +594,7 @@ final class AppModel: ObservableObject {
     }
 
     private enum Keys {
+        static let dismissedAvailableUpdateBuild = "dismissedAvailableUpdateBuild"
         static let language = "language"
         static let hideSerials = "hideSerials"
         static let historySaveMode = "historySaveMode"

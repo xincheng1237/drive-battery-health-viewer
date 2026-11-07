@@ -97,33 +97,54 @@ struct SidebarView: View {
 private struct VersionUpdateTip: View {
     @Environment(\.displaySize) private var displaySize
     @EnvironmentObject private var model: AppModel
+    var update: AvailableAppUpdate? = nil
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 2 * displaySize.scale) {
+            Text(L10n.format(update == nil ? "versionUpdatePromptTitle" : "availableUpdateTitle",
+                             model.language, update?.version ?? model.displayedAppVersion))
+                .interfaceFont(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Text(model.t(update == nil ? "versionUpdatePromptMessage" : "availableUpdateMessage"))
+                .interfaceFont(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var action: some View {
+        Button(model.t(update == nil ? "viewChangelog" : "viewAvailableUpdate")) {
+            if update == nil { model.presentChangelogFromVersionUpdatePrompt() }
+            else { model.checkForUpdates() }
+        }
+        .buttonStyle(.bordered)
+        .disabled(update != nil && model.isCheckingForUpdates)
+    }
 
     var body: some View {
-        HStack(spacing: 12 * displaySize.scale) {
+        HStack(alignment: .top, spacing: 12 * displaySize.scale) {
             Image(systemName: "sparkles")
                 .interfaceFont(.title3)
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2 * displaySize.scale) {
-                Text(L10n.format("versionUpdatePromptTitle", model.language, model.displayedAppVersion))
-                    .interfaceFont(.headline)
-                Text(model.t("versionUpdatePromptMessage"))
-                    .interfaceFont(.subheadline)
-                    .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    details.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 12)
+                    action.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 8 * displaySize.scale) {
+                    details.fixedSize(horizontal: false, vertical: true)
+                    action
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer(minLength: 12)
-
-            Button(model.t("viewChangelog")) {
-                model.presentChangelogFromVersionUpdatePrompt()
-            }
-            .buttonStyle(.bordered)
-
             Button {
-                model.dismissVersionUpdatePrompt()
+                if update == nil { model.dismissVersionUpdatePrompt() }
+                else { model.dismissAvailableAppUpdate() }
             } label: {
                 Image(systemName: "xmark")
+                    .frame(minWidth: 24, minHeight: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -156,6 +177,8 @@ struct OverviewView: View {
                             VersionUpdateTip()
                                 .environmentObject(model)
                                 .transition(updatePromptTransition)
+                        } else if let update = model.overviewAvailableAppUpdate {
+                            VersionUpdateTip(update: update)
                         }
 
                         overviewHeader(snapshot)
@@ -1644,6 +1667,11 @@ struct PreferencesView: View {
             }
 
             Section {
+                Toggle(model.t("automaticallyCheckForUpdates"), isOn: Binding(
+                    get: { model.automaticallyChecksForUpdates },
+                    set: { model.setAutomaticallyChecksForUpdates($0) }
+                ))
+                .accessibilityIdentifier("DBHV.Settings.AutomaticUpdates")
                 SoftwareUpdateActions()
             } header: {
                 HStack(alignment: .firstTextBaseline) {

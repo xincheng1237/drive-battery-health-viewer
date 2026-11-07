@@ -57,7 +57,9 @@
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/xincheng1237/drive-battery-health-viewer/main/macos/updates/appcast.xml</string>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>604800</integer>
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUAllowsAutomaticUpdates</key>

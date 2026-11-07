@@ -20,7 +20,9 @@ struct UpdateAndWindowTests {
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
-        #expect(info["SUEnableAutomaticChecks"] as? Bool == false)
+        #expect(info["SUEnableAutomaticChecks"] as? Bool == true)
+        #expect(info["SUScheduledCheckInterval"] as? Int == 604800)
+        #expect(info["SUAllowsAutomaticUpdates"] as? Bool == false)
         #expect(info["SUAutomaticallyUpdate"] as? Bool == false)
         #expect(info["SUEnableSystemProfiling"] as? Bool == false)
         let key = try #require(info["SUPublicEDKey"] as? String)
@@ -74,6 +76,69 @@ struct UpdateAndWindowTests {
         #expect(comparator.compareVersion("17", toVersion: "18") == .orderedAscending)
     }
 
+    @Test @MainActor
+    func scheduledNoticeDoesNotNavigateAndDismissalSurvivesRestart() throws {
+        let suite = "DBHV-updater-notice-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        defaults.set(folder.appendingPathComponent("history").path, forKey: "historyDirectory")
+        let logger = UpdateTestLogger()
+        func model(_ build: String, _ updater: UpdateTestUpdater) -> AppModel {
+            let manager = ChargeProtectionManager(defaults: defaults, logger: logger,
+                                                  configurationDirectory: folder.appendingPathComponent("charge"),
+                                                  statusURL: folder.appendingPathComponent("helper.json"))
+            return AppModel(defaults: defaults, updater: updater, currentAppVersion: "1.2.1",
+                            currentAppBuild: build, diagnosticLogger: logger, chargeProtection: manager)
+        }
+        let old = model("36", UpdateTestUpdater())
+        old.stopChargeProtectionMonitoring()
+        let mock = UpdateTestUpdater()
+        let first = model("37", mock)
+        defer { first.stopChargeProtectionMonitoring() }
+        first.destination = .history
+        first.startAutomaticUpdateChecks()
+        #expect(mock.starts == 1)
+        let next = AvailableAppUpdate(version: "1.2.1", build: "38")
+        mock.scheduledResult?(next)
+        #expect(first.availableAppUpdate == next)
+        #expect(first.overviewAvailableAppUpdate == nil)
+        #expect(first.destination == .history && first.activeSheet == nil && first.alertMessage == nil)
+        first.dismissVersionUpdatePrompt()
+        #expect(first.overviewAvailableAppUpdate == next)
+        first.dismissAvailableAppUpdate()
+        mock.scheduledResult?(next)
+        #expect(first.availableAppUpdate == nil)
+
+        let afterRestart = UpdateTestUpdater()
+        let second = model("37", afterRestart)
+        defer { second.stopChargeProtectionMonitoring() }
+        second.startAutomaticUpdateChecks()
+        afterRestart.scheduledResult?(next)
+        #expect(second.overviewAvailableAppUpdate == nil)
+        let later = AvailableAppUpdate(version: "1.2.1", build: "39")
+        afterRestart.scheduledResult?(later)
+        #expect(second.overviewAvailableAppUpdate == later)
+        second.checkForUpdates()
+        #expect(afterRestart.manualChecks == 1)
+        second.setAutomaticallyChecksForUpdates(false)
+        #expect(!afterRestart.automaticallyChecks && second.availableAppUpdate == nil)
+        afterRestart.scheduledResult?(later)
+        #expect(second.availableAppUpdate == nil)
+        second.checkForUpdates()
+        #expect(afterRestart.manualChecks == 2)
+    }
+
+    @Test(arguments: [AppLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])
+    func automaticUpdateReminderKeysAreTranslated(_ language: AppLanguage) {
+        let keys = ["automaticallyCheckForUpdates", "availableUpdateTitle", "availableUpdateMessage", "viewAvailableUpdate"]
+        for key in keys {
+            #expect(L10n.interface12Tables[language]?[key]?.isEmpty == false)
+        }
+        #expect(L10n.format("availableUpdateTitle", language, "1.2.1").contains("1.2.1"))
+    }
+
     @Test(arguments: [AppLanguage.english, .simplifiedChinese, .russian, .french, .german, .korean, .japanese])
     func requestedReleaseNotesHaveNoImprovementSection(_ language: AppLanguage) throws {
         let release = try #require(ChangelogRelease.localized(for: language).first)
@@ -100,4 +165,20 @@ struct UpdateAndWindowTests {
         let output = try #require(ProcessInfo.processInfo.environment["DBHV_EXPORT_CHANGELOG"])
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: output))
     }
+}
+
+@MainActor
+private final class UpdateTestUpdater: AutomaticallyCheckingForUpdates {
+    var canCheckForUpdates = true
+    var availabilityChanged: ((Bool) -> Void)?
+    var scheduledResult: ((AvailableAppUpdate?) -> Void)?
+    var automaticallyChecks = true
+    var starts = 0
+    var manualChecks = 0
+    func start() throws { starts += 1 }
+    func checkForUpdates() throws { manualChecks += 1 }
+}
+
+private struct UpdateTestLogger: DiagnosticLogging {
+    func log(_ severity: DiagnosticSeverity, category: String, event: String, message: String) {}
 }
