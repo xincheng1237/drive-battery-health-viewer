@@ -39,9 +39,10 @@ restore_charging() {
 case "${1:-}" in
     install)
         installation_complete=0
+        replacement_started=0
         cleanup_install() {
             rm -f "${plist_temporary:-}" "${helper_temporary:-}"
-            if [ "${installation_complete}" -ne 1 ]; then
+            if [ "${replacement_started}" -eq 1 ] && [ "${installation_complete}" -ne 1 ]; then
                 launchctl bootout system/"${identifier}" >/dev/null 2>&1 || true
                 rm -f "${plist_destination}" "${helper_destination}"
             fi
@@ -67,34 +68,17 @@ case "${1:-}" in
         config_mode=$(stat -f '%Lp' "${config_path}")
         [ "${config_owner}" = "${owner_uid}" ] && [ "${config_mode}" = "600" ] || { echo "Unsafe configuration permissions." >&2; exit 1; }
 
-        # A drag replacement of the main application cannot replace this
-        # root-owned component. Before installing a newer bundled helper,
-        # explicitly put the old helper into its safe charging state, stop its
-        # LaunchDaemon, and remove both old launch metadata and executable.
-        # This prevents an old mapped process and a new process from controlling
-        # the SMC at the same time during an upgrade.
-        restore_charging
-        launchctl bootout system/"${identifier}" >/dev/null 2>&1 || true
-        rm -f "${plist_destination}" "${helper_destination}"
-
         mkdir -p "/Library/PrivilegedHelperTools" "${state_directory}" "${log_directory}"
         chown root:wheel "${state_directory}" "${log_directory}"
         chmod 755 "${state_directory}" "${log_directory}"
-        helper_temporary=$(mktemp "/Library/PrivilegedHelperTools/.${identifier}.XXXXXX")
         trap cleanup_install EXIT
         trap 'exit 1' HUP INT TERM
+        helper_temporary=$(mktemp "/Library/PrivilegedHelperTools/.${identifier}.XXXXXX")
         install -o root -g wheel -m 0500 "${helper_source}" "${helper_temporary}"
         /usr/bin/codesign --verify --strict "${helper_temporary}"
         helper_identifier=$(/usr/bin/codesign -dv "${helper_temporary}" 2>&1 | /usr/bin/awk -F= '$1 == "Identifier" { print $2; exit }')
         [ "${helper_identifier}" = "${identifier}" ] || { echo "Unexpected helper code-signing identifier." >&2; exit 1; }
         chmod 0555 "${helper_temporary}"
-        mv -f "${helper_temporary}" "${helper_destination}"
-        cmp -s "${helper_source}" "${helper_destination}" || {
-            echo "Installed helper does not exactly match the bundled helper." >&2
-            exit 1
-        }
-        /usr/bin/codesign --verify --strict "${helper_destination}"
-
         plist_temporary=$(mktemp "/tmp/${identifier}.XXXXXX")
         # mktemp creates a zero-byte file. PlistBuddy cannot clear or edit that
         # file until it contains a valid property-list root dictionary.
@@ -117,6 +101,22 @@ case "${1:-}" in
         /usr/libexec/PlistBuddy -c 'Add :KeepAlive:SuccessfulExit bool false' "${plist_temporary}"
         /usr/libexec/PlistBuddy -c 'Add :ProcessType string Background' "${plist_temporary}"
         plutil -lint "${plist_temporary}" >/dev/null
+
+        # Validate both staged files before touching the installed helper.
+        # Do not replace the executable while its old job remains registered.
+        restore_charging
+        launchctl bootout system/"${identifier}" >/dev/null 2>&1 || true
+        if launchctl print system/"${identifier}" >/dev/null 2>&1; then
+            echo "The existing charge helper could not be stopped." >&2
+            exit 1
+        fi
+        replacement_started=1
+        mv -f "${helper_temporary}" "${helper_destination}"
+        cmp -s "${helper_source}" "${helper_destination}" || {
+            echo "Installed helper does not exactly match the bundled helper." >&2
+            exit 1
+        }
+        /usr/bin/codesign --verify --strict "${helper_destination}"
 
         install -o root -g wheel -m 0644 "${plist_temporary}" "${plist_destination}"
         launchctl bootstrap system "${plist_destination}"
