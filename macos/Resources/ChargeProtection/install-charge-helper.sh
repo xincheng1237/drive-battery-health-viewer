@@ -106,10 +106,17 @@ case "${1:-}" in
         # Do not replace the executable while its old job remains registered.
         restore_charging
         launchctl bootout system/"${identifier}" >/dev/null 2>&1 || true
-        if launchctl print system/"${identifier}" >/dev/null 2>&1; then
-            echo "The existing charge helper could not be stopped." >&2
-            exit 1
-        fi
+        # launchd can still list the job immediately after a successful
+        # bootout, while the old helper finishes its termination cleanup.
+        stop_attempts=0
+        while launchctl print system/"${identifier}" >/dev/null 2>&1; do
+            if [ "${stop_attempts}" -ge 100 ]; then
+                echo "The existing charge helper could not be stopped." >&2
+                exit 1
+            fi
+            stop_attempts=$((stop_attempts + 1))
+            sleep 0.1
+        done
         replacement_started=1
         mv -f "${helper_temporary}" "${helper_destination}"
         cmp -s "${helper_source}" "${helper_destination}" || {

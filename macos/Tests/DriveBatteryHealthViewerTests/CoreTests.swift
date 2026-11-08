@@ -713,11 +713,12 @@ struct CoreTests {
         let plistData = try Data(contentsOf: macosRoot.appendingPathComponent("Info.plist"))
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(plist["CFBundleVersion"] as? String == "41")
+        let bundleBuild = try #require(plist["CFBundleVersion"] as? String)
+        #expect(bundleBuild == "42")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
-            #expect(text.contains("bundle_build=\"41\""))
+            #expect(text.contains("bundle_build=\"\(bundleBuild)\""))
         }
     }
 

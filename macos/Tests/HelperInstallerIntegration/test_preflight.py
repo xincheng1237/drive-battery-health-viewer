@@ -44,10 +44,18 @@ case "${0##*/}" in
         echo "$1" >> "$TEST_TRACE"
         case "$1" in
             print) [ -f "$TEST_JOB" ] ;;
-            bootout) [ "$SCENARIO" != cannot_stop ] && rm -f "$TEST_JOB" ;;
+            bootout)
+                case "$SCENARIO" in
+                    cannot_stop|stop_pending) ;;
+                    *) rm -f "$TEST_JOB" ;;
+                esac ;;
             bootstrap) [ "$SCENARIO" != cannot_start ] && touch "$TEST_JOB" ;;
             *) exit 97 ;;
         esac
+        ;;
+    sleep)
+        [ "$1" = 0.1 ] || exit 97
+        if [ "$SCENARIO" = stop_pending ]; then rm -f "$TEST_JOB"; fi
         ;;
 esac
 """
@@ -57,7 +65,7 @@ def run(source, scenario):
         root = Path(tmp)
         for path in ("bin", "tmp", "Library/PrivilegedHelperTools", "Library/LaunchDaemons", "home/Test.app/Contents"):
             (root / path).mkdir(parents=True)
-        for name in ("id", "stat", "chown", "install", "codesign", "plutil", "PlistBuddy", "launchctl"):
+        for name in ("id", "stat", "chown", "install", "codesign", "plutil", "PlistBuddy", "launchctl", "sleep"):
             mock = root / "bin" / name
             mock.write_text(MOCK)
             mock.chmod(0o700)
@@ -91,10 +99,11 @@ def run(source, scenario):
         result = subprocess.run(["/bin/sh", str(script), "install", str(new), "501", str(root / "home"),
                                  str(config), str(root / "home/Test.app")], env=env, capture_output=True, text=True)
         calls = trace.read_text().splitlines()
-        if scenario == "success":
+        if scenario in ("success", "stop_pending"):
             assert result.returncode == 0, result.stderr
             assert helper.read_text() == "new helper" and plist.read_text() == "new plist" and job.exists()
-            assert calls == ["restore", "bootout", "print", "bootstrap", "print"], calls
+            stops = ["print", "print"] if scenario == "stop_pending" else ["print"]
+            assert calls == ["restore", "bootout", *stops, "bootstrap", "print"], calls
         else:
             assert result.returncode != 0, scenario
             if scenario == "cannot_start":
@@ -108,10 +117,10 @@ def run(source, scenario):
                 elif scenario == "cannot_restore":
                     assert calls == ["restore"], calls
                 elif scenario == "cannot_stop":
-                    assert calls == ["restore", "bootout", "print"], calls
+                    assert calls == ["restore", "bootout", *["print"] * 101], calls
         print("PASS", scenario)
 
 if __name__ == "__main__":
     source = (Path(sys.argv[1]) if len(sys.argv) > 1 else INSTALLER).read_text()
-    for scenario in ("invalid_signature", "invalid_plist", "cannot_restore", "cannot_stop", "cannot_start", "success"):
+    for scenario in ("invalid_signature", "invalid_plist", "cannot_restore", "stop_pending", "cannot_stop", "cannot_start", "success"):
         run(source, scenario)
