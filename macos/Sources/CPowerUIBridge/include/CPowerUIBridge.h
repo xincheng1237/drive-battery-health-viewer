@@ -30,7 +30,7 @@ int32_t DBHVReadGaugingLimitSuspension(void);
 /// Engages Apple's native optimized-battery-charging target (80%). The caller
 /// must establish ownership before using this to recover an Apple top-off
 /// transition; an unowned non-baseline state is never passed to this method.
-bool DBHVPowerUIEngageEighty(int32_t battery_percentage);
+bool DBHVPowerUIEngageEighty(int32_t battery_percentage, bool owns_policy);
 
 /// Renews an already engaged 80% override before PowerUI reaches its full-
 /// charge deadline. This keeps the adapter connected without allowing the

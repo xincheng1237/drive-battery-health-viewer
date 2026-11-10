@@ -422,6 +422,8 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
     /// Optional for compatibility with Helpers predating system-menu overrides.
     public var systemChargeOverride: SystemChargeOverrideState?
     public var systemCalibration: SystemCalibrationState?
+    /// Native policy acknowledgement, independent of the saved configuration and of reaching 80%.
+    public var powerUIPolicyConfirmed: Bool?
 
     public init(
         helperVersion: String,
@@ -438,7 +440,8 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
         controlMethod: ChargeControlMethod,
         lastError: String? = nil,
         systemChargeOverride: SystemChargeOverrideState? = nil,
-        systemCalibration: SystemCalibrationState? = nil
+        systemCalibration: SystemCalibrationState? = nil,
+        powerUIPolicyConfirmed: Bool? = nil
     ) {
         self.helperVersion = helperVersion
         self.timestamp = timestamp
@@ -455,6 +458,7 @@ public struct ChargeProtectionStatus: Codable, Equatable, Sendable {
         self.lastError = lastError
         self.systemChargeOverride = systemChargeOverride
         self.systemCalibration = systemCalibration
+        self.powerUIPolicyConfirmed = powerUIPolicyConfirmed
     }
 }
 
@@ -533,7 +537,8 @@ public func hasCurrentChargeProtectionReport(
     // A known pause is actionable even if the other signal is unknown.
     return status.systemCalibration?.defersChargeControl == true ||
         status.systemChargeOverride?.defersChargeControl == true ||
-        (status.systemCalibration == .inactive && status.systemChargeOverride == .inactive)
+        (status.powerUIPolicyConfirmed != false &&
+         status.systemCalibration == .inactive && status.systemChargeOverride == .inactive)
 }
 
 public func currentChargeProtectionError(
@@ -573,10 +578,26 @@ public func shouldPresentChargeLimitStatusItem(
           status.systemCalibration?.defersChargeControl != true,
           status.systemChargeOverride?.defersChargeControl != true else { return false }
     if status.controlMethod == .powerUIOptimized80 {
-        return configuration.fixedLimit == .eighty && status.systemCalibration == .inactive &&
+        return configuration.fixedLimit == .eighty && status.powerUIPolicyConfirmed != false &&
+            status.systemCalibration == .inactive &&
             status.systemChargeOverride == .inactive
     }
     return true
+}
+
+public func shouldPresentPowerUIRecoveryStatusItem(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> Bool {
+    guard configuration.showMenuBarStatus,
+          !configuration.temporaryFullCharge,
+          let status = matchingAppliedChargeStatus(configuration: configuration, status: status, now: now),
+          status.controlMethod == .powerUIOptimized80,
+          status.adapterConnected == true,
+          status.systemCalibration?.defersChargeControl != true,
+          status.systemChargeOverride?.defersChargeControl != true else { return false }
+    return status.powerUIPolicyConfirmed == false
 }
 
 public func shouldPresentCalibrationStatusItem(

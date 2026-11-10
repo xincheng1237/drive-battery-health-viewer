@@ -314,10 +314,9 @@ final class ChargeLimitAgentModel: ObservableObject {
     var shouldShowStatusItem: Bool {
         availability.permitsSoftwareControls &&
             configuration.showMenuBarStatus &&
-            (shouldPresentCalibrationStatusItem(configuration: configuration, status: status) || shouldPresentChargeLimitStatusItem(
-                configuration: configuration,
-                status: status
-            ))
+            (shouldPresentCalibrationStatusItem(configuration: configuration, status: status) ||
+             shouldPresentPowerUIRecoveryStatusItem(configuration: configuration, status: status) ||
+             shouldPresentChargeLimitStatusItem(configuration: configuration, status: status))
     }
 
     var presentationState: ChargeLimitAgentPresentationState {

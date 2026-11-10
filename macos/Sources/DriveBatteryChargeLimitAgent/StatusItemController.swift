@@ -484,6 +484,8 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
             return calibratingImage()
         case .protectionUnconfirmed:
             return NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil)
+        case .attentionRequired:
+            return NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
         default: return reachedLimitImage()
         }
     }

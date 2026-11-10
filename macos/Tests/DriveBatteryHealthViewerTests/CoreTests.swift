@@ -714,7 +714,7 @@ struct CoreTests {
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
         let bundleBuild = try #require(plist["CFBundleVersion"] as? String)
-        #expect(bundleBuild == "45")
+        #expect(bundleBuild == "46")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
@@ -1205,10 +1205,10 @@ struct CoreTests {
         let overviewBody = source[overviewStart.lowerBound..<driveCardStart.lowerBound]
         let prompt = try #require(overviewBody.range(of: "VersionUpdateTip()"))
         let scroll = try #require(overviewBody.range(of: "ScrollView"))
-        let lazyStack = try #require(overviewBody.range(of: "LazyVStack"))
+        let stack = try #require(overviewBody.range(of: "VStack", range: scroll.upperBound..<overviewBody.endIndex))
         let header = try #require(overviewBody.range(of: "overviewHeader(snapshot)"))
-        #expect(scroll.lowerBound < lazyStack.lowerBound)
-        #expect(lazyStack.lowerBound < prompt.lowerBound)
+        #expect(scroll.lowerBound < stack.lowerBound)
+        #expect(stack.lowerBound < prompt.lowerBound)
         #expect(prompt.lowerBound < header.lowerBound)
         #expect(overviewBody.contains("@Environment(\\.accessibilityReduceMotion)"))
     }
@@ -1872,14 +1872,16 @@ struct CoreTests {
         for state in [
             ChargeLimitAgentPresentationState.protectionActive,
             .limitReached,
-            .temporaryFullCharge,
-            .attentionRequired
+            .temporaryFullCharge
         ] {
             let stateImage = ChargeLimitAgentStatusItemController.statusItemImage(for: state)
             #expect(stateImage != nil)
             #expect(stateImage?.isTemplate == true)
             #expect(stateImage?.tiffRepresentation == image?.tiffRepresentation)
         }
+        let warningImage = ChargeLimitAgentStatusItemController.statusItemImage(for: .attentionRequired)
+        #expect(warningImage?.isTemplate == true)
+        #expect(warningImage?.tiffRepresentation != image?.tiffRepresentation)
         #expect(ChargeLimitAgentStatusItemController.recoveryInterval == 2)
         #expect(ChargeLimitAgentStatusItemController.visibilityTransitionDelay == 3)
         #expect(ChargeLimitAgentStatusItemController.fadeDuration > 0)
@@ -2037,7 +2039,7 @@ struct CoreTests {
             .deletingLastPathComponent()
         let helperURL = macosRoot.appendingPathComponent("Sources/DriveBatteryChargeHelper/main.swift")
         let source = try String(contentsOf: helperURL, encoding: .utf8)
-        #expect(source.contains("private let helperVersion = \"1.1.2.1\""))
+        #expect(source.contains("private let helperVersion = \"1.1.2.2\""))
         #expect(!source.contains("st_mode & S_IFLNK"))
         let markerStart = try #require(source.range(of: "private struct PowerUIOwnershipMarker: Codable"))
         let markerEnd = try #require(source.range(of: "private func readBattery()", range: markerStart.upperBound..<source.endIndex))
@@ -2062,9 +2064,6 @@ struct CoreTests {
         #expect(source.contains("func maintainPowerUIWithoutBatteryReading()"))
         #expect(source.contains("battery_read_failed_powerui_maintained"))
         #expect(source.contains("battery_read_recovered"))
-        #expect(source.contains("private static let powerUIRefreshInterval: TimeInterval = 4 * 60 * 60"))
-        #expect(source.contains("private static let powerUIRefreshRetryInterval: TimeInterval = 5 * 60"))
-        #expect(source.contains("guard let lastSuccess = lastPowerUIRefreshSucceededAt else { return true }"))
         #expect(source.contains("holdingLimit != nil || actuator.hasOwnedPowerUIState"))
         #expect(source.contains("protection_disable_restore_failed"))
         #expect(source.contains("powerui-owner.json"))
@@ -2084,7 +2083,7 @@ struct CoreTests {
         #expect(bridge.contains("bool DBHVPowerUIRefreshEighty"))
         #expect(bridge.contains("static bool DBHVIsEightyManaged"))
         #expect(bridge.contains("return DBHVWaitForEightyManaged"))
-        #expect(bridge.contains("baseline.checkpoint == 0 || baseline.checkpoint == 5"))
+        #expect(bridge.contains("baseline.checkpoint == 6"))
         #expect(bridge.contains("final.checkpoint == 5 && final.engaged == 0"))
     }
 
