@@ -278,6 +278,78 @@ struct Interface12Tests {
         }
     }
 
+    @Test @MainActor func scrolledOverviewResizesGraduallyInBothDirections() async throws {
+        let (controller, model, defaults, suite, _) = try await fixture()
+        let window = try #require(controller.window)
+        defer {
+            window.close()
+            model.stopLiveHardwareMonitoring()
+            model.stopChargeProtectionMonitoring()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        controller.showWindow(nil)
+        model.dismissVersionUpdatePrompt()
+        for size in [DisplaySize.standard, .extraLarge] {
+            model.displaySize = size
+            window.setFrame(NSRect(x: 45, y: 55, width: 900, height: 520), display: true)
+            try await Task.sleep(for: .milliseconds(150))
+            let scroll = try #require(views(controller.detailController.view)
+                .compactMap { $0 as? NSScrollView }.first)
+            let document = try #require(scroll.documentView)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, document.bounds.height - scroll.contentView.bounds.height) / 2))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            var previousHeight: CGFloat?
+            var previousOffset: CGFloat?
+            let narrowing = Array(stride(from: 900, through: 600, by: -4))
+            let measure = ProcessInfo.processInfo.environment["DBHV_RESIZE_TIMING"] != nil
+            var durations: [Double] = []
+            for width in narrowing + narrowing.reversed() {
+                let start = DispatchTime.now().uptimeNanoseconds
+                window.setFrame(NSRect(x: 45, y: 55, width: width, height: 520), display: true)
+                if measure {
+                    window.contentView?.superview?.layoutSubtreeIfNeeded()
+                    window.displayIfNeeded()
+                    durations.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
+                }
+                try await Task.sleep(for: .milliseconds(12))
+                #expect(scroll.documentView === document)
+                let height = document.bounds.height
+                let offset = scroll.contentView.bounds.minY
+                #expect(height > 0)
+                if let previousHeight {
+                    #expect(abs(height - previousHeight) < 55, "Overview height jumped at \(size) / \(width)")
+                }
+                if let previousOffset {
+                    #expect(abs(offset - previousOffset) < 55, "Overview scroll position jumped at \(size) / \(width)")
+                }
+                previousHeight = height
+                previousOffset = offset
+            }
+            if !durations.isEmpty {
+                durations.sort()
+                print("RESIZE \(size) n=\(durations.count) p50=\(durations[durations.count / 2])ms p95=\(durations[durations.count * 95 / 100])ms over8ms=\(durations.filter { $0 > 8.33 }.count)")
+            }
+        }
+    }
+
+    @Test @MainActor func overviewFieldsRewrapWhenTheirContentChanges() async throws {
+        func grid(value: String) -> some View {
+            DetailColumnsLayout(minimumColumnWidth: 70, horizontalSpacing: 12, verticalSpacing: 8) {
+                Text(value)
+                Text("Status")
+            }
+            .frame(width: 200)
+        }
+
+        let host = NSHostingView(rootView: grid(value: "Short"))
+        let compactHeight = host.fittingSize.height
+        #expect(compactHeight > 0)
+        host.rootView = grid(value: "A longer field that needs several lines at this column width")
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(host.fittingSize.height > compactHeight + 15)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DBHV_BUILD40_WINDOWS"] != nil))
     @MainActor func renderAndVerifyCompactWindows() async throws {
         let folder = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["DBHV_BUILD40_WINDOWS"]))

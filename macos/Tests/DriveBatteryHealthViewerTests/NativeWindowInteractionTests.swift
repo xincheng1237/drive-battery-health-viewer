@@ -101,7 +101,7 @@ struct NativeWindowInteractionTests {
         for language in AppLanguage.allCases {
             model.language = language
             try await Task.sleep(for: .milliseconds(40))
-            for width in [720.0, 900.0, 1280.0, 1728.0] {
+            for width in [600.0, 680.0, 720.0, 900.0, 1280.0, 1728.0] {
                 window.setFrame(NSRect(x: 50, y: 80, width: width, height: 650), display: true)
                 window.contentView?.superview?.layoutSubtreeIfNeeded()
                 try await Task.sleep(for: .milliseconds(40))
@@ -113,7 +113,7 @@ struct NativeWindowInteractionTests {
                     #expect(abs(rect.width - 32) < 0.5 && abs(rect.height - 32) < 0.5,
                             "Actual toolbar frame for \(key) is \(rect.size), expected a square")
                 }
-                #expect(toolbar.visibleItems?.count == 3, "A control overflowed at \(language) / \(width)")
+                #expect(toolbar.visibleItems?.count == 2, "A control overflowed at \(language) / \(width)")
                 #expect(navFrame.minX >= 70)
                 if width >= 900 { #expect(abs(navFrame.midX - width / 2) < 1, "Navigation is not centered in a wide window") }
                 #expect(window.titlebarSeparatorStyle == .none)
@@ -136,6 +136,49 @@ struct NativeWindowInteractionTests {
                 #expect(zip(toolbar.items, identity).allSatisfy { $0 === $1 })
             }
         }
+    }
+
+    @Test @MainActor
+    func navigationFollowsResizeContinuouslyInBothDirections() async throws {
+        let (controller, model, defaults, suite) = try fixture()
+        let window = try #require(controller.window)
+        defer {
+            window.close(); model.stopLiveHardwareMonitoring(); model.stopChargeProtectionMonitoring()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        controller.showWindow(nil)
+        let nav = controller.navigationHeader
+        let widths = Array(stride(from: 900, through: 600, by: -4))
+        var positions: [Int: CGFloat] = [:]
+        // Include coarse steps like the opening frames of a fast window zoom.
+        let fastWidths = [600, 616, 648, 712, 820, 900, 820, 712, 648, 616, 600]
+        for (fixedRightEdge, sequence) in [(false, widths + widths.reversed()), (true, fastWidths)] {
+            var previous: (width: Int, localX: CGFloat, screenX: CGFloat)?
+            for width in sequence {
+                let x = fixedRightEdge ? 950 - width : 50
+                window.setFrame(NSRect(x: x, y: 80, width: width, height: 650), display: true)
+                try await Task.sleep(for: .milliseconds(12))
+                let frame = nav.convert(nav.bounds, to: nil)
+                let screenX = window.convertToScreen(frame).minX
+                #expect(nav.visibleRect.width >= nav.bounds.width - 0.5)
+                if let previous {
+                    let direction: CGFloat = width >= previous.width ? 1 : -1
+                    let localTravel = (frame.minX - previous.localX) * direction
+                    #expect(localTravel >= -0.5 && localTravel <= CGFloat(abs(width - previous.width)) + 0.5,
+                            "Navigation outran the window edge at \(width)pt")
+                    if fixedRightEdge {
+                        #expect((screenX - previous.screenX) * direction <= 0.5,
+                                "Navigation reversed on screen at \(width)pt")
+                    }
+                }
+                if let old = positions[width] { #expect(abs(old - frame.minX) < 1) }
+                positions[width] = frame.minX
+                previous = (width, frame.minX, screenX)
+            }
+        }
+        #expect(Set(positions.values.map { Int($0.rounded()) }).count > 20)
+        #expect(abs((positions[900] ?? 0) + nav.bounds.width / 2 - 450) < 1)
+        #expect(abs((positions[600] ?? 0) - (positions[604] ?? 0)) < 1)
     }
 
     @Test @MainActor
@@ -318,7 +361,10 @@ struct NativeWindowInteractionTests {
         controller.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        window.setFrame(NSRect(x: 50, y: 80, width: 600, height: 650), display: true)
         try await Task.sleep(for: .milliseconds(200))
+        let nav = controller.navigationHeader
+        let originalX = nav.convert(nav.bounds, to: nil).minX
         window.toggleFullScreen(nil)
         for _ in 0..<80 {
             if observer.entered { break }
@@ -327,7 +373,6 @@ struct NativeWindowInteractionTests {
         #expect(observer.entered, "Native full screen did not complete")
         if observer.entered {
             try await Task.sleep(for: .milliseconds(200))
-            let nav = controller.navigationHeader
             let rect = nav.convert(nav.bounds, to: nil)
             #expect(abs(rect.midX - window.frame.width / 2) < 1)
             #expect(window.titlebarSeparatorStyle == .none)
@@ -344,6 +389,9 @@ struct NativeWindowInteractionTests {
                 try await Task.sleep(for: .milliseconds(100))
             }
             #expect(observer.exited, "Native full screen did not exit")
+            try await Task.sleep(for: .milliseconds(150))
+            #expect(abs(window.frame.width - 600) < 1)
+            #expect(abs(nav.convert(nav.bounds, to: nil).minX - originalX) < 1)
         }
     }
 

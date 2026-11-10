@@ -7,12 +7,6 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        GeometryReader { geometry in
-            content(size: geometry.size)
-        }
-    }
-
-    private func content(size: CGSize) -> some View {
         ZStack {
             destinationView
                 .id(model.destination ?? .overview)
@@ -56,15 +50,21 @@ struct RootView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.transientMessage)
-        .sheet(item: $model.activeSheet) { sheet in
-            Group { switch sheet {
-            case .report:
-                if let snapshot = model.currentSnapshot { TextReportView(panelSize: panelSize(for: size, preferred: CGSize(width: 720, height: 560)), snapshot: snapshot).environmentObject(model) }
-            case .diagnosticExport: DiagnosticExportView().environmentObject(model)
-            case .changelog: ChangelogView(panelSize: panelSize(for: size, preferred: CGSize(width: 650, height: 560))).environmentObject(model)
-            case .about: AboutView(panelSize: panelSize(for: size, preferred: CGSize(width: 640, height: 620))).environmentObject(model)
-            } }
-            .background(SheetTerminationPolicy(preventsTermination: sheet == .diagnosticExport))
+        .background {
+            // Only sheets depend on the window size as a view input. Pages
+            // already receive width proposals from SwiftUI's layout pass.
+            GeometryReader { geometry in
+                Color.clear.sheet(item: $model.activeSheet) { sheet in
+                    Group { switch sheet {
+                    case .report:
+                        if let snapshot = model.currentSnapshot { TextReportView(panelSize: panelSize(for: geometry.size, preferred: CGSize(width: 720, height: 560)), snapshot: snapshot).environmentObject(model) }
+                    case .diagnosticExport: DiagnosticExportView().environmentObject(model)
+                    case .changelog: ChangelogView(panelSize: panelSize(for: geometry.size, preferred: CGSize(width: 650, height: 560))).environmentObject(model)
+                    case .about: AboutView(panelSize: panelSize(for: geometry.size, preferred: CGSize(width: 640, height: 620))).environmentObject(model)
+                    } }
+                    .background(SheetTerminationPolicy(preventsTermination: sheet == .diagnosticExport))
+                }
+            }
         }
         .interfaceFont(.body)
         .environment(\.displaySize, model.displaySize)
@@ -183,7 +183,9 @@ struct OverviewView: View {
                 .transition(.opacity)
             } else if let snapshot = model.currentSnapshot {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22 * displaySize.scale) {
+                    // Measure the few overview sections together so crossing
+                    // the visible edge cannot change the estimated scroll height.
+                    VStack(alignment: .leading, spacing: 22 * displaySize.scale) {
                         if model.showsVersionUpdatePrompt {
                             VersionUpdateTip()
                                 .environmentObject(model)
@@ -280,18 +282,10 @@ struct DriveCard: View {
     let drive: DriveInfo
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 24 * displaySize.scale) {
-                gauge
-                VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
-                    header
-                    Divider()
-                    DetailGrid(items: driveDetails)
-                }
-                .frame(minWidth: 400 * displaySize.scale)
-            }
-            VStack(alignment: .leading, spacing: 16 * displaySize.scale) {
-                HStack(alignment: .center, spacing: 16 * displaySize.scale) { gauge; header }
+        OverviewCardLayout(scale: displaySize.scale) {
+            gauge
+            header
+            VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
                 Divider()
                 DetailGrid(items: driveDetails)
             }
@@ -303,17 +297,10 @@ struct DriveCard: View {
         HealthGauge(percent: drive.lifeRemainingPercent, state: drive.healthState, title: model.t("health"))
     }
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                identity.fixedSize(horizontal: true, vertical: false)
-                Spacer(minLength: 0)
-                HealthBadge(state: drive.healthState).fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 6 * displaySize.scale) {
-                identity
-                HealthBadge(state: drive.healthState).fixedSize()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            identity.layoutPriority(1)
+            Spacer(minLength: 0)
+            HealthBadge(state: drive.healthState).fixedSize()
         }
     }
 
@@ -395,18 +382,10 @@ struct BatteryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12 * displaySize.scale) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 24 * displaySize.scale) {
-                    gauge
-                    VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
-                        header
-                        Divider()
-                        details
-                    }
-                    .frame(minWidth: 400 * displaySize.scale)
-                }
-                VStack(alignment: .leading, spacing: 16 * displaySize.scale) {
-                    HStack(alignment: .center, spacing: 16 * displaySize.scale) { gauge; header }
+            OverviewCardLayout(scale: displaySize.scale) {
+                gauge
+                header
+                VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
                     Divider()
                     details
                 }
@@ -427,17 +406,10 @@ struct BatteryCard: View {
         HealthGauge(percent: battery.healthPercent, state: battery.healthState, title: model.t("health"))
     }
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                identity.fixedSize(horizontal: true, vertical: false)
-                Spacer(minLength: 0)
-                HealthBadge(state: battery.healthState).fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 6 * displaySize.scale) {
-                identity
-                HealthBadge(state: battery.healthState).fixedSize()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            identity.layoutPriority(1)
+            Spacer(minLength: 0)
+            HealthBadge(state: battery.healthState).fixedSize()
         }
     }
 
@@ -2527,9 +2499,11 @@ private extension View {
                 .shadow(color: .black.opacity(0.08), radius: 14, y: 5)
         } else {
             self
-                .background(.background, in: shape)
+                .background {
+                    shape.fill(.background)
+                        .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
+                }
                 .overlay(shape.stroke(Color.secondary.opacity(0.16)))
-                .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
         }
 #else
         if #available(macOS 26.0, *) {
@@ -2540,9 +2514,11 @@ private extension View {
                 .shadow(color: .black.opacity(0.08), radius: 14, y: 5)
         } else {
             self
-                .background(.background, in: shape)
+                .background {
+                    shape.fill(.background)
+                        .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
+                }
                 .overlay(shape.stroke(Color.secondary.opacity(0.16)))
-                .shadow(color: .black.opacity(0.035), radius: 8, y: 3)
         }
 #endif
     }

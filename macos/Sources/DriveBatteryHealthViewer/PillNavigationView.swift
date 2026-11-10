@@ -1,10 +1,66 @@
 import AppKit
 import QuartzCore
 
+/// AppKit gives the slot the space between the traffic lights and the actions.
+/// Move toward the center at a rate no faster than the moving window edge.
+@MainActor
+final class NavigationToolbarSlot: NSView {
+    private let navigation: PillNavigationView
+    private let carrier = NSView()
+
+    init(navigation: PillNavigationView) {
+        self.navigation = navigation
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        carrier.wantsLayer = true
+        addSubview(carrier)
+        carrier.addSubview(navigation)
+        NSLayoutConstraint.activate([
+            navigation.leadingAnchor.constraint(equalTo: carrier.leadingAnchor),
+            navigation.bottomAnchor.constraint(equalTo: carrier.bottomAnchor),
+            heightAnchor.constraint(equalToConstant: PillNavigationView.height)
+        ])
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        if let window {
+            let windowWidth = window.frame.width
+            let center = convert(NSPoint(x: windowWidth / 2, y: 0), from: nil).x - bounds.minX
+            let maxLeading = max(0, bounds.width - navigation.preferredWidth - 8)
+            let centeredLeading = max(0, center - navigation.preferredWidth / 2)
+            let growth = max(0, windowWidth - window.contentMinSize.width)
+            let ramp: CGFloat = 24
+            // Start at rest, then gain at most one point of offset per
+            // point of window growth. The screen position stays monotonic
+            // even when the window grows leftward from a fixed right edge.
+            let offset = growth < ramp ? growth * growth / (2 * ramp) : growth - ramp / 2
+            let blend: CGFloat = 16
+            let join = max(0, blend - abs(offset - centeredLeading))
+            let centeredOffset = min(offset, centeredLeading) - join * join / (4 * blend)
+            let target = min(maxLeading, max(0, centeredOffset))
+            let size = NSSize(width: navigation.preferredWidth, height: PillNavigationView.height)
+            let origin = NSPoint(x: bounds.minX + target, y: bounds.midY - size.height / 2)
+            // During live resize only the carrier moves. The button layout
+            // changes when its localized width changes, not on every drag step.
+            if carrier.frame.size != size { carrier.setFrameSize(size) }
+            if carrier.frame.origin != origin { carrier.setFrameOrigin(origin) }
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self || hit === carrier ? nil : hit
+    }
+}
+
 /// Four persistent destinations. Native radio buttons retain normal tracking,
 /// keyboard focus and VoiceOver selection; only their drawing is customized.
 @MainActor
 final class PillNavigationView: NSStackView {
+    static let height: CGFloat = 34
     private(set) var destinationButtons: [PillNavigationButton] = []
     var onSelect: ((SidebarDestination, Bool) -> Void)?
     var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -13,6 +69,7 @@ final class PillNavigationView: NSStackView {
     private var keyboardActivation = false
     private let destinations = SidebarDestination.mainCases
     private var widthConstraint: NSLayoutConstraint!
+    var preferredWidth: CGFloat { widthConstraint.constant }
 
     init() {
         super.init(frame: .zero)
@@ -38,7 +95,7 @@ final class PillNavigationView: NSStackView {
         selectionView.setAccessibilityElement(false)
         addSubview(selectionView, positioned: .below, relativeTo: destinationButtons.first)
         widthConstraint = widthAnchor.constraint(equalToConstant: 260)
-        NSLayoutConstraint.activate([widthConstraint, heightAnchor.constraint(equalToConstant: 34)])
+        NSLayoutConstraint.activate([widthConstraint, heightAnchor.constraint(equalToConstant: Self.height)])
     }
 
     required init?(coder: NSCoder) { nil }

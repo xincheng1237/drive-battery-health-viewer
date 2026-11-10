@@ -13,12 +13,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private let contentSurface = ContentEdgeView()
     let detailController: NSViewController
     let navigationHeader = PillNavigationView()
+    private lazy var navigationSlot = NavigationToolbarSlot(navigation: navigationHeader)
     private let actionsView = NSStackView()
     private let refreshSlot = NSView()
     private let progress = NSProgressIndicator()
     private var buttons: [String: ToolbarIconButton] = [:]
     private var observation: AnyCancellable?
-    private var resizeObservation: AnyCancellable?
     private var updateScheduled = false
     private var lastPrivacyState: Bool?
     private let toolbarID = NSToolbar.Identifier("DBHV.NativeMainToolbar.v1")
@@ -83,7 +83,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
         toolbar.displayMode = .iconOnly
-        toolbar.centeredItemIdentifiers = [navigationID]
         toolbar.showsBaselineSeparator = false
         toolbar.delegate = self
         window.toolbar = toolbar
@@ -93,9 +92,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
             if !window.setFrameUsingName(name) { window.center() }
             window.setFrameAutosaveName(name)
         }
-        resizeObservation = NotificationCenter.default.publisher(for: NSWindow.didResizeNotification, object: window)
-            .sink { [weak self] _ in self?.updateToolbarAlignment() }
-        updateToolbarAlignment()
         refreshToolbarState()
         observation = model.objectWillChange.sink { [weak self] _ in
             guard let self, !self.updateScheduled else { return }
@@ -108,14 +104,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     required init?(coder: NSCoder) { nil }
-
-    private func updateToolbarAlignment() {
-        guard let window, let toolbar = window.toolbar else { return }
-        // Let the toolbar flow after the window controls when the centered
-        // navigation and the five overview actions need the same space.
-        let centered: Set<NSToolbarItem.Identifier> = window.frame.width >= 720 ? [navigationID] : []
-        if toolbar.centeredItemIdentifiers != centered { toolbar.centeredItemIdentifiers = centered }
-    }
 
     private func configureNavigationHeader() {
         navigationHeader.update(model: model)
@@ -185,7 +173,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [navigationID, .flexibleSpace, actionsID]
+        [navigationID, actionsID]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -196,7 +184,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         let item = NSToolbarItem(itemIdentifier: identifier)
         if identifier == navigationID {
-            item.view = navigationHeader
+            item.view = navigationSlot
+            // AppKit treats the slot's large Auto Layout fitting width as a
+            // minimum on macOS 15. Declare the flexible range explicitly.
+            item.minSize = NSSize(width: navigationHeader.preferredWidth + 8, height: PillNavigationView.height)
+            item.maxSize = NSSize(width: 16_384, height: PillNavigationView.height)
             item.visibilityPriority = .high
         } else if identifier == actionsID {
             item.view = actionsView
@@ -209,6 +201,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         let destination = model.destination ?? .overview
         let title = model.t(destination.rawValue)
         navigationHeader.update(model: model)
+        if let item = window?.toolbar?.items.first(where: { $0.itemIdentifier == navigationID }),
+           item.minSize.width != navigationHeader.preferredWidth + 8 {
+            item.minSize.width = navigationHeader.preferredWidth + 8
+            navigationSlot.needsLayout = true
+        }
         // These operations act on the current overview snapshot. Other pages
         // own their own actions; keep the slot so navigation never shifts.
         actionsView.isHidden = destination != .overview
