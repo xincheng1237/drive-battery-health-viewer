@@ -585,6 +585,21 @@ public func shouldPresentChargeLimitStatusItem(
     return true
 }
 
+public enum ChargeLimitHoldPosition: Equatable {
+    case atLimit
+    case aboveLimit
+}
+
+public func resolvedChargeLimitHoldPosition(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> ChargeLimitHoldPosition? {
+    guard shouldPresentChargeLimitStatusItem(configuration: configuration, status: status, now: now),
+          let percentage = status?.batteryPercentage else { return nil }
+    return percentage == configuration.fixedLimit.rawValue ? .atLimit : .aboveLimit
+}
+
 public func shouldPresentPowerUIRecoveryStatusItem(
     configuration: ChargeProtectionConfiguration,
     status: ChargeProtectionStatus?,

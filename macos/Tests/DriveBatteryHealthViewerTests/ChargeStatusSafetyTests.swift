@@ -180,7 +180,7 @@ struct ChargeStatusSafetyTests {
         #expect(ChargeLimitAgentPresentationState.resolve(
             configuration: agent.configuration, status: agent.status,
             now: now.addingTimeInterval(20)
-        ) == .limitReached)
+        ) == .aboveLimit)
     }
 
     @Test

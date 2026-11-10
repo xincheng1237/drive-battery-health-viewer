@@ -15,10 +15,13 @@ public struct PowerUIRequestSchedule {
 
     public func request(
         adapterConnected: Bool,
+        systemAdapterConnected: Bool?,
+        batteryPercentage: Int,
         managed: Bool,
         now: ContinuousClock.Instant = .now
     ) -> Request? {
-        guard adapterConnected, retryAfter.map({ now >= $0 }) ?? true else { return nil }
+        guard adapterConnected, systemAdapterConnected == true, (0..<100).contains(batteryPercentage),
+              retryAfter.map({ now >= $0 }) ?? true else { return nil }
         if !managed { return .recover }
         if let lastSuccess, lastSuccess.duration(to: now) < .seconds(4 * 60 * 60) { return nil }
         return .renew

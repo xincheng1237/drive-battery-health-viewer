@@ -31,6 +31,7 @@ enum AgentL10n {
     private static let values: [AgentLanguage: [String: String]] = [
         .english: [
             "reached": "Charge limit reached (%d%%)",
+            "aboveLimit": "Charge above the set limit (%d%%)",
             "active": "Charge protection enabled (%d%% limit)",
             "unconfirmed": "Charge protection status unconfirmed",
             "temporaryFullActive": "Charging to full this time",
@@ -53,6 +54,7 @@ enum AgentL10n {
         ],
         .simplifiedChinese: [
             "reached": "已到达设定电量（%d%%）",
+            "aboveLimit": "当前电量高于设定上限（%d%%）",
             "active": "充电保护已启用（上限 %d%%）",
             "unconfirmed": "充电保护状态待确认",
             "temporaryFullActive": "本次正在充满",
@@ -75,6 +77,7 @@ enum AgentL10n {
         ],
         .russian: [
             "reached": "Достигнут предел заряда (%d%%)",
+            "aboveLimit": "Заряд выше заданного предела (%d%%)",
             "active": "Защита зарядки включена (предел %d%%)",
             "unconfirmed": "Состояние защиты зарядки не подтверждено",
             "temporaryFullActive": "Выполняется разовая полная зарядка",
@@ -95,6 +98,7 @@ enum AgentL10n {
         ],
         .french: [
             "reached": "Limite de charge atteinte (%d%%)",
+            "aboveLimit": "Charge supérieure à la limite (%d%%)",
             "active": "Protection de charge activée (limite de %d %%)",
             "unconfirmed": "État de la protection de charge à confirmer",
             "temporaryFullActive": "Charge complète en cours pour cette fois",
@@ -115,6 +119,7 @@ enum AgentL10n {
         ],
         .german: [
             "reached": "Ladegrenze erreicht (%d%%)",
+            "aboveLimit": "Ladestand über dem Limit (%d%%)",
             "active": "Ladeschutz aktiviert (Grenze: %d %%)",
             "unconfirmed": "Ladeschutzstatus nicht bestätigt",
             "temporaryFullActive": "Dieses Mal wird vollständig geladen",
@@ -135,6 +140,7 @@ enum AgentL10n {
         ],
         .korean: [
             "reached": "설정한 충전량에 도달함(%d%%)",
+            "aboveLimit": "현재 충전량이 설정 한도(%d%%)를 초과함",
             "active": "충전 보호가 켜짐(한도 %d%%)",
             "unconfirmed": "충전 보호 상태 확인 대기 중",
             "temporaryFullActive": "이번에는 완전 충전 중",
@@ -155,6 +161,7 @@ enum AgentL10n {
         ],
         .japanese: [
             "reached": "設定した充電量に到達（%d%%）",
+            "aboveLimit": "現在の充電量は設定上限（%d%%）を超えています",
             "active": "充電保護が有効（上限 %d%%）",
             "unconfirmed": "充電保護の状態は未確認です",
             "temporaryFullActive": "今回だけ満充電中",
@@ -192,6 +199,7 @@ enum ChargeLimitAgentPresentationState: Equatable {
     case protectionActive
     case protectionUnconfirmed
     case limitReached
+    case aboveLimit
     case temporaryFullCharge
     case systemTemporaryFullCharge
     case systemFullChargeAwaitingConfirmation
@@ -223,8 +231,10 @@ enum ChargeLimitAgentPresentationState: Equatable {
             return .protectionUnconfirmed
         }
         if confirmsTemporaryFullCharge(configuration: configuration, status: status, now: now) { return .temporaryFullCharge }
-        if shouldPresentChargeLimitStatusItem(configuration: configuration, status: status, now: now) {
-            return .limitReached
+        switch resolvedChargeLimitHoldPosition(configuration: configuration, status: status, now: now) {
+        case .atLimit: return .limitReached
+        case .aboveLimit: return .aboveLimit
+        case nil: break
         }
         return .protectionActive
     }
@@ -343,6 +353,8 @@ final class ChargeLimitAgentModel: ObservableObject {
             return AgentL10n.text("unconfirmed", language: language)
         case .limitReached:
             return AgentL10n.reached(configuration.fixedLimit.rawValue, language: language)
+        case .aboveLimit:
+            return String(format: AgentL10n.text("aboveLimit", language: language), configuration.fixedLimit.rawValue)
         case .temporaryFullCharge:
             return AgentL10n.text("temporaryFullActive", language: language)
         case .systemTemporaryFullCharge:

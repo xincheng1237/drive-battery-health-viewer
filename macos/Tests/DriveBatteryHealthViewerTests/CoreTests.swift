@@ -714,7 +714,7 @@ struct CoreTests {
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
         let bundleBuild = try #require(plist["CFBundleVersion"] as? String)
-        #expect(bundleBuild == "46")
+        #expect(bundleBuild == "47")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
@@ -2039,7 +2039,7 @@ struct CoreTests {
             .deletingLastPathComponent()
         let helperURL = macosRoot.appendingPathComponent("Sources/DriveBatteryChargeHelper/main.swift")
         let source = try String(contentsOf: helperURL, encoding: .utf8)
-        #expect(source.contains("private let helperVersion = \"1.1.2.2\""))
+        #expect(source.contains("private let helperVersion = \"1.1.2.3\""))
         #expect(!source.contains("st_mode & S_IFLNK"))
         let markerStart = try #require(source.range(of: "private struct PowerUIOwnershipMarker: Codable"))
         let markerEnd = try #require(source.range(of: "private func readBattery()", range: markerStart.upperBound..<source.endIndex))

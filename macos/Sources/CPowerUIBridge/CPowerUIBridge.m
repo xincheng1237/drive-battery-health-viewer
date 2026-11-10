@@ -152,10 +152,16 @@ static bool DBHVWaitForEightyManaged(int attempts, useconds_t delay, bool requir
     return false;
 }
 
-static bool DBHVScheduleEighty(int32_t batteryPercentage, bool requireKnownInactive) {
+// The checkpoint payload uses two decimal digits for the battery level.
+static bool DBHVCanEncodeCheckpointLevel(int32_t level) {
+    return level >= 0 && level < 100;
+}
+
+static bool DBHVScheduleEighty(int32_t batteryPercentage, bool requireKnownInactive,
+                              DBHVPowerUIExternalPowerCheck hasPower) {
+    if (!DBHVCanEncodeCheckpointLevel(batteryPercentage)) return false;
     DBHVPowerUIStatus before;
-    if (!DBHVReadStatus(&before) || !DBHVMayScheduleEighty(before, requireKnownInactive)) return false;
-    int32_t level = MAX(0, MIN(100, batteryPercentage));
+    if (!DBHVReadStatus(&before) || !DBHVMayScheduleEighty(before, requireKnownInactive) || !hasPower()) return false;
     NSDate *now = [NSDate date];
     NSDate *start = [now dateByAddingTimeInterval:-60.0];
     NSDate *deadline = [now dateByAddingTimeInterval:24.0 * 60.0 * 60.0];
@@ -165,12 +171,13 @@ static bool DBHVScheduleEighty(int32_t batteryPercentage, bool requireKnownInact
                overrideAllSignals:YES];
     if (!DBHVWaitFor(1, 1, -1, -1, 30, 100000)) return false;
     DBHVPowerUIStatus after;
-    if (!DBHVReadStatus(&after) || !DBHVMayScheduleEighty(after, requireKnownInactive)) return false;
-    if (!DBHVPostCheckpoint((uint64_t)(100 + level))) return false;
-    return DBHVWaitForEightyManaged(60, 100000, requireKnownInactive);
+    if (!DBHVReadStatus(&after) || !DBHVMayScheduleEighty(after, requireKnownInactive) || !hasPower()) return false;
+    if (!DBHVPostCheckpoint((uint64_t)(100 + batteryPercentage))) return false;
+    return DBHVWaitForEightyManaged(60, 100000, requireKnownInactive) && hasPower();
 }
 
-bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy) {
+bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy, DBHVPowerUIExternalPowerCheck hasPower) {
+    if (!DBHVCanEncodeCheckpointLevel(batteryPercentage) || !hasPower || !hasPower()) return false;
     @autoreleasepool {
         if (!DBHVPowerUIOpen()) return false;
         DBHVPowerUIStatus baseline;
@@ -193,15 +200,14 @@ bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy) {
             return false;
         }
 
-        int32_t level = MAX(0, MIN(100, batteryPercentage));
         if (cleanBaseline && baseline.checkpoint == 10) {
-            if (!DBHVPostCheckpoint((uint64_t)level) ||
+            if (!hasPower() || !DBHVPostCheckpoint((uint64_t)batteryPercentage) ||
                 !DBHVWaitFor(0, 0, 0, -1, 30, 100000)) {
                 return false;
             }
         }
 
-        if (!DBHVScheduleEighty(level, expiredPolicy)) {
+        if (!DBHVScheduleEighty(batteryPercentage, expiredPolicy, hasPower)) {
             // Leave owned schedules in place for the next verification.
             // Only roll back a failed first request with readable pause state.
             DBHVPowerUIStatus current;
@@ -216,12 +222,13 @@ bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy) {
     }
 }
 
-bool DBHVPowerUIRefreshEighty(int32_t batteryPercentage) {
+bool DBHVPowerUIRefreshEighty(int32_t batteryPercentage, DBHVPowerUIExternalPowerCheck hasPower) {
+    if (!DBHVCanEncodeCheckpointLevel(batteryPercentage) || !hasPower || !hasPower()) return false;
     @autoreleasepool {
         if (!DBHVPowerUIOpen()) return false;
         DBHVPowerUIStatus baseline;
         if (!DBHVReadStatus(&baseline) || !DBHVIsEightyManaged(baseline)) return false;
-        return DBHVScheduleEighty(batteryPercentage, false);
+        return DBHVScheduleEighty(batteryPercentage, false, hasPower);
     }
 }
 

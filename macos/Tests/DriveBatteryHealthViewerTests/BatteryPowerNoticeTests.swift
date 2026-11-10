@@ -6,7 +6,7 @@ import Testing
 @Suite("Battery power notice cause")
 struct BatteryPowerNoticeTests {
     enum Scenario: CaseIterable {
-        case nativeHold, smcHold, iconHidden, roundedConfigurationDate
+        case nativeHold, smcHold, iconHidden, roundedConfigurationDate, aboveWithHold, fullWithHold
         case settingOnly, belowLimit, belowHelperLimit, fullWithoutHold, disabledSetting, disabledHelper
         case temporaryFull, oldTemporaryFullStatus, missingStatus, staleStatus, futureStatus
         case oldConfiguration, missingConfigurationDate, changedLimit, holdFailed, missingControl
@@ -49,6 +49,14 @@ struct BatteryPowerNoticeTests {
         case .settingOnly: status?.holding = false
         case .belowLimit: percentage = 79
         case .belowHelperLimit: status?.batteryPercentage = 79
+        case .aboveWithHold:
+            percentage = 81
+            status?.batteryPercentage = 81
+            expected = .aboveLimit
+        case .fullWithHold:
+            percentage = 100
+            status?.batteryPercentage = 100
+            expected = .aboveLimit
         case .fullWithoutHold:
             percentage = 100
             status?.batteryPercentage = 100

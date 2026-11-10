@@ -72,6 +72,7 @@ struct ChargeLimitAgentPopoverView: View {
         case .protectionActive: return "battery.75percent"
         case .protectionUnconfirmed: return "questionmark.circle"
         case .limitReached: return "battery.100percent"
+        case .aboveLimit: return "battery.75percent"
         case .temporaryFullCharge, .systemTemporaryFullCharge: return "bolt.fill"
         case .systemFullChargeAwaitingConfirmation: return "clock"
         case .systemCalibration, .systemCalibrationAwaitingConfirmation: return "arrow.triangle.2.circlepath"

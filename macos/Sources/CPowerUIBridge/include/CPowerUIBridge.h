@@ -27,15 +27,19 @@ bool DBHVPowerUIReadStatus(DBHVPowerUIStatus *status);
 /// Zero does not prove the entire calibration process has completed.
 int32_t DBHVReadGaugingLimitSuspension(void);
 
+/// Read-only check of the live adapter. The bridge calls this again before
+/// a checkpoint notification, since the adapter can be removed during XPC.
+typedef bool (*DBHVPowerUIExternalPowerCheck)(void);
+
 /// Engages Apple's native optimized-battery-charging target (80%). The caller
 /// must establish ownership before using this to recover an Apple top-off
 /// transition; an unowned non-baseline state is never passed to this method.
-bool DBHVPowerUIEngageEighty(int32_t battery_percentage, bool owns_policy);
+bool DBHVPowerUIEngageEighty(int32_t battery_percentage, bool owns_policy, DBHVPowerUIExternalPowerCheck has_power);
 
 /// Renews an already engaged 80% override before PowerUI reaches its full-
 /// charge deadline. This keeps the adapter connected without allowing the
 /// native 24-hour schedule to enter its automatic top-off window.
-bool DBHVPowerUIRefreshEighty(int32_t battery_percentage);
+bool DBHVPowerUIRefreshEighty(int32_t battery_percentage, DBHVPowerUIExternalPowerCheck has_power);
 
 /// Clears this process's engagement override and restores normal charging.
 bool DBHVPowerUIDisable(void);

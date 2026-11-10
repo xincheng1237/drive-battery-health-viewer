@@ -6,9 +6,14 @@ import Foundation
 enum BatteryPowerNoticeReason: Equatable {
     case ordinary
     case chargeLimit
+    case aboveLimit
 
     var localizationKey: String {
-        self == .chargeLimit ? "chargeProtectionHoldingNotice" : "powerConnectedNotCharging"
+        switch self {
+        case .ordinary: return "powerConnectedNotCharging"
+        case .chargeLimit: return "chargeProtectionHoldingNotice"
+        case .aboveLimit: return "chargeAboveLimit"
+        }
     }
 
     static func resolve(
@@ -18,8 +23,9 @@ enum BatteryPowerNoticeReason: Equatable {
     ) -> Self? {
         guard externalConnected == true, isCharging == false else { return nil }
         guard let batteryPercentage, (configuration.fixedLimit.rawValue...100).contains(batteryPercentage),
-              shouldPresentChargeLimitStatusItem(configuration: configuration, status: status, now: now)
+              let position = resolvedChargeLimitHoldPosition(configuration: configuration, status: status, now: now)
         else { return .ordinary }
-        return .chargeLimit
+        if batteryPercentage > configuration.fixedLimit.rawValue { return .aboveLimit }
+        return position == .atLimit ? .chargeLimit : .ordinary
     }
 }

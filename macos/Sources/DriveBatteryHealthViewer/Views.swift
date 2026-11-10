@@ -349,7 +349,9 @@ struct BatteryPowerNotice: View {
             batteryPercentage: battery.currentCapacityPercent,
             configuration: manager.configuration, status: manager.status
         ) {
-            Text(model.t(reason.localizationKey))
+            Text(reason == .aboveLimit
+                 ? L10n.format(reason.localizationKey, model.language, manager.configuration.fixedLimit.rawValue)
+                 : model.t(reason.localizationKey))
                 .interfaceFont(.footnote).foregroundStyle(.secondary)
         }
     }
@@ -1015,7 +1017,11 @@ struct ChargeLimitStatusPopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14 * displaySize.scale) {
             Label(
-                L10n.format("chargeLimitReached", model.language, manager.configuration.fixedLimit.rawValue),
+                L10n.format(
+                    resolvedChargeLimitHoldPosition(configuration: manager.configuration, status: manager.status) == .aboveLimit
+                        ? "chargeAboveLimit" : "chargeLimitReached",
+                    model.language, manager.configuration.fixedLimit.rawValue
+                ),
                 systemImage: "battery.100percent"
             )
             .interfaceFont(.headline)

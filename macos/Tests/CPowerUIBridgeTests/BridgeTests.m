@@ -9,6 +9,8 @@
 // load a real PowerUI client and cannot write a system notification or charge.
 static int notificationWrites;
 static uint64_t lastCheckpointRequest;
+static BOOL powerConnected = YES;
+static bool FakeHasPower(void) { return powerConnected; }
 static void (^onCheckpointPost)(void);
 static uint64_t gaugingState;
 static uint32_t registrationResult, readResult;
@@ -41,6 +43,7 @@ static int FakeSleep(useconds_t interval) { return 0; }
 @property(nonatomic) BOOL requestDuringEngagement;
 @property(nonatomic) BOOL calibrationDuringEngagement;
 @property(nonatomic) BOOL engaged;
+@property(nonatomic) BOOL unplugDuringEngagement;
 @property(nonatomic,strong) NSDate *requestedDeadline;
 @end
 @implementation FakeChargeClient
@@ -50,6 +53,7 @@ static int FakeSleep(useconds_t interval) { return 0; }
 - (void)engageFrom:(NSDate *)start until:(NSDate *)end repeatUntil:(NSDate *)repeat overrideAllSignals:(BOOL)override {
     self.engagements++;
     self.requestedDeadline=end;
+    if (self.unplugDuringEngagement) powerConnected=NO;
     if (self.calibrationDuringEngagement) gaugingState=1;
     if (self.requestDuringEngagement) self.snapshot=@{@"Enabled":@YES,@"CurrentState":@3,@"Checkpoint":@0,@"TemporarilyDisabled":@YES};
 }
@@ -63,8 +67,8 @@ int main(void) { @autoreleasepool {
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@3,@"Checkpoint":@0,@"TemporarilyDisabled":@YES};
     DBHVPowerUIStatus state;
     assert(DBHVPowerUIReadStatus(&state) && state.temporarily_disabled==1);
-    assert(!DBHVPowerUIEngageEighty(80, true));
-    assert(!DBHVPowerUIRefreshEighty(80));
+    assert(!DBHVPowerUIEngageEighty(80, true, FakeHasPower));
+    assert(!DBHVPowerUIRefreshEighty(80, FakeHasPower));
     assert(client.engagements==0 && client.resets==0 && client.disables==0 && notificationWrites==0);
 
     for (id value in @[@NO, @YES, @"1", @1.5, [NSNull null]]) {
@@ -80,14 +84,14 @@ int main(void) { @autoreleasepool {
     // must leave the new system choice alone, without reset or disable calls.
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@0,@"TemporarilyDisabled":@NO};
     client.requestDuringEngagement=YES;
-    assert(!DBHVPowerUIEngageEighty(80, true));
+    assert(!DBHVPowerUIEngageEighty(80, true, FakeHasPower));
     assert(client.engagements==1 && client.resets==0 && client.disables==0 && notificationWrites==0);
     client.engagements=0; client.requestDuringEngagement=NO;
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@2,@"TemporarilyDisabled":@NO};
     client.engaged=YES; gaugingState=1;
     assert(DBHVReadGaugingLimitSuspension()==1);
-    assert(!DBHVPowerUIEngageEighty(80, true));
-    assert(!DBHVPowerUIRefreshEighty(80));
+    assert(!DBHVPowerUIEngageEighty(80, true, FakeHasPower));
+    assert(!DBHVPowerUIRefreshEighty(80, FakeHasPower));
     assert(client.engagements==0 && client.resets==0 && client.disables==0 && notificationWrites==0);
 
     verifiedBuild="unverified-build";
@@ -103,13 +107,13 @@ int main(void) { @autoreleasepool {
 
     client.engaged=NO; client.calibrationDuringEngagement=YES;
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@0,@"TemporarilyDisabled":@NO};
-    assert(!DBHVPowerUIEngageEighty(67, true));
+    assert(!DBHVPowerUIEngageEighty(67, true, FakeHasPower));
     assert(client.engagements==1 && client.resets==0 && client.disables==0 && notificationWrites==0);
 
     // An expired or cleared owned request must be replaced, including above 80%.
     client.calibrationDuringEngagement=NO; gaugingState=0;
     client.engagements=0; notificationWrites=0;
-    for (NSNumber *level in @[@70, @92]) {
+    for (NSNumber *level in @[@70, @92, @99]) {
         client.engaged=NO;
         client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6,@"TemporarilyDisabled":@NO};
         int previousRequests=client.engagements;
@@ -119,7 +123,7 @@ int main(void) { @autoreleasepool {
             client.engaged=level.intValue>=80;
             client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":client.engaged?@2:@1,@"TemporarilyDisabled":@NO};
         };
-        assert(DBHVPowerUIEngageEighty(level.intValue, true));
+        assert(DBHVPowerUIEngageEighty(level.intValue, true, FakeHasPower));
         assert(client.engagements==previousRequests+1 && lastCheckpointRequest==100+level.intValue);
         assert([client.requestedDeadline timeIntervalSinceNow]>23*60*60);
         assert([client.requestedDeadline compare:oldDeadline]==NSOrderedDescending);
@@ -130,30 +134,59 @@ int main(void) { @autoreleasepool {
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6,@"TemporarilyDisabled":@NO};
     int requests=client.engagements;
     int writes=notificationWrites;
-    assert(!DBHVPowerUIEngageEighty(92, false));
+    assert(!DBHVPowerUIEngageEighty(92, false, FakeHasPower));
     gaugingState=1;
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     gaugingState=0; readResult=9;
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     readResult=0;
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6,@"TemporarilyDisabled":@YES};
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6};
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     assert(client.engagements==requests && notificationWrites==writes);
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6,@"TemporarilyDisabled":@NO};
     client.requestDuringEngagement=YES;
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     client.requestDuringEngagement=NO;
     assert(client.engagements==requests+1 && notificationWrites==writes && client.resets==0 && client.disables==0);
     client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6,@"TemporarilyDisabled":@NO};
     client.calibrationDuringEngagement=YES;
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     client.calibrationDuringEngagement=NO;
     assert(client.engagements==requests+2 && notificationWrites==writes && client.resets==0 && client.disables==0);
     gaugingState=0;
-    assert(!DBHVPowerUIEngageEighty(92, true));
+    assert(!DBHVPowerUIEngageEighty(92, true, FakeHasPower));
     assert(client.engagements==requests+3 && notificationWrites==writes+2 && client.resets==0 && client.disables==0);
+
+    // The system decoded a full-battery payload as a 0% power event.
+    // Never post 100 or 200 through the checkpoint transport.
+    client.snapshot=@{@"Enabled":@NO,@"CurrentState":@0,@"Checkpoint":@10,@"TemporarilyDisabled":@NO};
+    requests=client.engagements; writes=notificationWrites;
+    assert(!DBHVPowerUIEngageEighty(100, false, FakeHasPower));
+    assert(notificationWrites==writes && client.engagements==requests);
+    client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@2,@"TemporarilyDisabled":@NO};
+    client.engaged=YES;
+    assert(!DBHVPowerUIRefreshEighty(100, FakeHasPower));
+    assert(notificationWrites==writes && client.engagements==requests);
+    assert(!DBHVPowerUIEngageEighty(-1, true, FakeHasPower));
+    assert(!DBHVPowerUIEngageEighty(101, true, FakeHasPower));
+    assert(notificationWrites==writes && client.engagements==requests);
+    client.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@6,@"TemporarilyDisabled":@NO};
+    client.engaged=NO;
+    powerConnected=NO;
+    assert(!DBHVPowerUIEngageEighty(79, true, FakeHasPower));
+    assert(notificationWrites==writes && client.engagements==requests);
+    powerConnected=YES;
+    client.unplugDuringEngagement=YES;
+    assert(!DBHVPowerUIEngageEighty(79, true, FakeHasPower));
+    assert(notificationWrites==writes && client.engagements==requests+1);
+    assert(client.resets==0 && client.disables==0);
+    client.unplugDuringEngagement=NO;
+    powerConnected=YES;
+    puts("PASS: disconnect during engagement suppresses checkpoint writes");
+
+    puts("PASS: full and invalid battery readings cannot post ambiguous power events");
 
     puts("PASS: expired Checkpoint 6 re-engages below and above 80%, with a fresh deadline");
     puts("PASS: system full charge, calibration, unknown flags/builds, notification failures, and in-flight transitions never issue unintended control writes");
