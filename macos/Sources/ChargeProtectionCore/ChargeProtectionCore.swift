@@ -406,6 +406,7 @@ public enum PowerUIOwnershipLeaseState: String, Codable, Equatable, Sendable {
 
 public struct PowerUIOwnershipMarker: Codable, Equatable, Sendable {
     public static let schemaVersion = 1
+    public static let identifier = "com.chengxin.drivebatteryhealthviewer.chargehelper"
 
     public let schema: Int
     public let helperIdentifier: String
@@ -413,46 +414,26 @@ public struct PowerUIOwnershipMarker: Codable, Equatable, Sendable {
     public let lastKnownBatteryPercentage: Int?
     public let leaseState: PowerUIOwnershipLeaseState
 
-    public init(
-        lastKnownBatteryPercentage: Int?,
-        leaseState: PowerUIOwnershipLeaseState = .activeEighty,
-        helperIdentifier: String = "com.drivebatteryhealthviewer.chargehelper"
-    ) {
+    public init(leaseState: PowerUIOwnershipLeaseState = .activeEighty, lastKnownBatteryPercentage: Int?) {
         self.schema = Self.schemaVersion
-        self.helperIdentifier = helperIdentifier
+        self.helperIdentifier = Self.identifier
         self.targetPercentage = 80
-        self.lastKnownBatteryPercentage = lastKnownBatteryPercentage.flatMap {
-            (0...100).contains($0) ? $0 : nil
-        }
+        self.lastKnownBatteryPercentage = lastKnownBatteryPercentage
         self.leaseState = leaseState
-    }
-
-    public init(
-        leaseState: PowerUIOwnershipLeaseState = .activeEighty,
-        lastKnownBatteryPercentage: Int?,
-        helperIdentifier: String = "com.drivebatteryhealthviewer.chargehelper"
-    ) {
-        self.init(
-            lastKnownBatteryPercentage: lastKnownBatteryPercentage,
-            leaseState: leaseState,
-            helperIdentifier: helperIdentifier
-        )
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.schema = try container.decode(Int.self, forKey: .schema)
-        self.helperIdentifier = try container.decode(String.self, forKey: .helperIdentifier)
-        self.targetPercentage = try container.decode(Int.self, forKey: .targetPercentage)
-        self.lastKnownBatteryPercentage = try container.decodeIfPresent(Int.self, forKey: .lastKnownBatteryPercentage)
-        self.leaseState = try container.decodeIfPresent(PowerUIOwnershipLeaseState.self, forKey: .leaseState) ?? .activeEighty
+        schema = try container.decode(Int.self, forKey: .schema)
+        helperIdentifier = try container.decode(String.self, forKey: .helperIdentifier)
+        targetPercentage = try container.decode(Int.self, forKey: .targetPercentage)
+        lastKnownBatteryPercentage = try container.decodeIfPresent(Int.self, forKey: .lastKnownBatteryPercentage)
+        leaseState = try container.decodeIfPresent(PowerUIOwnershipLeaseState.self, forKey: .leaseState) ?? .activeEighty
     }
 
     public var isValid: Bool {
-        schema == Self.schemaVersion &&
-            !helperIdentifier.isEmpty &&
-            targetPercentage == 80 &&
-            lastKnownBatteryPercentage.map { (0...100).contains($0) } != false
+        schema == Self.schemaVersion && helperIdentifier == Self.identifier &&
+            targetPercentage == 80 && lastKnownBatteryPercentage.map { (0...100).contains($0) } != false
     }
 }
 
@@ -463,29 +444,149 @@ public enum PowerUIOwnershipInspection: Equatable, Sendable {
 }
 
 public func inspectPowerUIOwnershipFile(at url: URL, requireRoot: Bool = true) -> PowerUIOwnershipInspection {
+    let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+    guard descriptor >= 0 else {
+        return errno == ENOENT ? .unowned : .corrupted("Unable to open the ownership marker")
+    }
+    let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     var information = stat()
-    guard lstat(url.path, &information) == 0 else {
-        return .unowned
+    guard fstat(descriptor, &information) == 0,
+          information.st_mode & S_IFMT == S_IFREG, information.st_nlink == 1,
+          !requireRoot || (information.st_uid == 0 && information.st_gid == 0),
+          information.st_mode & 0o7777 == 0o600,
+          (1...4096).contains(information.st_size) else {
+        return .corrupted("Unsafe ownership marker metadata")
     }
-    guard (information.st_mode & S_IFMT) == S_IFREG else {
-        return .corrupted("Not a regular file")
-    }
-    if requireRoot && information.st_uid != 0 {
-        return .corrupted("File not owned by root (uid \(information.st_uid))")
-    }
-    if (information.st_mode & 0o022) != 0 {
-        return .corrupted("Insecure permissions on marker file (\(String(information.st_mode, radix: 8)))")
-    }
-    guard let data = try? Data(contentsOf: url) else {
-        return .corrupted("Unable to read marker file data")
-    }
-    guard let marker = try? JSONDecoder().decode(PowerUIOwnershipMarker.self, from: data) else {
-        return .corrupted("Invalid JSON format in marker file")
-    }
-    guard marker.isValid else {
-        return .corrupted("Marker contents failed validation")
+    guard let data = try? file.read(upToCount: 4097), data.count <= 4096,
+          let marker = try? JSONDecoder().decode(PowerUIOwnershipMarker.self, from: data),
+          marker.isValid else {
+        return .corrupted("Invalid ownership marker contents")
     }
     return .owned(marker)
+}
+
+public enum PowerUIOwnershipStore {
+    public static func write(_ marker: PowerUIOwnershipMarker, to url: URL) throws {
+        let directory = url.deletingLastPathComponent()
+        var template = directory.appendingPathComponent(".powerui-owner.XXXXXX").path.utf8CString
+        let descriptor = template.withUnsafeMutableBufferPointer { mkstemp($0.baseAddress!) }
+        guard descriptor >= 0 else { throw posixError() }
+        let temporaryPath = template.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { _ = unlink(temporaryPath) }
+        guard fchmod(descriptor, 0o600) == 0 else { throw posixError() }
+        if geteuid() == 0 {
+            guard fchown(descriptor, 0, 0) == 0 else { throw posixError() }
+        }
+        try file.write(contentsOf: JSONEncoder().encode(marker))
+        try file.synchronize()
+        try file.close()
+        guard rename(temporaryPath, url.path) == 0 else { throw posixError() }
+        try syncDirectory(directory)
+    }
+
+    public static func remove(at url: URL) throws {
+        guard unlink(url.path) == 0 || errno == ENOENT else { throw posixError() }
+        try syncDirectory(url.deletingLastPathComponent())
+    }
+
+    private static func syncDirectory(_ url: URL) throws {
+        let descriptor = open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw posixError() }
+        defer { close(descriptor) }
+        guard fsync(descriptor) == 0 else { throw posixError() }
+    }
+
+    private static func posixError() -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+}
+
+public enum PowerUIOwnershipBaseline: Equatable, Sendable {
+    case clean, restoredTopOff, system, unknown, other
+}
+
+/// A provisional marker is never accepted as authority, even after a restart.
+public func acquirePowerUIOwnership(
+    inspection: PowerUIOwnershipInspection,
+    baseline: PowerUIOwnershipBaseline,
+    percentage: Int,
+    persist: (PowerUIOwnershipMarker) throws -> Void,
+    retire: () throws -> Void,
+    engage: (Bool) -> Bool,
+    restore: () -> Bool
+) throws -> Bool {
+    guard (1..<100).contains(percentage), baseline != .system, baseline != .unknown else { return false }
+    let ownsPolicy: Bool
+    switch inspection {
+    case .owned(let marker) where marker.leaseState == .activeEighty:
+        ownsPolicy = baseline != .clean
+    case .owned(let marker) where marker.leaseState == .restoredTopOff && baseline == .restoredTopOff:
+        ownsPolicy = true
+    case .unowned, .owned:
+        guard baseline == .clean else { return false }
+        ownsPolicy = false
+    case .corrupted:
+        return false
+    }
+
+    if !ownsPolicy {
+        try persist(PowerUIOwnershipMarker(leaseState: .preEngaging, lastKnownBatteryPercentage: percentage))
+    }
+    guard engage(ownsPolicy) else {
+        // The failed request gives no authority over the visible policy.
+        if !ownsPolicy { try retire() }
+        return false
+    }
+    do {
+        try persist(PowerUIOwnershipMarker(lastKnownBatteryPercentage: percentage))
+        return true
+    } catch {
+        if !ownsPolicy {
+            // Only the newly acknowledged, in-process request authorizes this
+            // restoration. Retire provisional evidence even if it fails.
+            let restored = restore()
+            try retire()
+            if !restored { throw CocoaError(.fileWriteUnknown) }
+        }
+        throw error
+    }
+}
+
+/// The caller verifies both parent directories before invoking this operation.
+public func migratePowerUIOwnership(
+    marker: URL, backup: URL, preparing: Bool, requireRoot: Bool = true,
+    baseline: () -> PowerUIOwnershipBaseline
+) throws {
+    if preparing {
+        switch inspectPowerUIOwnershipFile(at: marker, requireRoot: requireRoot) {
+        case .unowned: return
+        case .owned(let previous): try PowerUIOwnershipStore.write(previous, to: backup)
+        case .corrupted: throw CocoaError(.fileReadCorruptFile)
+        }
+        return
+    }
+
+    let inspection = inspectPowerUIOwnershipFile(at: backup, requireRoot: requireRoot)
+    if case .corrupted = inspection { throw CocoaError(.fileReadCorruptFile) }
+    let current = inspectPowerUIOwnershipFile(at: marker, requireRoot: requireRoot)
+    if case .corrupted = current { throw CocoaError(.fileReadCorruptFile) }
+    if case .unowned = inspection, case .unowned = current { return }
+    switch baseline() {
+    case .clean, .system:
+        try PowerUIOwnershipStore.remove(at: marker)
+    case .restoredTopOff:
+        guard case .owned(let previous) = inspection,
+              previous.leaseState == .activeEighty || previous.leaseState == .restoredTopOff else {
+            try PowerUIOwnershipStore.remove(at: marker)
+            return
+        }
+        try PowerUIOwnershipStore.write(PowerUIOwnershipMarker(
+            leaseState: .restoredTopOff, lastKnownBatteryPercentage: previous.lastKnownBatteryPercentage
+        ), to: marker)
+    case .unknown, .other:
+        throw CocoaError(.fileReadUnknown)
+    }
 }
 
 public let verifiedPowerUIMacOSBuilds: Set<String> = ["24H212"]
@@ -643,7 +744,7 @@ public struct PowerUIOverchargeMonitor: Equatable, Sendable {
 public struct PowerUIProtectionCoordinator: Sendable {
     public struct Input: Equatable, Sendable {
         public var batteryPercentage: Int
-        public var isCharging: Bool
+        public var isCharging: Bool?
         public var adapterConnected: Bool
         public var systemAdapterConnected: Bool?
         public var checkpoint: Int32
@@ -652,10 +753,12 @@ public struct PowerUIProtectionCoordinator: Sendable {
         public var calibrationSuspended: Bool
         public var hasOwnership: Bool
         public var isHoldApplied: Bool
+        public var pauseSignalsKnown: Bool
+        public var powerUIActive: Bool
 
         public init(
             batteryPercentage: Int,
-            isCharging: Bool,
+            isCharging: Bool?,
             adapterConnected: Bool,
             systemAdapterConnected: Bool?,
             checkpoint: Int32,
@@ -663,7 +766,9 @@ public struct PowerUIProtectionCoordinator: Sendable {
             temporarilyDisabled: Bool = false,
             calibrationSuspended: Bool = false,
             hasOwnership: Bool = true,
-            isHoldApplied: Bool = false
+            isHoldApplied: Bool = false,
+            pauseSignalsKnown: Bool = true,
+            powerUIActive: Bool = true
         ) {
             self.batteryPercentage = batteryPercentage
             self.isCharging = isCharging
@@ -675,6 +780,8 @@ public struct PowerUIProtectionCoordinator: Sendable {
             self.calibrationSuspended = calibrationSuspended
             self.hasOwnership = hasOwnership
             self.isHoldApplied = isHoldApplied
+            self.pauseSignalsKnown = pauseSignalsKnown
+            self.powerUIActive = powerUIActive
         }
     }
 
@@ -687,18 +794,23 @@ public struct PowerUIProtectionCoordinator: Sendable {
         public var errorMessage: String?
     }
 
-    public var schedule = PowerUIRequestSchedule()
-    public var overchargeMonitor = PowerUIOverchargeMonitor()
+    private var schedule = PowerUIRequestSchedule()
+    private var overchargeMonitor = PowerUIOverchargeMonitor()
+
+    private var rejectedRequest = false
+    private var attemptedRecovery = false
 
     public init() {}
 
     public mutating func reset() {
+        rejectedRequest = false
+        attemptedRecovery = false
         schedule = PowerUIRequestSchedule()
         overchargeMonitor.reset()
     }
 
     public func isManaged(input: Input) -> Bool {
-        guard input.hasOwnership,
+        guard input.hasOwnership, input.pauseSignalsKnown, input.powerUIActive,
               !input.temporarilyDisabled,
               !input.calibrationSuspended else { return false }
         let needsRecovery = PowerUIRequestSchedule.needsCheckpointRecovery(
@@ -710,63 +822,83 @@ public struct PowerUIProtectionCoordinator: Sendable {
         return input.checkpoint == 1 || (input.checkpoint == 2 && input.engaged)
     }
 
+    public mutating func record(
+        _ request: PowerUIRequestSchedule.Request,
+        accepted: Bool,
+        observed input: Input,
+        now: ContinuousClock.Instant = .now
+    ) {
+        guard input.adapterConnected, input.systemAdapterConnected == true, input.pauseSignalsKnown,
+              !input.temporarilyDisabled, !input.calibrationSuspended else {
+            reset()
+            return
+        }
+        attemptedRecovery = request == .recover
+        rejectedRequest = !accepted
+        // Checkpoint 1 is sufficient while charging toward the limit. Once at
+        // or above it, only Checkpoint 2 plus actual stopped charging ends retry.
+        schedule.record(succeeded: accepted && policyConfirmed(input), now: now)
+    }
+
+    private func policyConfirmed(_ input: Input) -> Bool {
+        guard input.adapterConnected, input.systemAdapterConnected == true, isManaged(input: input) else {
+            return false
+        }
+        return input.batteryPercentage < 80 ||
+            (input.batteryPercentage < 100 && input.isHoldApplied && input.isCharging == false)
+    }
+
     public mutating func evaluate(
         input: Input,
         didAttemptReassert: Bool = false,
         now: ContinuousClock.Instant = .now
     ) -> Decision {
+        guard input.adapterConnected, input.systemAdapterConnected == true, input.pauseSignalsKnown,
+              !input.temporarilyDisabled, !input.calibrationSuspended else {
+            reset()
+            return Decision(request: nil, managed: false, holding: false, policyConfirmed: false,
+                            overchargeState: .unmanaged, errorMessage: nil)
+        }
         let managed = isManaged(input: input)
+        let overchargeState: PowerUIOverchargeMonitor.State
+        if let isCharging = input.isCharging {
+            overchargeState = overchargeMonitor.update(
+                batteryPercentage: input.batteryPercentage,
+                isCharging: isCharging,
+                checkpoint: input.checkpoint,
+                engaged: input.engaged && managed,
+                managed: managed,
+                didAttemptReassert: attemptedRecovery || didAttemptReassert,
+                now: now
+            )
+        } else {
+            overchargeMonitor.reset()
+            overchargeState = .unmanaged
+        }
+        attemptedRecovery = false
+        let error: String?
+        let abnormal: Bool
+        if case .abnormalChargingPastLimit(let message) = overchargeState {
+            error = message
+            abnormal = true
+        } else {
+            abnormal = false
+            error = rejectedRequest && !policyConfirmed(input) && input.batteryPercentage < 100
+                ? "Native PowerUI 80% engagement failed" : nil
+        }
         let request = schedule.request(
             adapterConnected: input.adapterConnected,
             systemAdapterConnected: input.systemAdapterConnected,
             batteryPercentage: input.batteryPercentage,
-            managed: managed,
+            managed: managed && !abnormal,
             checkpoint: input.checkpoint,
             engaged: input.engaged,
             now: now
         )
-
-        let overchargeState = overchargeMonitor.update(
-            batteryPercentage: input.batteryPercentage,
-            isCharging: input.isCharging,
-            checkpoint: input.checkpoint,
-            engaged: input.engaged,
-            managed: managed,
-            didAttemptReassert: didAttemptReassert,
-            now: now
-        )
-
-        var errorMessage: String? = nil
-        let holding: Bool
-        let isHoldingConfirmed = (input.checkpoint == 2 && input.engaged)
-
-        switch overchargeState {
-        case .abnormalChargingPastLimit(let msg):
-            holding = false
-            errorMessage = msg
-        default:
-            holding = input.adapterConnected && managed && !input.isCharging &&
-                input.batteryPercentage >= 80 && input.isHoldApplied
-            if input.adapterConnected && !managed && input.batteryPercentage < 100 && schedule.hasFailed {
-                errorMessage = "Native PowerUI 80% engagement failed"
-            }
-        }
-
-        let policyConfirmed: Bool
-        if input.batteryPercentage >= 80 {
-            policyConfirmed = managed && (holding || isHoldingConfirmed)
-        } else {
-            policyConfirmed = managed
-        }
-
-        return Decision(
-            request: request,
-            managed: managed,
-            holding: holding,
-            policyConfirmed: policyConfirmed,
-            overchargeState: overchargeState,
-            errorMessage: errorMessage
-        )
+        let confirmed = !abnormal && policyConfirmed(input)
+        return Decision(request: request, managed: managed && !abnormal,
+                        holding: confirmed && input.batteryPercentage >= 80, policyConfirmed: confirmed,
+                        overchargeState: overchargeState, errorMessage: error)
     }
 }
 

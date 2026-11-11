@@ -41,6 +41,7 @@ static int FakeSleep(useconds_t interval) { return 0; }
 @property(nonatomic) int resets;
 @property(nonatomic) int disables;
 @property(nonatomic) BOOL requestDuringEngagement;
+@property(nonatomic) BOOL acknowledgeNewEngagement;
 @property(nonatomic) BOOL calibrationDuringEngagement;
 @property(nonatomic) BOOL engaged;
 @property(nonatomic) BOOL omitIsEngaged;
@@ -57,6 +58,7 @@ static int FakeSleep(useconds_t interval) { return 0; }
 - (void)engageFrom:(NSDate *)start until:(NSDate *)end repeatUntil:(NSDate *)repeat overrideAllSignals:(BOOL)override {
     self.engagements++;
     self.requestedDeadline=end;
+    if (self.acknowledgeNewEngagement) self.snapshot=@{@"Enabled":@YES,@"CurrentState":@1,@"Checkpoint":@1,@"TemporarilyDisabled":@NO};
     if (self.unplugDuringEngagement) powerConnected=NO;
     if (self.calibrationDuringEngagement) gaugingState=1;
     if (self.requestDuringEngagement) self.snapshot=@{@"Enabled":@YES,@"CurrentState":@3,@"Checkpoint":@0,@"TemporarilyDisabled":@YES};
@@ -235,18 +237,48 @@ int main(void) { @autoreleasepool {
     assert(DBHVPowerUIDisable());
     assert(client.resets == resets && client.disables == disables);
 
+    client.engaged = NO;
     client.snapshot = @{@"Enabled":@NO, @"CurrentState":@0, @"Checkpoint":@10, @"TemporarilyDisabled":@NO};
     assert(DBHVPowerUIDisable());
     assert(client.resets == resets && client.disables == disables);
     puts("PASS: DBHVPowerUIDisable never clobbers system calibration or system full charge");
 
-    // 4. Missing isEngaged in powerLogStatus defaults to 0
+    // 4. Missing isEngaged in powerLogStatus stays unknown
     client.snapshot = @{@"Enabled":@YES, @"CurrentState":@1, @"Checkpoint":@2, @"TemporarilyDisabled":@NO};
     client.omitIsEngaged = YES;
     assert(DBHVPowerUIReadStatus(&state));
-    assert(state.engaged == 0);
+    assert(state.engaged == -1);
     client.omitIsEngaged = NO;
-    puts("PASS: missing isEngaged in powerLogStatus defaults to 0");
+    puts("PASS: missing isEngaged in powerLogStatus stays unknown");
+
+    // Unowned: first read unknown and two successive attempts against
+    // a macOS policy may not issue any mutations.
+    requests = client.engagements; writes = notificationWrites;
+    client.snapshot = @{};
+    assert(!DBHVPowerUIEngageEighty(80, false, FakeHasPower));
+    assert(!DBHVPowerUIDisable());
+    client.snapshot = @{@"Enabled":@YES, @"CurrentState":@1, @"Checkpoint":@5, @"TemporarilyDisabled":@NO};
+    assert(!DBHVPowerUIEngageEighty(80, false, FakeHasPower));
+    assert(!DBHVPowerUIEngageEighty(80, false, FakeHasPower));
+    assert(client.engagements == requests && notificationWrites == writes);
+    assert(client.resets == resets && client.disables == disables);
+
+    // Known clean checkpoint 10 must allow a new lease. The notification
+    // first clears checkpoint 10, then requests the actual hold.
+    client.snapshot = @{@"Enabled":@NO, @"CurrentState":@0, @"Checkpoint":@10, @"TemporarilyDisabled":@NO};
+    onCheckpointPost = ^{
+        if (lastCheckpointRequest == 80) {
+            client.snapshot = @{@"Enabled":@NO, @"CurrentState":@0, @"Checkpoint":@0, @"TemporarilyDisabled":@NO};
+        }
+    };
+    // Stage the SmartChargeClient acknowledgement at the XPC call.
+    client.acknowledgeNewEngagement = YES;
+    assert(DBHVPowerUIEngageEighty(80, false, FakeHasPower));
+    assert(client.engagements == requests + 1 && notificationWrites == writes + 4);
+    assert(lastCheckpointRequest == 180);
+    onCheckpointPost = nil;
+    client.acknowledgeNewEngagement = NO;
+    puts("PASS: clean Checkpoint 10 can acquire, native or unreadable ownership cannot");
 
     // 5. DBHVPowerUIRequestAbort interrupts in-flight wait loops immediately
     DBHVPowerUIClearAbortForTesting();

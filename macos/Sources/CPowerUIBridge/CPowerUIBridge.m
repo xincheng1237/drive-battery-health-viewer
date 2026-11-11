@@ -68,20 +68,32 @@ int32_t DBHVReadGaugingLimitSuspension(void) {
 
 bool DBHVSystemDefersEighty(DBHVPowerUIStatus status) {
     return status.temporarily_disabled == 1 || DBHVReadGaugingLimitSuspension() == 1 ||
-           status.current_state == 3 || status.checkpoint == 10;
+           status.current_state == 3 ||
+           (status.checkpoint == 10 && (status.enabled != 0 || status.current_state != 0));
 }
 
-static bool DBHVMayScheduleEighty(DBHVPowerUIStatus status, bool requireKnownInactive) {
-    if (DBHVSystemDefersEighty(status)) return false;
-    if (requireKnownInactive) {
-        return status.temporarily_disabled == 0 && DBHVReadGaugingLimitSuspension() == 0;
-    }
-    return status.temporarily_disabled != 1 && DBHVReadGaugingLimitSuspension() != 1;
+static bool DBHVMayScheduleEighty(DBHVPowerUIStatus status) {
+    return status.temporarily_disabled == 0 && DBHVReadGaugingLimitSuspension() == 0 &&
+           status.current_state != 3 &&
+           (status.checkpoint != 10 || (status.enabled == 0 && status.current_state == 0));
+}
+
+static bool DBHVIsCleanBaseline(DBHVPowerUIStatus status) {
+    return status.enabled == 0 && status.current_state == 0 && status.engaged == 0 &&
+           (status.checkpoint == 0 || status.checkpoint == 10);
+}
+
+static bool DBHVIsOwnedCheckpoint(DBHVPowerUIStatus status) {
+    return status.enabled == 1 && status.current_state == 1 && status.engaged >= 0 &&
+           (status.checkpoint == 0 || status.checkpoint == 1 || status.checkpoint == 2 ||
+            status.checkpoint == 5 || status.checkpoint == 6);
 }
 
 static int32_t DBHVInteger(NSDictionary *dictionary, NSString *key) {
     id value = dictionary[key];
-    return [value respondsToSelector:@selector(intValue)] ? [value intValue] : -1;
+    if (![value isKindOfClass:[NSNumber class]]) return -1;
+    int32_t integer = [value intValue];
+    return integer >= 0 && [value isEqualToNumber:@(integer)] ? integer : -1;
 }
 
 static bool DBHVReadStatus(DBHVPowerUIStatus *output) {
@@ -100,9 +112,7 @@ static bool DBHVReadStatus(DBHVPowerUIStatus *output) {
         output->temporarily_disabled = [temporary intValue];
     }
     output->engaged = DBHVInteger(powerLog, @"isEngaged");
-    if (output->engaged < 0) {
-        output->engaged = 0;
-    }
+    if (output->engaged != 0 && output->engaged != 1) output->engaged = -1;
     return output->enabled >= 0 && output->current_state >= 0 && output->checkpoint >= 0;
 }
 
@@ -173,7 +183,7 @@ bool DBHVPowerUIReadStatus(DBHVPowerUIStatus *status) {
 }
 
 static bool DBHVIsEightyEngaged(DBHVPowerUIStatus status) {
-    return !DBHVSystemDefersEighty(status) && status.enabled == 1 && status.current_state == 1 &&
+    return DBHVMayScheduleEighty(status) && DBHVIsOwnedCheckpoint(status) &&
         status.checkpoint == 2 && status.engaged == 1;
 }
 
@@ -182,16 +192,16 @@ static bool DBHVIsEightyEngaged(DBHVPowerUIStatus status) {
 // PowerUI is actively holding it there. Both are successful managed states;
 // only checkpoint 2 should be presented to the user as "holding".
 static bool DBHVIsEightyManaged(DBHVPowerUIStatus status) {
-    return !DBHVSystemDefersEighty(status) && status.enabled == 1 && status.current_state == 1 &&
+    return DBHVMayScheduleEighty(status) && DBHVIsOwnedCheckpoint(status) &&
         (status.checkpoint == 1 || DBHVIsEightyEngaged(status));
 }
 
-static bool DBHVWaitForEightyManaged(int attempts, useconds_t delay, bool requireKnownInactive) {
+static bool DBHVWaitForEightyManaged(int attempts, useconds_t delay) {
     for (int attempt = 0; attempt < attempts; attempt++) {
         if (atomic_load(&gDBHVPowerUIAbortRequested)) return false;
         DBHVPowerUIStatus snapshot;
         if (DBHVReadStatus(&snapshot)) {
-            if (!DBHVMayScheduleEighty(snapshot, requireKnownInactive)) return false;
+            if (!DBHVMayScheduleEighty(snapshot)) return false;
             if (DBHVIsEightyManaged(snapshot)) return true;
         }
         usleep(delay);
@@ -204,7 +214,7 @@ static bool DBHVWaitForEightyEngaged(int attempts, useconds_t delay) {
         if (atomic_load(&gDBHVPowerUIAbortRequested)) return false;
         DBHVPowerUIStatus snapshot;
         if (DBHVReadStatus(&snapshot)) {
-            if (DBHVSystemDefersEighty(snapshot)) return false;
+            if (!DBHVMayScheduleEighty(snapshot)) return false;
             if (DBHVIsEightyEngaged(snapshot)) return true;
         }
         usleep(delay);
@@ -218,11 +228,12 @@ static bool DBHVCanEncodeCheckpointLevel(int32_t level) {
     return level >= 1 && level < 100;
 }
 
-static bool DBHVScheduleEighty(int32_t batteryPercentage, bool requireKnownInactive,
+static bool DBHVScheduleEighty(int32_t batteryPercentage, bool ownsPolicy,
                               DBHVPowerUIExternalPowerCheck hasPower) {
-    if (!DBHVCanEncodeCheckpointLevel(batteryPercentage)) return false;
+    if (atomic_load(&gDBHVPowerUIAbortRequested) || !DBHVCanEncodeCheckpointLevel(batteryPercentage)) return false;
     DBHVPowerUIStatus before;
-    if (!DBHVReadStatus(&before) || !DBHVMayScheduleEighty(before, requireKnownInactive) || !hasPower()) return false;
+    if (!DBHVReadStatus(&before) || !DBHVMayScheduleEighty(before) ||
+        !(ownsPolicy ? DBHVIsOwnedCheckpoint(before) : DBHVIsCleanBaseline(before)) || !hasPower()) return false;
     NSDate *now = [NSDate date];
     NSDate *start = [now dateByAddingTimeInterval:-60.0];
     NSDate *deadline = [now dateByAddingTimeInterval:24.0 * 60.0 * 60.0];
@@ -232,7 +243,7 @@ static bool DBHVScheduleEighty(int32_t batteryPercentage, bool requireKnownInact
                overrideAllSignals:YES];
     if (!DBHVWaitFor(1, 1, -1, -1, 30, 100000)) return false;
     DBHVPowerUIStatus after;
-    if (!DBHVReadStatus(&after) || !DBHVMayScheduleEighty(after, requireKnownInactive) || !hasPower()) return false;
+    if (!DBHVReadStatus(&after) || !DBHVMayScheduleEighty(after) || !hasPower()) return false;
     if (!DBHVPostCheckpoint((uint64_t)(100 + batteryPercentage))) return false;
 
     if (batteryPercentage >= 80) {
@@ -240,26 +251,17 @@ static bool DBHVScheduleEighty(int32_t batteryPercentage, bool requireKnownInact
         if (DBHVWaitForEightyEngaged(20, 150000) && hasPower()) {
             return true;
         }
-        // If not engaged but in Checkpoint 1, reassert checkpoint once more
-        DBHVPowerUIStatus mid;
-        if (DBHVReadStatus(&mid) && mid.enabled == 1 && mid.current_state == 1 &&
-            mid.checkpoint == 1 && hasPower()) {
-            DBHVPostCheckpoint((uint64_t)(100 + batteryPercentage));
-            if (DBHVWaitForEightyEngaged(10, 150000) && hasPower()) {
-                return true;
-            }
-        }
         // If accepted by PowerUI (Checkpoint 1 or 2), return true so upper-layer
         // PowerUIOverchargeMonitor can govern re-assertion and overcharge detection.
         DBHVPowerUIStatus finalStatus;
         return DBHVReadStatus(&finalStatus) && DBHVIsEightyManaged(finalStatus) && hasPower();
     }
 
-    return DBHVWaitForEightyManaged(60, 100000, requireKnownInactive) && hasPower();
+    return DBHVWaitForEightyManaged(60, 100000) && hasPower();
 }
 
 bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy, DBHVPowerUIExternalPowerCheck hasPower) {
-    if (!hasPower || !hasPower()) return false;
+    if (atomic_load(&gDBHVPowerUIAbortRequested) || !hasPower || !hasPower()) return false;
     DBHV_LOCK();
     @autoreleasepool {
         if (!DBHVPowerUIOpen()) {
@@ -271,7 +273,7 @@ bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy, DBHVPow
             DBHV_UNLOCK();
             return false;
         }
-        if (DBHVSystemDefersEighty(baseline)) {
+        if (!DBHVMayScheduleEighty(baseline)) {
             DBHV_UNLOCK();
             return false;
         }
@@ -288,14 +290,8 @@ bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy, DBHVPow
             return ownsPolicy;
         }
 
-        bool cleanBaseline = baseline.enabled == 0 && baseline.current_state == 0 &&
-            (baseline.checkpoint == 10 || baseline.checkpoint == 0);
-        bool ownedEnabled = ownsPolicy && baseline.enabled == 1 && baseline.current_state == 1;
-        // Expand owned recovery check to include checkpoints 0, 1, 2, 5, 6 with engaged == 0
-        bool recoverableOwnedPolicy = ownedEnabled && baseline.engaged == 0 &&
-            (baseline.checkpoint == 0 || baseline.checkpoint == 1 || baseline.checkpoint == 2 ||
-             baseline.checkpoint == 5 || baseline.checkpoint == 6) &&
-            DBHVMayScheduleEighty(baseline, true);
+        bool cleanBaseline = DBHVIsCleanBaseline(baseline);
+        bool recoverableOwnedPolicy = ownsPolicy && DBHVIsOwnedCheckpoint(baseline) && baseline.engaged == 0;
 
         if (!cleanBaseline && !recoverableOwnedPolicy) {
             DBHV_UNLOCK();
@@ -310,24 +306,11 @@ bool DBHVPowerUIEngageEighty(int32_t batteryPercentage, bool ownsPolicy, DBHVPow
             }
         }
 
-        if (!DBHVScheduleEighty(batteryPercentage, recoverableOwnedPolicy, hasPower)) {
-            // Leave owned schedules in place for the next verification.
-            // Only roll back a failed first request with readable pause state.
-            DBHVPowerUIStatus current;
-            if (ownsPolicy || !DBHVReadStatus(&current) || current.temporarily_disabled != 0 ||
-                DBHVReadGaugingLimitSuspension() == 1) {
-                DBHV_UNLOCK();
-                return false;
-            }
-            usleep(300000);
-            [DBHVPowerUIClient resetEngagementOverride];
-            NSError *error = nil;
-            [DBHVPowerUIClient disableSmartCharging:&error];
-            DBHV_UNLOCK();
-            return false;
-        }
+        // A failed first request is not evidence of ownership. The caller
+        // retires its provisional marker and leaves an ambiguous policy alone.
+        bool accepted = DBHVScheduleEighty(batteryPercentage, recoverableOwnedPolicy, hasPower);
         DBHV_UNLOCK();
-        return true;
+        return accepted;
     }
 }
 
@@ -344,7 +327,7 @@ bool DBHVPowerUIRefreshEighty(int32_t batteryPercentage, DBHVPowerUIExternalPowe
             DBHV_UNLOCK();
             return false;
         }
-        bool result = DBHVScheduleEighty(batteryPercentage, false, hasPower);
+        bool result = DBHVScheduleEighty(batteryPercentage, true, hasPower);
         DBHV_UNLOCK();
         return result;
     }
@@ -358,30 +341,61 @@ bool DBHVPowerUIDisable(void) {
             return false;
         }
         DBHVPowerUIStatus initial;
-        if (DBHVReadStatus(&initial)) {
-            if (initial.enabled == 0 && initial.current_state == 0 && initial.checkpoint == 10) {
-                DBHV_UNLOCK();
-                return true;
-            }
-            if (DBHVSystemDefersEighty(initial)) {
-                // Never clobber active system calibration or system full charge!
-                DBHV_UNLOCK();
-                return true;
-            }
+        if (!DBHVReadStatus(&initial)) {
+            DBHV_UNLOCK();
+            return false;
         }
-        [DBHVPowerUIClient resetEngagementOverride];
-        usleep(300000);
-        NSError *error = nil;
-        BOOL disabled = [DBHVPowerUIClient disableSmartCharging:&error];
-        if (disabled && !error && DBHVWaitFor(0, 0, 10, 0, 40, 100000)) {
+        if (DBHVSystemDefersEighty(initial)) {
             DBHV_UNLOCK();
             return true;
         }
-
-        DBHVPowerUIStatus final;
-        bool result = DBHVReadStatus(&final) && final.enabled == 1 &&
-            final.current_state == 1 && final.checkpoint == 5 && final.engaged == 0;
+        if (!DBHVMayScheduleEighty(initial)) {
+            DBHV_UNLOCK();
+            return false;
+        }
+        if (DBHVIsCleanBaseline(initial) ||
+            (DBHVIsOwnedCheckpoint(initial) && initial.checkpoint == 5 && initial.engaged == 0)) {
+            DBHV_UNLOCK();
+            return true;
+        }
+        if (!DBHVIsOwnedCheckpoint(initial)) {
+            DBHV_UNLOCK();
+            return false;
+        }
+        [DBHVPowerUIClient resetEngagementOverride];
+        usleep(300000);
+        DBHVPowerUIStatus current;
+        if (!DBHVReadStatus(&current) || !DBHVMayScheduleEighty(current)) {
+            DBHV_UNLOCK();
+            return false;
+        }
+        if (DBHVIsCleanBaseline(current)) {
+            DBHV_UNLOCK();
+            return true;
+        }
+        if (!DBHVIsOwnedCheckpoint(current)) {
+            DBHV_UNLOCK();
+            return false;
+        }
+        if (current.checkpoint == 5 && current.engaged == 0) {
+            DBHV_UNLOCK();
+            return true;
+        }
+        NSError *error = nil;
+        BOOL disabled = [DBHVPowerUIClient disableSmartCharging:&error];
+        for (int attempt = 0; disabled && !error && attempt < 40; attempt++) {
+            DBHVPowerUIStatus final;
+            if (DBHVReadStatus(&final)) {
+                if (!DBHVMayScheduleEighty(final)) break;
+                if (DBHVIsCleanBaseline(final) ||
+                    (DBHVIsOwnedCheckpoint(final) && final.checkpoint == 5 && final.engaged == 0)) {
+                    DBHV_UNLOCK();
+                    return true;
+                }
+            }
+            usleep(100000);
+        }
         DBHV_UNLOCK();
-        return result;
+        return false;
     }
 }

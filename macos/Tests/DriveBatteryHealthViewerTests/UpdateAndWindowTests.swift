@@ -16,7 +16,7 @@ struct UpdateAndWindowTests {
         let data = try Data(contentsOf: package.appendingPathComponent("Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(info["CFBundleShortVersionString"] as? String == applicationVersion)
-        #expect(info["CFBundleVersion"] as? String == "50")
+        #expect(info["CFBundleVersion"] as? String == "51")
         #expect(info["SURequireSignedFeed"] as? Bool == true)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)

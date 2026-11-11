@@ -192,8 +192,7 @@ struct PowerUIRecoveryTests {
 
         // Owned activeEighty
         let marker = PowerUIOwnershipMarker(leaseState: .activeEighty, lastKnownBatteryPercentage: 80)
-        let data = try JSONEncoder().encode(marker)
-        try data.write(to: ownerURL)
+        try PowerUIOwnershipStore.write(marker, to: ownerURL)
         let inspection = inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false)
         if case .owned(let readMarker) = inspection {
             #expect(readMarker.leaseState == .activeEighty)
@@ -204,7 +203,7 @@ struct PowerUIRecoveryTests {
 
         // Owned restoredTopOff
         let topOffMarker = PowerUIOwnershipMarker(leaseState: .restoredTopOff, lastKnownBatteryPercentage: 85)
-        try JSONEncoder().encode(topOffMarker).write(to: ownerURL)
+        try PowerUIOwnershipStore.write(topOffMarker, to: ownerURL)
         if case .owned(let readMarker) = inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false) {
             #expect(readMarker.leaseState == .restoredTopOff)
             #expect(readMarker.lastKnownBatteryPercentage == 85)
@@ -242,7 +241,7 @@ struct PowerUIRecoveryTests {
         #expect(d78.overchargeState == .belowLimitScheduled)
 
         // Record initial success
-        coordinator.schedule.record(succeeded: true, now: t0)
+        coordinator.record(.renew, accepted: true, observed: input78, now: t0)
 
         // At 79%: throttled by 4-hour window, request is nil, policyConfirmed = true
         let input79 = PowerUIProtectionCoordinator.Input(
@@ -298,7 +297,6 @@ struct PowerUIRecoveryTests {
         #expect(ChargeLimitAgentPresentationState.resolve(configuration: config, status: statusUnconfirmed) == .protectionUnconfirmed)
 
         // Recovery succeeds: system enters Checkpoint 2 (engaged == true, isCharging == false)
-        coordinator.schedule.record(succeeded: true, now: t0.advanced(by: .seconds(125)))
         let input80Held = PowerUIProtectionCoordinator.Input(
             batteryPercentage: 80,
             isCharging: false,
@@ -308,6 +306,7 @@ struct PowerUIRecoveryTests {
             engaged: true,
             isHoldApplied: true
         )
+        coordinator.record(.recover, accepted: true, observed: input80Held, now: t0.advanced(by: .seconds(125)))
         let d80Held = coordinator.evaluate(input: input80Held, now: t0.advanced(by: .seconds(130)))
         #expect(d80Held.managed == true)
         #expect(d80Held.holding == true)
@@ -462,77 +461,116 @@ struct PowerUIRecoveryTests {
         #expect(marker.isValid)
     }
 
-    @Test func rollbackToCheckpoint5PreservesMarkerAsRestoredTopOff() throws {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("dbhv-test-rollback-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-        let ownerURL = tempDir.appendingPathComponent("powerui-owner.json")
+    @Test func acceptedCheckpointOneAt80BacksOffUntilHardwareConfirmsHold() {
+        let now = ContinuousClock.now
+        var input = PowerUIProtectionCoordinator.Input(
+            batteryPercentage: 80, isCharging: true, adapterConnected: true, systemAdapterConnected: true,
+            checkpoint: 1, engaged: false
+        )
+        var coordinator = PowerUIProtectionCoordinator()
+        #expect(coordinator.evaluate(input: input, now: now).request == .recover)
+        coordinator.record(.recover, accepted: true, observed: input, now: now)
+        let waiting = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(5)))
+        #expect(waiting.request == nil)
+        #expect(waiting.errorMessage == nil)
+        #expect(!waiting.policyConfirmed)
+        #expect(coordinator.evaluate(input: input, now: now.advanced(by: .seconds(10))).request == .recover)
 
-        // Pre-engaging marker is written before calling DBHVPowerUIEngageEighty
-        let preMarker = PowerUIOwnershipMarker(leaseState: .preEngaging, lastKnownBatteryPercentage: 80)
-        try JSONEncoder().encode(preMarker).write(to: ownerURL)
-
-        // Simulate engage failure where PowerUI rolls back to Checkpoint 5 (1, 1, 5, 0)
-        let afterStatusCheckpoint5 = (enabled: 1, current_state: 1, checkpoint: 5)
-        let isClean = (afterStatusCheckpoint5.enabled == 0 && afterStatusCheckpoint5.current_state == 0 && afterStatusCheckpoint5.checkpoint == 0) ||
-                      (afterStatusCheckpoint5.enabled == 0 && afterStatusCheckpoint5.current_state == 0 && afterStatusCheckpoint5.checkpoint == 10)
-        #expect(!isClean)
-
-        // Instead of removing marker (which would lock out future takeover as unowned system policy),
-        // build 50 writes restoredTopOff:
-        let topOffMarker = PowerUIOwnershipMarker(leaseState: .restoredTopOff, lastKnownBatteryPercentage: 80)
-        try JSONEncoder().encode(topOffMarker).write(to: ownerURL)
-
-        let inspection = inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false)
-        if case .owned(let readMarker) = inspection {
-            #expect(readMarker.leaseState == .restoredTopOff)
-        } else {
-            #expect(Bool(false), "Marker must be preserved as restoredTopOff")
-        }
+        input.checkpoint = 2
+        input.engaged = true
+        input.isHoldApplied = true
+        input.isCharging = false
+        coordinator.record(.recover, accepted: true, observed: input, now: now.advanced(by: .seconds(10)))
+        let holding = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(15)))
+        #expect(holding.holding && holding.policyConfirmed)
+        #expect(holding.request == nil)
     }
 
-    @Test func helperUpgradePreservesPriorOwnershipAndRefusesUnownedCheckpoint5() throws {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("dbhv-test-upgrade-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-        let markerURL = tempDir.appendingPathComponent("powerui-owner.json")
-        let backupURL = tempDir.appendingPathComponent(".powerui-owner.upgrade-backup.json")
+    @Test func engagedControllerWithSustainedChargingBypassesRenewalInterval() {
+        let now = ContinuousClock.now
+        var input = PowerUIProtectionCoordinator.Input(
+            batteryPercentage: 81, isCharging: false, adapterConnected: true, systemAdapterConnected: true,
+            checkpoint: 2, engaged: true, isHoldApplied: true
+        )
+        var coordinator = PowerUIProtectionCoordinator()
+        coordinator.record(.renew, accepted: true, observed: input, now: now)
+        input.isCharging = true
+        let first = coordinator.evaluate(input: input, now: now)
+        #expect(first.request == nil && !first.policyConfirmed && first.errorMessage == nil)
+        let abnormal = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(60)))
+        #expect(abnormal.request == .recover && !abnormal.holding && !abnormal.policyConfirmed)
+        #expect(abnormal.errorMessage != nil)
+        coordinator.record(.recover, accepted: true, observed: input, now: now.advanced(by: .seconds(60)))
+        #expect(coordinator.evaluate(input: input, now: now.advanced(by: .seconds(65))).request == nil)
 
-        // Scenario 1: Upgrade from build 47 where marker existed before install.
-        // Old build 47 marker:
-        let b47Data = """
-        {"helperIdentifier":"com.chengxin.drivebatteryhealthviewer.chargehelper","lastKnownBatteryPercentage":80,"schema":1,"targetPercentage":80}
-        """.data(using: .utf8)!
-        try b47Data.write(to: markerURL)
+        input.isCharging = nil
+        let missingTelemetry = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(66)))
+        #expect(!missingTelemetry.policyConfirmed)
+        input.pauseSignalsKnown = false
+        let unknown = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(120)))
+        #expect(!unknown.policyConfirmed && unknown.request == nil)
+    }
 
-        // Installer detects marker and creates backup:
-        try FileManager.default.copyItem(at: markerURL, to: backupURL)
-
-        // Old helper runs --restore-only / SIGTERM, deleting powerui-owner.json:
-        try FileManager.default.removeItem(at: markerURL)
-        #expect(!FileManager.default.fileExists(atPath: markerURL.path))
-
-        // Installer migration hook runs:
-        if !FileManager.default.fileExists(atPath: markerURL.path) && FileManager.default.fileExists(atPath: backupURL.path) {
-            let restoredMarker = PowerUIOwnershipMarker(leaseState: .restoredTopOff, lastKnownBatteryPercentage: 80)
-            try JSONEncoder().encode(restoredMarker).write(to: markerURL)
+    @Test func firstAcquisitionDoesNotClaimSystemPolicyAfterFailedRequest() throws {
+        var inspection: PowerUIOwnershipInspection = .unowned
+        var calls: [String] = []
+        func attempt(_ baseline: PowerUIOwnershipBaseline) throws -> Bool {
+            try acquirePowerUIOwnership(
+                inspection: inspection, baseline: baseline, percentage: 80,
+                persist: { marker in calls.append(marker.leaseState.rawValue); inspection = .owned(marker) },
+                retire: { calls.append("retire"); inspection = .unowned },
+                engage: { owned in calls.append("engage-owned=\(owned)"); return false },
+                restore: { calls.append("restore"); return true }
+            )
         }
-        try FileManager.default.removeItem(at: backupURL)
+        #expect(try !attempt(.unknown))
+        #expect(try !attempt(.restoredTopOff))
+        #expect(calls.isEmpty)
+        #expect(try !attempt(.clean))
+        #expect(calls == ["preEngaging", "engage-owned=false", "retire"])
+        #expect(inspection == .unowned)
+        #expect(try !attempt(.restoredTopOff))
+        #expect(calls == ["preEngaging", "engage-owned=false", "retire"])
+    }
 
-        // Verifications:
-        #expect(FileManager.default.fileExists(atPath: markerURL.path))
-        if case .owned(let marker) = inspectPowerUIOwnershipFile(at: markerURL, requireRoot: false) {
-            #expect(marker.leaseState == .restoredTopOff)
-            #expect(marker.targetPercentage == 80)
-        } else {
-            #expect(Bool(false), "Expected restoredTopOff ownership after upgrade")
+    @Test func failedOwnershipPromotionCannotReportSuccess() {
+        var calls: [String] = []
+        #expect(throws: CocoaError.self) {
+            try acquirePowerUIOwnership(
+                inspection: .unowned, baseline: .clean, percentage: 79,
+                persist: { marker in
+                    calls.append(marker.leaseState.rawValue)
+                    if marker.leaseState == .activeEighty { throw CocoaError(.fileWriteNoPermission) }
+                },
+                retire: { calls.append("retire") },
+                engage: { owned in calls.append("engage-owned=\(owned)"); return true },
+                restore: { calls.append("restore"); return true }
+            )
         }
+        #expect(calls == ["preEngaging", "engage-owned=false", "activeEighty", "restore", "retire"])
+    }
 
-        // Scenario 2: Clean baseline / macOS native Checkpoint 5 (no DBHV ownership existed before install)
-        try FileManager.default.removeItem(at: markerURL)
-        #expect(!FileManager.default.fileExists(atPath: markerURL.path))
-        #expect(!FileManager.default.fileExists(atPath: backupURL.path))
-        // Installer does NOT create backup, does NOT create marker
-        #expect(inspectPowerUIOwnershipFile(at: markerURL, requireRoot: false) == .unowned)
+    @Test func markerStoreReportsReplacementAndRemovalFailures() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let marker = directory.appendingPathComponent("marker.json")
+        let record = PowerUIOwnershipMarker(lastKnownBatteryPercentage: 80)
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: false)
+        #expect(throws: POSIXError.self) { try PowerUIOwnershipStore.write(record, to: marker) }
+        #expect(throws: POSIXError.self) { try PowerUIOwnershipStore.remove(at: marker) }
+        let missingParent = marker.appendingPathComponent("missing/record.json")
+        #expect(throws: POSIXError.self) { try PowerUIOwnershipStore.write(record, to: missingParent) }
+        try FileManager.default.removeItem(at: marker)
+        try PowerUIOwnershipStore.write(record, to: marker)
+        #expect(inspectPowerUIOwnershipFile(at: marker, requireRoot: false) == .owned(record))
+        let symlink = directory.appendingPathComponent("symbolic-link")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: marker)
+        guard case .corrupted = inspectPowerUIOwnershipFile(at: symlink, requireRoot: false) else {
+            Issue.record("The marker inspection accepted a symbolic link")
+            return
+        }
+        try PowerUIOwnershipStore.remove(at: marker)
+        #expect(inspectPowerUIOwnershipFile(at: marker, requireRoot: false) == .unowned)
     }
 }
