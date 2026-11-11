@@ -600,6 +600,21 @@ public func resolvedChargeLimitHoldPosition(
     return percentage == configuration.fixedLimit.rawValue ? .atLimit : .aboveLimit
 }
 
+/// A fresh report can acknowledge the current configuration before PowerUI
+/// reapplies its policy. At 100%, the helper waits for a representable reading.
+public func pendingPowerUIPolicyReport(
+    configuration: ChargeProtectionConfiguration,
+    status: ChargeProtectionStatus?,
+    now: Date = Date()
+) -> ChargeProtectionStatus? {
+    guard !configuration.temporaryFullCharge,
+          let status = matchingAppliedChargeStatus(configuration: configuration, status: status, now: now),
+          status.controlMethod == .powerUIOptimized80, !status.temporaryFullCharge,
+          status.powerUIPolicyConfirmed == false, status.lastError == nil,
+          status.systemCalibration == .inactive, status.systemChargeOverride == .inactive else { return nil }
+    return status
+}
+
 public func shouldPresentPowerUIRecoveryStatusItem(
     configuration: ChargeProtectionConfiguration,
     status: ChargeProtectionStatus?,
@@ -612,7 +627,8 @@ public func shouldPresentPowerUIRecoveryStatusItem(
           status.adapterConnected == true,
           status.systemCalibration?.defersChargeControl != true,
           status.systemChargeOverride?.defersChargeControl != true else { return false }
-    return status.powerUIPolicyConfirmed == false
+    return status.powerUIPolicyConfirmed == false &&
+        currentChargeProtectionError(configuration: configuration, status: status, now: now) != nil
 }
 
 public func shouldPresentCalibrationStatusItem(

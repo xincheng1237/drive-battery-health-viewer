@@ -22,6 +22,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     static let fallbackPreferredPosition: Double = 350
     static let recoveryInterval: TimeInterval = 2
     static let visibilityTransitionDelay: TimeInterval = 3
+    static let temporaryFullChargeFadeDelay: TimeInterval = 1.2
     static let fadeDuration: TimeInterval = 0.28
     static let fadeFrameCount = 12
     static let buttonAvailabilityRetryLimit = 20
@@ -99,9 +100,11 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func reconcile() {
-        refreshContent()
         if model.shouldShowStatusItem {
+            refreshContent()
             scheduleRevealAfterDelayIfNeeded()
+        } else if popover.isShown, model.shouldDismissPopoverForTemporaryFullCharge {
+            popover.performClose(nil)
         } else if !popover.isShown {
             beginFadeOut()
         }
@@ -145,6 +148,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func refreshContent() {
+        guard model.shouldShowStatusItem else { return }
         let label = model.statusItemLabel
         statusItem?.button?.toolTip = label
         statusItem?.button?.setAccessibilityLabel(label)
@@ -155,6 +159,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            guard !model.shouldDismissPopoverForTemporaryFullCharge else { return }
             transitionTask?.cancel()
             transitionTask = nil
             visibilityTransition = nil
@@ -295,11 +300,13 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
         visibilityTransition = .disappearing
         isFading = true
         let startingAlpha = button.alphaValue
+        let delay = model.shouldDismissPopoverForTemporaryFullCharge
+            ? Self.temporaryFullChargeFadeDelay : Self.visibilityTransitionDelay
         transitionTask = Task { [weak self, weak item] in
             guard let self, let item else { return }
             do {
                 try await Task.sleep(
-                    nanoseconds: UInt64(Self.visibilityTransitionDelay * 1_000_000_000)
+                    nanoseconds: UInt64(delay * 1_000_000_000)
                 )
             } catch { return }
             guard !Task.isCancelled,
@@ -336,7 +343,7 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func configureButtonIfAvailable() {
-        guard let button = statusItem?.button else { return }
+        guard model.shouldShowStatusItem, let button = statusItem?.button else { return }
         button.image = Self.statusItemImage(for: model.presentationState)
         button.imagePosition = .imageOnly
         button.title = ""
@@ -482,8 +489,8 @@ final class ChargeLimitAgentStatusItemController: NSObject, NSPopoverDelegate {
         switch state {
         case .systemCalibration, .systemCalibrationAwaitingConfirmation:
             return calibratingImage()
-        case .protectionUnconfirmed:
-            return NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil)
+        case .protectionUnconfirmed, .temporaryFullChargeRequested:
+            return nil
         case .aboveLimit:
             return NSImage(systemSymbolName: "battery.75percent", accessibilityDescription: nil)
         case .attentionRequired:

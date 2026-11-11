@@ -14,6 +14,15 @@ extension L10n {
                 "충전 도우미가 전원 어댑터를 감지했습니다.",
                 "充電ヘルパーが電源アダプタを検出しています。"
             ],
+            "powerUIWaitingBelowFull": [
+                "The app will try to restore the charge limit when the battery is below 100% and power is connected.",
+                "电量低于 100% 且接通电源后，将尝试恢复限充。",
+                "Приложение попытается восстановить ограничение, когда заряд будет ниже 100 % и питание будет подключено.",
+                "L’app tentera de rétablir la limite lorsque la batterie sera sous 100 % et que l’alimentation sera branchée.",
+                "Die App versucht, die Ladegrenze bei einem Akkustand unter 100 % und angeschlossenem Netzteil wiederherzustellen.",
+                "배터리 잔량이 100% 미만이고 전원이 연결되면 충전 한도를 복원합니다.",
+                "充電量が100%未満で電源に接続されると、充電上限の復元を試みます。"
+            ],
             "helperStatusUnconfirmed": [
                 "Waiting for a current report from the charge helper. Charge protection is unconfirmed.",
                 "暂未收到充电辅助程序的有效状态，无法确认充电保护是否生效。",

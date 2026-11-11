@@ -728,12 +728,6 @@ struct ChargeProtectionSection: View {
                 }
                 .transition(disclosureTransition)
             }
-            if manager.showsHelperStatusUnconfirmed {
-                Label(model.t("helperStatusUnconfirmed"), systemImage: "info.circle")
-                    .interfaceFont(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
 
             Button {
                 withAnimation(disclosureAnimation) {
@@ -914,6 +908,17 @@ struct ChargeProtectionSection: View {
                 Text(model.t("chargeProtectionInstallNote"))
                     .interfaceFont(.footnote)
                     .foregroundStyle(.secondary)
+            }
+            if manager.isWaitingForBatteryBelowFull {
+                Text(model.t("powerUIWaitingBelowFull"))
+                    .interfaceFont(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if manager.showsHelperStatusUnconfirmed {
+                Text(model.t("helperStatusUnconfirmed"))
+                    .interfaceFont(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if manager.availability == .softwareManaged {
                 Text(model.t("softwareManagedReminder"))

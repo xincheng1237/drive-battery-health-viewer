@@ -117,6 +117,75 @@ struct ChargeStatusSafetyTests {
     }
 
     @Test
+    func fullChargeRequestAndFullBatteryRemainQuietUntilPolicyReturns() throws {
+        let fixture = try ChargeStatusFixture()
+        defer { fixture.cleanUp() }
+        let manager = fixture.manager()
+        let agent = ChargeLimitAgentModel(configurationDirectory: fixture.directory, statusURL: fixture.statusURL,
+                                          operatingSystemVersion: .init(majorVersion: 15, minorVersion: 8, patchVersion: 1))
+        let now = Date()
+        var report = sampleChargeStatus(at: now)
+        report.configurationUpdatedAt = agent.configuration.updatedAt
+        report.configurationRevision = agent.configuration.revision
+        report.controlMethod = .powerUIOptimized80
+        report.batteryPercentage = 80
+        report.systemCalibration = .inactive
+        report.systemChargeOverride = .inactive
+        report.powerUIPolicyConfirmed = true
+        try fixture.write(report)
+        agent.reload()
+        #expect(agent.shouldShowStatusItem)
+        #expect(agent.presentationState == .limitReached)
+        agent.toggleTemporaryFullCharge()
+        #expect(agent.presentationState == .temporaryFullChargeRequested)
+        #expect(agent.shouldDismissPopoverForTemporaryFullCharge)
+        #expect(!agent.shouldShowStatusItem)
+        #expect(ChargeLimitAgentStatusItemController.statusItemImage(for: agent.presentationState) == nil)
+        #expect(ChargeLimitAgentStatusItemController.temporaryFullChargeFadeDelay +
+                ChargeLimitAgentStatusItemController.fadeDuration < 2)
+        manager.reloadStatus()
+        #expect(!manager.showsHelperStatusUnconfirmed)
+
+        report.configurationUpdatedAt = agent.configuration.updatedAt
+        report.configurationRevision = agent.configuration.revision
+        report.temporaryFullCharge = true
+        report.holding = false
+        try fixture.write(report)
+        agent.reload()
+        #expect(agent.presentationState == .temporaryFullCharge)
+        #expect(!agent.shouldShowStatusItem)
+
+        agent.toggleTemporaryFullCharge() // Simulate the helper saving completion.
+        report.configurationUpdatedAt = agent.configuration.updatedAt
+        report.configurationRevision = agent.configuration.revision
+        report.temporaryFullCharge = false
+        report.batteryPercentage = 100
+        report.powerUIPolicyConfirmed = false
+        try fixture.write(report)
+        agent.reload()
+        manager.reloadStatus()
+        #expect(manager.isWaitingForBatteryBelowFull)
+        #expect(!manager.showsHelperStatusUnconfirmed)
+        #expect(!agent.shouldShowStatusItem)
+
+        report.batteryPercentage = 99
+        try fixture.write(report)
+        agent.reload()
+        manager.reloadStatus()
+        #expect(!manager.isWaitingForBatteryBelowFull)
+        #expect(!manager.showsHelperStatusUnconfirmed)
+        #expect(!agent.shouldShowStatusItem)
+
+        report.lastError = "Synthetic policy failure"
+        try fixture.write(report)
+        agent.reload()
+        manager.reloadStatus()
+        #expect(agent.shouldShowStatusItem)
+        #expect(agent.presentationState == .attentionRequired)
+        #expect(manager.currentHelperError == report.lastError)
+    }
+
+    @Test
     func identicalHelperPollsPublishOnlyChangedValues() throws {
         let fixture = try ChargeStatusFixture()
         defer { fixture.cleanUp() }

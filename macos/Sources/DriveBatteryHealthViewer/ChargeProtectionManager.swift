@@ -225,10 +225,21 @@ final class ChargeProtectionManager: ObservableObject {
         confirmsTemporaryFullCharge(configuration: configuration, status: status)
     }
 
+    var isWaitingForBatteryBelowFull: Bool {
+        pendingPowerUIPolicyReport(configuration: configuration, status: status)?.batteryPercentage == 100
+    }
+
     var showsHelperStatusUnconfirmed: Bool {
-        availability.permitsSoftwareControls && configuration.enabled &&
+        let now = Date()
+        if configuration.temporaryFullCharge, let status, status.isFresh(at: now),
+           status.installed, status.enabled, status.fixedLimit == configuration.fixedLimit,
+           status.lastError == nil {
+            return false
+        }
+        return availability.permitsSoftwareControls && configuration.enabled &&
             configuration.fixedLimit != .oneHundred && !isBusy && currentHelperError == nil &&
-            !hasCurrentChargeProtectionReport(configuration: configuration, status: status)
+            pendingPowerUIPolicyReport(configuration: configuration, status: status, now: now) == nil &&
+            !hasCurrentChargeProtectionReport(configuration: configuration, status: status, now: now)
     }
 
     func startMonitoring() {

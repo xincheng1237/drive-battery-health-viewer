@@ -102,7 +102,8 @@ struct PowerUIRecoveryTests {
         }
 
         #expect(!hasCurrentChargeProtectionReport(configuration: config, status: report, now: now))
-        #expect(shouldPresentPowerUIRecoveryStatusItem(configuration: config, status: report, now: now))
+        #expect(!shouldPresentPowerUIRecoveryStatusItem(configuration: config, status: report, now: now))
+        #expect(pendingPowerUIPolicyReport(configuration: config, status: report, now: now) != nil)
         #expect(agentState() == .protectionUnconfirmed)
         #expect(reason() == .ordinary)
         report.lastError = "Native PowerUI 80% engagement failed"

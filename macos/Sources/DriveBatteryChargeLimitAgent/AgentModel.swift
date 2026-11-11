@@ -200,6 +200,7 @@ enum ChargeLimitAgentPresentationState: Equatable {
     case protectionUnconfirmed
     case limitReached
     case aboveLimit
+    case temporaryFullChargeRequested
     case temporaryFullCharge
     case systemTemporaryFullCharge
     case systemFullChargeAwaitingConfirmation
@@ -226,11 +227,14 @@ enum ChargeLimitAgentPresentationState: Equatable {
         case .awaitingConfirmation?: return .systemFullChargeAwaitingConfirmation
         default: break
         }
+        if configuration.enabled, configuration.fixedLimit != .oneHundred, configuration.temporaryFullCharge {
+            return confirmsTemporaryFullCharge(configuration: configuration, status: status, now: now)
+                ? .temporaryFullCharge : .temporaryFullChargeRequested
+        }
         if configuration.enabled, configuration.fixedLimit != .oneHundred,
            !hasCurrentChargeProtectionReport(configuration: configuration, status: status, now: now) {
             return .protectionUnconfirmed
         }
-        if confirmsTemporaryFullCharge(configuration: configuration, status: status, now: now) { return .temporaryFullCharge }
         switch resolvedChargeLimitHoldPosition(configuration: configuration, status: status, now: now) {
         case .atLimit: return .limitReached
         case .aboveLimit: return .aboveLimit
@@ -329,6 +333,13 @@ final class ChargeLimitAgentModel: ObservableObject {
              shouldPresentChargeLimitStatusItem(configuration: configuration, status: status))
     }
 
+    var shouldDismissPopoverForTemporaryFullCharge: Bool {
+        switch presentationState {
+        case .temporaryFullChargeRequested, .temporaryFullCharge: return true
+        default: return false
+        }
+    }
+
     var presentationState: ChargeLimitAgentPresentationState {
         .resolve(configuration: configuration, status: status)
     }
@@ -355,6 +366,8 @@ final class ChargeLimitAgentModel: ObservableObject {
             return AgentL10n.reached(configuration.fixedLimit.rawValue, language: language)
         case .aboveLimit:
             return String(format: AgentL10n.text("aboveLimit", language: language), configuration.fixedLimit.rawValue)
+        case .temporaryFullChargeRequested:
+            return AgentL10n.text("full", language: language)
         case .temporaryFullCharge:
             return AgentL10n.text("temporaryFullActive", language: language)
         case .systemTemporaryFullCharge:

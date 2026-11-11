@@ -1386,7 +1386,7 @@ while true {
                     "info",
                     category: "charge",
                     event: "temporary_full_completed",
-                    message: "The temporary full charge completed and the native 80% limit was restored."
+                    message: "The temporary full charge completed. The saved 80% policy will be reapplied when eligible."
                 )
             } else {
                 writeStatusIfChanged(ChargeProtectionStatus(
