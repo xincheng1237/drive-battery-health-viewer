@@ -21,22 +21,6 @@ struct RootView: View {
         } message: {
             Text(model.alertMessage ?? "")
         }
-        .alert(
-            model.t("chargeHelperAuthorizationTitle"),
-            isPresented: Binding(
-                get: { model.chargeProtection.showsHelperUpdateAuthorizationPrompt },
-                set: { model.chargeProtection.showsHelperUpdateAuthorizationPrompt = $0 }
-            )
-        ) {
-            Button(model.t("continueAuthorization")) {
-                model.chargeProtection.continueInstalledHelperUpdate()
-            }
-            Button(model.t("cancel"), role: .cancel) {
-                model.chargeProtection.showsHelperUpdateAuthorizationPrompt = false
-            }
-        } message: {
-            Text(model.t("chargeHelperInstallAuthorizationMessage"))
-        }
         .overlay(alignment: .bottom) {
             if let message = model.transientMessage {
                 Text(message)

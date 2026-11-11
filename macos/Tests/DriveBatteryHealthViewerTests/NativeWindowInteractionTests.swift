@@ -61,6 +61,52 @@ struct NativeWindowInteractionTests {
         }
     }
 
+    @Test(arguments: [true, false])
+    @MainActor
+    func helperUpdateAuthorizationWaitsForAlertToClose(_ confirm: Bool) async throws {
+        let (controller, model, defaults, suite) = try fixture()
+        let window = try #require(controller.window)
+        defer {
+            window.close()
+            model.stopLiveHardwareMonitoring()
+            model.stopChargeProtectionMonitoring()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        controller.showWindow(nil)
+        var authorizationStarts = 0
+        var presentedSheet: NSWindow?
+        controller.presentHelperUpdateAuthorization {
+            authorizationStarts += 1
+            #expect(window.attachedSheet == nil)
+            #expect(presentedSheet?.isVisible == false)
+        }
+        let sheet = try #require(window.attachedSheet)
+        presentedSheet = sheet
+        controller.presentHelperUpdateAuthorization { authorizationStarts += 100 }
+        #expect(window.sheets.count == 1)
+        #expect(authorizationStarts == 0)
+
+        let title = model.t(confirm ? "continueAuthorization" : "cancel")
+        func findButton(in view: NSView) -> NSButton? {
+            if let button = view as? NSButton, button.title == title { return button }
+            return view.subviews.lazy.compactMap { findButton(in: $0) }.first
+        }
+        let contentView = try #require(sheet.contentView)
+        let button = try #require(findButton(in: contentView))
+        button.performClick(nil)
+        controller.presentHelperUpdateAuthorization { authorizationStarts += 100 }
+
+        let deadline = ContinuousClock.now + .seconds(3)
+        while (window.attachedSheet != nil || (confirm && authorizationStarts == 0)),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(window.attachedSheet == nil)
+        #expect(!sheet.isVisible)
+        #expect(authorizationStarts == (confirm ? 1 : 0))
+    }
+
     @Test @MainActor
     func privacyToolbarToggleStillChangesAndRestoresSerialVisibility() async throws {
         let (controller, model, defaults, suite) = try fixture()

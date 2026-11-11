@@ -21,6 +21,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private var observation: AnyCancellable?
     private var updateScheduled = false
     private var lastPrivacyState: Bool?
+    private var helperUpdateAuthorizationAlert: NSAlert?
     private let toolbarID = NSToolbar.Identifier("DBHV.NativeMainToolbar.v1")
     private let navigationID = NSToolbarItem.Identifier("DBHV.NavigationHeader")
     private let actionsID = NSToolbarItem.Identifier("DBHV.OverviewActions")
@@ -104,6 +105,37 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     }
 
     required init?(coder: NSCoder) { nil }
+
+    func requestInstalledHelperUpdateAuthorizationIfNeeded() {
+        let manager = model.chargeProtection
+        guard manager.needsInstalledHelperUpdateAuthorization else { return }
+        presentHelperUpdateAuthorization { [weak manager] in
+            manager?.ensureInstalledHelperIsCurrent()
+        }
+    }
+
+    func presentHelperUpdateAuthorization(onContinue: @escaping () -> Void) {
+        guard let window, window.isVisible, helperUpdateAuthorizationAlert == nil else { return }
+
+        let alert = NSAlert()
+        alert.messageText = model.t("chargeHelperAuthorizationTitle")
+        alert.informativeText = model.t("chargeHelperInstallAuthorizationMessage")
+        alert.addButton(withTitle: model.t("continueAuthorization"))
+        alert.addButton(withTitle: model.t("cancel")).keyEquivalent = "\u{1b}"
+        helperUpdateAuthorizationAlert = alert
+
+        alert.beginSheetModal(for: window) { [weak self, weak window, weak alert] response in
+            // Hide the alert before handing focus to the system password dialog.
+            alert?.window.orderOut(nil)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.helperUpdateAuthorizationAlert = nil
+                guard response == .alertFirstButtonReturn, let window,
+                      self.window === window, window.isVisible else { return }
+                onContinue()
+            }
+        }
+    }
 
     private func configureNavigationHeader() {
         navigationHeader.update(model: model)

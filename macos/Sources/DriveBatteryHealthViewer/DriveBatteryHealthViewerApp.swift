@@ -62,7 +62,7 @@ private enum ApplicationLaunchContext {
 @MainActor
 private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let model = ApplicationLaunchContext.makeModel()
-    private var mainWindowController: NSWindowController?
+    private var mainWindowController: MainWindowController?
     private var isCreatingMainWindow = false
     private var isClosingMainWindow = false
     private var backgroundedAt: Date?
@@ -99,7 +99,7 @@ private final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWind
         // explicit user-facing preflight.
         if !ApplicationLaunchContext.isIsolatedReview {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                self?.model.chargeProtection.requestInstalledHelperUpdateAuthorizationIfNeeded()
+                self?.mainWindowController?.requestInstalledHelperUpdateAuthorizationIfNeeded()
             }
         }
     }

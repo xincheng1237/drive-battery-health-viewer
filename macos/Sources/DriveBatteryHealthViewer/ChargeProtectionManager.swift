@@ -50,7 +50,6 @@ final class ChargeProtectionManager: ObservableObject {
     @Published private(set) var isPreparingSoftwareMode = false
     @Published var hasConfirmedSystemPreparation = false
     @Published private(set) var showsUpgradeMigrationPrompt = false
-    @Published var showsHelperUpdateAuthorizationPrompt = false
     @Published var errorMessage: String?
 
     private let fileManager: FileManager
@@ -283,25 +282,12 @@ final class ChargeProtectionManager: ObservableObject {
     /// Request one authenticated replacement on the first launch of a build
     /// whose bundled helper differs from the installed copy. Replacement also
     /// runs while protection is disabled, but preserves that disabled state.
-    func requestInstalledHelperUpdateAuthorizationIfNeeded() {
-        guard availability.permitsSoftwareControls,
-              isInstalled,
-              !installedHelperMatchesBundledHelper,
-              !isBusy else { return }
-        showsHelperUpdateAuthorizationPrompt = true
-    }
-
-    func continueInstalledHelperUpdate() {
-        guard showsHelperUpdateAuthorizationPrompt else { return }
-        showsHelperUpdateAuthorizationPrompt = false
-        ensureInstalledHelperIsCurrent()
+    var needsInstalledHelperUpdateAuthorization: Bool {
+        availability.permitsSoftwareControls && isInstalled && !installedHelperMatchesBundledHelper && !isBusy
     }
 
     func ensureInstalledHelperIsCurrent() {
-        guard availability.permitsSoftwareControls,
-              isInstalled,
-              !installedHelperMatchesBundledHelper,
-              !isBusy else { return }
+        guard needsInstalledHelperUpdateAuthorization else { return }
         installHelper(enableAfterInstallation: configuration.enabled)
     }
 
