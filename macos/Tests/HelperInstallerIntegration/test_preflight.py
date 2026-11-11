@@ -62,9 +62,15 @@ case "${0##*/}" in
             bootstrap)
                 if grep -q '^old plist' "$3"; then
                     echo bootstrap_old >> "$TEST_TRACE"
+                    [ "$SCENARIO" != rollback_failure ] || exit 1
                 else
                     echo bootstrap_new >> "$TEST_TRACE"
-                    [ "$SCENARIO" != cannot_start ] || exit 1
+                    [ "$SCENARIO" != cannot_start ] && [ "$SCENARIO" != rollback_failure ] || exit 1
+                    if [ "$SCENARIO" = hard_interrupt ]; then
+                        # The parent is the isolated installer shell.
+                        kill -KILL "$PPID"
+                        exit 0
+                    fi
                     if [ "$SCENARIO" = interrupted ]; then
                         # Only the isolated installer shell receives the signal.
                         kill -TERM "$PPID"
@@ -91,7 +97,11 @@ rm -f "$TEST_STATE/powerui-owner.json"
 NEW = r"""#!/bin/sh
 set -eu
 echo "$1" >> "$TEST_TRACE"
-"$TEST_FIXTURE" "$1" "$TEST_STATE" "$TEST_BASELINE"
+baseline=$TEST_BASELINE
+if [ "$SCENARIO" = late_system ]; then
+    if [ "$1" = --prepare-upgrade-ownership ]; then baseline=clean; else baseline=system; fi
+fi
+"$TEST_FIXTURE" "$1" "$TEST_STATE" "$baseline"
 """
 
 def run(source, scenario, fixture, old_build=49):
@@ -123,7 +133,8 @@ def run(source, scenario, fixture, old_build=49):
         replacement.write_text(NEW)
         job.touch()
         trace.touch()
-        if scenario in {"corrupt", "insecure", "clean", "topOff", "system", "unknown", "provisional"}:
+        transaction = state / ".helper-upgrade"
+        if scenario in {"corrupt", "insecure", "clean", "topOff", "system", "late_system", "unknown", "provisional"}:
             record = dict(helperIdentifier=IDENTIFIER, targetPercentage=80, schema=1)
             if old_build != 47:
                 record["leaseState"] = "preEngaging" if scenario == "provisional" else "activeEighty"
@@ -147,28 +158,44 @@ def run(source, scenario, fixture, old_build=49):
                    TEST_TRACE=str(trace), TEST_JOB=str(job), TEST_STATE=str(state), OLD_BUILD=str(old_build),
                    TEST_FIXTURE=str(fixture), TEST_STOP_REQUESTED=str(root / "stop_requested"),
                    TEST_BASELINE="topOff" if scenario == "provisional" else scenario)
-        result = subprocess.run(
-            ["/bin/sh", str(script), "install", str(replacement), "501", str(root / "home"),
-             str(config), str(root / "home/Test.app")], env=env, capture_output=True, text=True, timeout=60
-        )
+        command = ["/bin/sh", str(script), "install", str(replacement), "501", str(root / "home"),
+                   str(config), str(root / "home/Test.app")]
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
         calls = trace.read_text().splitlines()
-        expected_success = scenario in {"success", "stop_pending", "clean", "topOff", "system", "provisional"}
+        expected_success = scenario in {"success", "stop_pending", "clean", "topOff", "late_system", "provisional"}
         print(f"{scenario} old-build={old_build} installer-exit={result.returncode} events={calls}", flush=True)
         if result.stderr:
             print(result.stderr.strip(), flush=True)
         assert (result.returncode == 0) == expected_success, scenario
+        if scenario in {"hard_interrupt", "rollback_failure"}:
+            if scenario == "hard_interrupt":
+                assert result.returncode == -9
+            else:
+                assert helper.read_text() == OLD and not job.exists()
+                assert calls[-1] == "bootstrap_old"
+            backups = {path.name: path.read_bytes() for path in transaction.iterdir()}
+            assert backups["helper"] == OLD.encode() and backups["daemon.plist"] == b"old plist"
+            retried = subprocess.run(command, env=env, capture_output=True, text=True, timeout=10)
+            assert retried.returncode != 0 and "already exists" in retried.stderr
+            assert {path.name: path.read_bytes() for path in transaction.iterdir()} == backups
+            assert trace.read_text().splitlines() == calls
+            return
         if expected_success:
             assert helper.read_text() == NEW and plist.read_text() == "new plist" and job.exists()
             if scenario == "topOff":
                 assert json.loads(marker.read_text())["leaseState"] == "restoredTopOff"
                 assert marker.stat().st_mode & 0o777 == 0o600
+            elif scenario == "late_system":
+                assert json.loads(marker.read_text())["leaseState"] == "deferredToSystem"
             else:
                 assert not marker.exists(), "the installer fabricated ownership"
             assert calls.index("bootout") < calls.index(f"restore-{old_build}") < calls.index("bootstrap_new")
         else:
             assert helper.read_text() == OLD and plist.read_text() == "old plist" and job.exists()
-            if scenario in {"invalid_signature", "invalid_plist", "corrupt", "insecure"}:
+            if scenario in {"invalid_signature", "invalid_plist", "corrupt", "insecure", "system"}:
                 assert "bootout" not in calls
+                if scenario == "system":
+                    assert json.loads(marker.read_text())["leaseState"] == "activeEighty"
             if scenario in {"cannot_start", "no_readiness", "interrupted", "unknown"}:
                 assert calls[-1] == "bootstrap_old"
         assert not (state / ".helper-upgrade").exists()
@@ -179,13 +206,15 @@ if __name__ == "__main__":
     scenarios = sys.argv[2:] or [
         "corrupt", "insecure", "clean", "topOff", "system", "unknown", "provisional",
         "invalid_signature", "invalid_plist", "cannot_restore", "cannot_stop", "stop_pending",
-        "cannot_start", "no_readiness", "interrupted", "success",
+        "cannot_start", "no_readiness", "interrupted", "hard_interrupt", "rollback_failure", "late_system", "success",
     ]
     with tempfile.TemporaryDirectory(prefix="dbhv-test-ownership-") as tmp:
         fixture = Path(tmp) / "ownership-fixture"
         subprocess.run(
             ["swiftc", "-module-cache-path", str(Path(tmp) / "modules"), "-o", str(fixture),
-             *(str(path) for path in (MACOS / "Sources/ChargeProtectionCore").glob("*.swift")),
+             *(str(path) for path in Path(os.environ.get(
+                 "DBHV_TEST_CORE_SOURCE", MACOS / "Sources/ChargeProtectionCore"
+             )).glob("*.swift")),
              str(Path(__file__).with_name("OwnershipFixture.swift"))],
             check=True,
         )

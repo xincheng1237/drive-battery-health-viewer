@@ -561,7 +561,15 @@ public func migratePowerUIOwnership(
     if preparing {
         switch inspectPowerUIOwnershipFile(at: marker, requireRoot: requireRoot) {
         case .unowned: return
-        case .owned(let previous): try PowerUIOwnershipStore.write(previous, to: backup)
+        case .owned(let previous):
+            // Stopping a legacy Helper can itself run restoration. Defer
+            // the upgrade while the system explicitly owns a charging pause.
+            guard baseline() != .system else {
+                throw CocoaError(.fileWriteUnknown, userInfo: [
+                    NSLocalizedDescriptionKey: "The system has paused the charge limit. Retry the Helper upgrade after the pause ends."
+                ])
+            }
+            try PowerUIOwnershipStore.write(previous, to: backup)
         case .corrupted: throw CocoaError(.fileReadCorruptFile)
         }
         return
@@ -573,8 +581,19 @@ public func migratePowerUIOwnership(
     if case .corrupted = current { throw CocoaError(.fileReadCorruptFile) }
     if case .unowned = inspection, case .unowned = current { return }
     switch baseline() {
-    case .clean, .system:
+    case .clean:
         try PowerUIOwnershipStore.remove(at: marker)
+    case .system:
+        // A pause can start while the old process is stopping. Keep the
+        // prior record for diagnosis without authorizing writes on resume.
+        guard case .owned(let previous) = inspection,
+              previous.leaseState != .preEngaging else {
+            try PowerUIOwnershipStore.remove(at: marker)
+            return
+        }
+        try PowerUIOwnershipStore.write(PowerUIOwnershipMarker(
+            leaseState: .deferredToSystem, lastKnownBatteryPercentage: previous.lastKnownBatteryPercentage
+        ), to: marker)
     case .restoredTopOff:
         guard case .owned(let previous) = inspection,
               previous.leaseState == .activeEighty || previous.leaseState == .restoredTopOff else {

@@ -714,7 +714,7 @@ struct CoreTests {
         let plist = try #require(try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any])
         #expect(plist["CFBundleShortVersionString"] as? String == applicationVersion)
         let bundleBuild = try #require(plist["CFBundleVersion"] as? String)
-        #expect(bundleBuild == "51")
+        #expect(bundleBuild == "52")
         for script in ["build-universal.sh", "build-dmg.sh"] {
             let text = try String(contentsOf: macosRoot.appendingPathComponent("scripts/\(script)"), encoding: .utf8)
             #expect(text.contains("version=\"\(applicationVersion)\""))
