@@ -562,12 +562,19 @@ public func migratePowerUIOwnership(
         switch inspectPowerUIOwnershipFile(at: marker, requireRoot: requireRoot) {
         case .unowned: return
         case .owned(let previous):
-            // Stopping a legacy Helper can itself run restoration. Defer
-            // the upgrade while the system explicitly owns a charging pause.
-            guard baseline() != .system else {
+            // Stopping a legacy Helper can itself run restoration. Before
+            // stopping it, require a readable state without a system pause.
+            switch baseline() {
+            case .system:
                 throw CocoaError(.fileWriteUnknown, userInfo: [
                     NSLocalizedDescriptionKey: "The system has paused the charge limit. Retry the Helper upgrade after the pause ends."
                 ])
+            case .unknown:
+                throw CocoaError(.fileReadUnknown, userInfo: [
+                    NSLocalizedDescriptionKey: "The system charging state could not be verified. Retry the Helper upgrade when the status is available."
+                ])
+            case .clean, .restoredTopOff, .other:
+                break
             }
             try PowerUIOwnershipStore.write(previous, to: backup)
         case .corrupted: throw CocoaError(.fileReadCorruptFile)

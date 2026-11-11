@@ -98,9 +98,10 @@ NEW = r"""#!/bin/sh
 set -eu
 echo "$1" >> "$TEST_TRACE"
 baseline=$TEST_BASELINE
-if [ "$SCENARIO" = late_system ]; then
-    if [ "$1" = --prepare-upgrade-ownership ]; then baseline=clean; else baseline=system; fi
-fi
+case "$SCENARIO:$1" in
+    late_system:--prepare-upgrade-ownership|late_unknown:--prepare-upgrade-ownership) baseline=clean ;;
+    late_system:--reconcile-upgrade-ownership) baseline=system ;;
+esac
 "$TEST_FIXTURE" "$1" "$TEST_STATE" "$baseline"
 """
 
@@ -134,7 +135,7 @@ def run(source, scenario, fixture, old_build=49):
         job.touch()
         trace.touch()
         transaction = state / ".helper-upgrade"
-        if scenario in {"corrupt", "insecure", "clean", "topOff", "system", "late_system", "unknown", "provisional"}:
+        if scenario in {"corrupt", "insecure", "clean", "topOff", "system", "late_system", "unknown", "late_unknown", "provisional"}:
             record = dict(helperIdentifier=IDENTIFIER, targetPercentage=80, schema=1)
             if old_build != 47:
                 record["leaseState"] = "preEngaging" if scenario == "provisional" else "activeEighty"
@@ -158,6 +159,7 @@ def run(source, scenario, fixture, old_build=49):
                    TEST_TRACE=str(trace), TEST_JOB=str(job), TEST_STATE=str(state), OLD_BUILD=str(old_build),
                    TEST_FIXTURE=str(fixture), TEST_STOP_REQUESTED=str(root / "stop_requested"),
                    TEST_BASELINE="topOff" if scenario == "provisional" else scenario)
+        original_marker = marker.read_bytes() if marker.exists() else None
         command = ["/bin/sh", str(script), "install", str(replacement), "501", str(root / "home"),
                    str(config), str(root / "home/Test.app")]
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
@@ -187,16 +189,18 @@ def run(source, scenario, fixture, old_build=49):
                 assert marker.stat().st_mode & 0o777 == 0o600
             elif scenario == "late_system":
                 assert json.loads(marker.read_text())["leaseState"] == "deferredToSystem"
+                subprocess.run([str(fixture), "--verify-resume", str(state)], check=True)
             else:
                 assert not marker.exists(), "the installer fabricated ownership"
             assert calls.index("bootout") < calls.index(f"restore-{old_build}") < calls.index("bootstrap_new")
         else:
             assert helper.read_text() == OLD and plist.read_text() == "old plist" and job.exists()
-            if scenario in {"invalid_signature", "invalid_plist", "corrupt", "insecure", "system"}:
-                assert "bootout" not in calls
-                if scenario == "system":
-                    assert json.loads(marker.read_text())["leaseState"] == "activeEighty"
-            if scenario in {"cannot_start", "no_readiness", "interrupted", "unknown"}:
+            if scenario in {"invalid_signature", "invalid_plist", "corrupt", "insecure", "system", "unknown"}:
+                assert "bootout" not in calls, calls
+                if scenario in {"system", "unknown"}:
+                    assert calls == ["--prepare-upgrade-ownership"]
+                    assert marker.read_bytes() == original_marker
+            if scenario in {"cannot_start", "no_readiness", "interrupted", "late_unknown"}:
                 assert calls[-1] == "bootstrap_old"
         assert not (state / ".helper-upgrade").exists()
 
@@ -204,7 +208,7 @@ def run(source, scenario, fixture, old_build=49):
 if __name__ == "__main__":
     source = (Path(sys.argv[1]) if len(sys.argv) > 1 else INSTALLER).read_text()
     scenarios = sys.argv[2:] or [
-        "corrupt", "insecure", "clean", "topOff", "system", "unknown", "provisional",
+        "corrupt", "insecure", "clean", "topOff", "system", "unknown", "late_unknown", "provisional",
         "invalid_signature", "invalid_plist", "cannot_restore", "cannot_stop", "stop_pending",
         "cannot_start", "no_readiness", "interrupted", "hard_interrupt", "rollback_failure", "late_system", "success",
     ]
