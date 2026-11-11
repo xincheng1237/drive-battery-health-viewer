@@ -130,4 +130,106 @@ struct SystemChargeOverrideTests {
             #expect(AgentL10n.text(key, language: language) != key)
         }
     }
+
+    @Test func awaitingConfirmationDoesNotClearOnConsecutiveNilReadingsWithoutReliableEvidence() {
+        var tracker = SystemChargeOverrideTracker()
+        #expect(tracker.observe(temporarilyDisabled: true) == .chargingToFull)
+        #expect(tracker.observe(temporarilyDisabled: nil) == .awaitingConfirmation)
+        #expect(tracker.observe(temporarilyDisabled: nil) == .awaitingConfirmation)
+        #expect(tracker.observe(temporarilyDisabled: nil) == .awaitingConfirmation)
+        #expect(tracker.observe(temporarilyDisabled: nil) == .awaitingConfirmation)
+        #expect(tracker.state == .awaitingConfirmation)
+        #expect(tracker.state?.defersChargeControl == true)
+        // Only an explicit false read can reliably end the system override:
+        #expect(tracker.observe(temporarilyDisabled: false) == .inactive)
+        #expect(tracker.state == .inactive)
+        #expect(tracker.state?.defersChargeControl == false)
+
+        var calibrationTracker = SystemCalibrationTracker()
+        #expect(calibrationTracker.observe(limitSuspended: true) == .calibrating)
+        #expect(calibrationTracker.observe(limitSuspended: nil) == .awaitingConfirmation)
+        #expect(calibrationTracker.observe(limitSuspended: nil) == .awaitingConfirmation)
+        #expect(calibrationTracker.observe(limitSuspended: nil) == .awaitingConfirmation)
+        #expect(calibrationTracker.observe(limitSuspended: nil) == .awaitingConfirmation)
+        #expect(calibrationTracker.state == .awaitingConfirmation)
+        #expect(calibrationTracker.state?.defersChargeControl == true)
+        // Only an explicit false read can reliably end the limit suspension:
+        #expect(calibrationTracker.observe(limitSuspended: false) == .inactive)
+        #expect(calibrationTracker.state == .inactive)
+        #expect(calibrationTracker.state?.defersChargeControl == false)
+    }
+
+    @MainActor
+    @Test func menuBarStatusItemRemainsVisibleDuringSystemOverrideTemporaryFullAndAttentionRequired() {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("dbhv-test-agent-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let now = Date()
+        let configDate = now.addingTimeInterval(-10)
+        let config = ChargeProtectionConfiguration(
+            enabled: true,
+            fixedLimit: .eighty,
+            managementMode: .softwareManaged,
+            showMenuBarStatus: true,
+            updatedAt: configDate
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try? encoder.encode(config).write(to: tempDir.appendingPathComponent("configuration.json"))
+
+        let model = ChargeLimitAgentModel(
+            configurationDirectory: tempDir,
+            statusURL: tempDir.appendingPathComponent("status.json"),
+            operatingSystemVersion: .init(majorVersion: 15, minorVersion: 8, patchVersion: 0)
+        )
+
+        var status = ChargeProtectionStatus(
+            helperVersion: "test", timestamp: now, installed: true, enabled: true,
+            fixedLimit: .eighty, temporaryFullCharge: false,
+            configurationUpdatedAt: configDate,
+            holding: false, adapterConnected: true, batteryPercentage: 80,
+            controlMethod: .powerUIOptimized80, systemChargeOverride: .chargingToFull, systemCalibration: .inactive
+        )
+
+        // System Temporary Full Charge (visible)
+        try? encoder.encode(status).write(to: tempDir.appendingPathComponent("status.json"))
+        model.reload(now: now)
+        #expect(model.shouldShowStatusItem)
+
+        // System Calibration (visible)
+        status.systemChargeOverride = .inactive
+        status.systemCalibration = .calibrating
+        try? encoder.encode(status).write(to: tempDir.appendingPathComponent("status.json"))
+        model.reload(now: now)
+        #expect(model.shouldShowStatusItem)
+
+        // DBHV Temporary Full Charge (faded out / hidden per Codex build 48 design)
+        status.systemCalibration = .inactive
+        status.temporaryFullCharge = true
+        model.toggleTemporaryFullCharge()
+        status.configurationUpdatedAt = model.configuration.updatedAt
+        status.configurationRevision = model.configuration.revision
+        try? encoder.encode(status).write(to: tempDir.appendingPathComponent("status.json"))
+        model.reload(now: now)
+        #expect(!model.shouldShowStatusItem)
+
+        // Attention Required (visible)
+        model.toggleTemporaryFullCharge()
+        status.temporaryFullCharge = false
+        status.configurationUpdatedAt = model.configuration.updatedAt
+        status.configurationRevision = model.configuration.revision
+        status.lastError = "Native PowerUI 80% engagement failed"
+        try? encoder.encode(status).write(to: tempDir.appendingPathComponent("status.json"))
+        model.reload(now: now)
+        #expect(model.shouldShowStatusItem)
+    }
+
+    @Test func unverifiedMacOS15_8BuildFailsClosedWithoutMutatingPowerUI() {
+        #expect(isVerifiedPowerUIMacOSBuild("24H212"))
+        #expect(!isVerifiedPowerUIMacOSBuild("24H211"))
+        #expect(!isVerifiedPowerUIMacOSBuild("24A348"))
+        #expect(!isVerifiedPowerUIMacOSBuild("23A344"))
+        #expect(!isVerifiedPowerUIMacOSBuild(""))
+    }
 }

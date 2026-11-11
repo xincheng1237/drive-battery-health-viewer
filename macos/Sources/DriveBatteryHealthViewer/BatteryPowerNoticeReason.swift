@@ -25,7 +25,10 @@ enum BatteryPowerNoticeReason: Equatable {
         guard let batteryPercentage, (configuration.fixedLimit.rawValue...100).contains(batteryPercentage),
               let position = resolvedChargeLimitHoldPosition(configuration: configuration, status: status, now: now)
         else { return .ordinary }
-        if batteryPercentage > configuration.fixedLimit.rawValue { return .aboveLimit }
+        let effectivePercentage = max(batteryPercentage, status?.batteryPercentage ?? batteryPercentage)
+        if effectivePercentage > configuration.fixedLimit.rawValue || position == .aboveLimit {
+            return .aboveLimit
+        }
         return position == .atLimit ? .chargeLimit : .ordinary
     }
 }

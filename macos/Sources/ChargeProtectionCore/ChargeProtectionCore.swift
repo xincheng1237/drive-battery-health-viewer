@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum FixedChargeLimit: Int, Codable, CaseIterable, Sendable {
@@ -393,6 +394,231 @@ public struct SystemCalibrationTracker {
         case nil: state = state?.defersChargeControl == true ? .awaitingConfirmation : nil
         }
         return state
+    }
+}
+
+public enum PowerUIOwnershipLeaseState: String, Codable, Equatable, Sendable {
+    case preEngaging
+    case activeEighty
+    case restoredTopOff
+    case deferredToSystem
+}
+
+public struct PowerUIOwnershipMarker: Codable, Equatable, Sendable {
+    public static let schemaVersion = 1
+
+    public let schema: Int
+    public let helperIdentifier: String
+    public let targetPercentage: Int
+    public let lastKnownBatteryPercentage: Int?
+    public let leaseState: PowerUIOwnershipLeaseState
+
+    public init(
+        lastKnownBatteryPercentage: Int?,
+        leaseState: PowerUIOwnershipLeaseState = .activeEighty,
+        helperIdentifier: String = "com.drivebatteryhealthviewer.chargehelper"
+    ) {
+        self.schema = Self.schemaVersion
+        self.helperIdentifier = helperIdentifier
+        self.targetPercentage = 80
+        self.lastKnownBatteryPercentage = lastKnownBatteryPercentage.flatMap {
+            (0...100).contains($0) ? $0 : nil
+        }
+        self.leaseState = leaseState
+    }
+
+    public init(
+        leaseState: PowerUIOwnershipLeaseState = .activeEighty,
+        lastKnownBatteryPercentage: Int?,
+        helperIdentifier: String = "com.drivebatteryhealthviewer.chargehelper"
+    ) {
+        self.init(
+            lastKnownBatteryPercentage: lastKnownBatteryPercentage,
+            leaseState: leaseState,
+            helperIdentifier: helperIdentifier
+        )
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schema = try container.decode(Int.self, forKey: .schema)
+        self.helperIdentifier = try container.decode(String.self, forKey: .helperIdentifier)
+        self.targetPercentage = try container.decode(Int.self, forKey: .targetPercentage)
+        self.lastKnownBatteryPercentage = try container.decodeIfPresent(Int.self, forKey: .lastKnownBatteryPercentage)
+        self.leaseState = try container.decodeIfPresent(PowerUIOwnershipLeaseState.self, forKey: .leaseState) ?? .activeEighty
+    }
+
+    public var isValid: Bool {
+        schema == Self.schemaVersion &&
+            !helperIdentifier.isEmpty &&
+            targetPercentage == 80 &&
+            lastKnownBatteryPercentage.map { (0...100).contains($0) } != false
+    }
+}
+
+public enum PowerUIOwnershipInspection: Equatable, Sendable {
+    case unowned
+    case owned(PowerUIOwnershipMarker)
+    case corrupted(String)
+}
+
+public func inspectPowerUIOwnershipFile(at url: URL, requireRoot: Bool = true) -> PowerUIOwnershipInspection {
+    var information = stat()
+    guard lstat(url.path, &information) == 0 else {
+        return .unowned
+    }
+    guard (information.st_mode & S_IFMT) == S_IFREG else {
+        return .corrupted("Not a regular file")
+    }
+    if requireRoot && information.st_uid != 0 {
+        return .corrupted("File not owned by root (uid \(information.st_uid))")
+    }
+    if (information.st_mode & 0o022) != 0 {
+        return .corrupted("Insecure permissions on marker file (\(String(information.st_mode, radix: 8)))")
+    }
+    guard let data = try? Data(contentsOf: url) else {
+        return .corrupted("Unable to read marker file data")
+    }
+    guard let marker = try? JSONDecoder().decode(PowerUIOwnershipMarker.self, from: data) else {
+        return .corrupted("Invalid JSON format in marker file")
+    }
+    guard marker.isValid else {
+        return .corrupted("Marker contents failed validation")
+    }
+    return .owned(marker)
+}
+
+public let verifiedPowerUIMacOSBuilds: Set<String> = ["24H212"]
+public func isVerifiedPowerUIMacOSBuild(_ buildVersion: String) -> Bool {
+    verifiedPowerUIMacOSBuilds.contains(buildVersion)
+}
+
+public func currentOSBuildVersion() -> String? {
+    var size: Int = 0
+    sysctlbyname("kern.osversion", nil, &size, nil, 0)
+    guard size > 0 else { return nil }
+    var buffer = [CChar](repeating: 0, count: size)
+    guard sysctlbyname("kern.osversion", &buffer, &size, nil, 0) == 0 else { return nil }
+    return String(cString: buffer)
+}
+
+public struct PowerUIOverchargeMonitor: Equatable, Sendable {
+    public enum State: Equatable, Sendable {
+        case belowLimitScheduled
+        case establishingHold
+        case confirmedHolding
+        case abnormalChargingPastLimit(String)
+        case armedAt100
+        case unmanaged
+    }
+
+    public private(set) var state: State = .unmanaged
+    private var establishingStartedAt: ContinuousClock.Instant?
+    private var baselinePercentageAtOrAbove80: Int?
+    private var reassertAttempts: Int = 0
+    private var engagedChargingStartedAt: ContinuousClock.Instant?
+
+    public init() {}
+
+    public mutating func reset() {
+        state = .unmanaged
+        establishingStartedAt = nil
+        baselinePercentageAtOrAbove80 = nil
+        reassertAttempts = 0
+        engagedChargingStartedAt = nil
+    }
+
+    public mutating func update(
+        batteryPercentage: Int,
+        isCharging: Bool,
+        checkpoint: Int32,
+        engaged: Bool,
+        managed: Bool,
+        now: ContinuousClock.Instant = .now
+    ) -> State {
+        guard managed else {
+            reset()
+            return .unmanaged
+        }
+
+        // 100% Boundary
+        if batteryPercentage >= 100 {
+            establishingStartedAt = nil
+            baselinePercentageAtOrAbove80 = nil
+            reassertAttempts = 0
+            engagedChargingStartedAt = nil
+            if checkpoint == 2 && engaged {
+                state = .confirmedHolding
+                return .confirmedHolding
+            } else {
+                state = .armedAt100
+                return .armedAt100
+            }
+        }
+
+        // Below 80% limit
+        if batteryPercentage < 80 {
+            establishingStartedAt = nil
+            baselinePercentageAtOrAbove80 = nil
+            reassertAttempts = 0
+            engagedChargingStartedAt = nil
+            state = .belowLimitScheduled
+            return .belowLimitScheduled
+        }
+
+        // Battery is >= 80% and < 100%
+        if checkpoint == 2 && engaged && !isCharging {
+            establishingStartedAt = nil
+            baselinePercentageAtOrAbove80 = nil
+            reassertAttempts = 0
+            engagedChargingStartedAt = nil
+            state = .confirmedHolding
+            return .confirmedHolding
+        }
+
+        // Check if engaged is true but isCharging is still true (PMU current settling)
+        if checkpoint == 2 && engaged && isCharging {
+            if let started = engagedChargingStartedAt {
+                if now >= started.advanced(by: .seconds(60)) {
+                    let msg = "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+                    state = .abnormalChargingPastLimit(msg)
+                    return state
+                }
+            } else {
+                engagedChargingStartedAt = now
+            }
+        } else {
+            engagedChargingStartedAt = nil
+        }
+
+        // If not engaged or still settling
+        if establishingStartedAt == nil {
+            establishingStartedAt = now
+            baselinePercentageAtOrAbove80 = batteryPercentage
+            reassertAttempts = 1
+        } else {
+            reassertAttempts += 1
+        }
+
+        // Check overcharge conditions:
+        // 1. Net battery percentage increased by >= 2% while charging past 80%
+        if let base = baselinePercentageAtOrAbove80, isCharging && (batteryPercentage - base) >= 2 {
+            let msg = "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+            state = .abnormalChargingPastLimit(msg)
+            return state
+        }
+
+        // 2. Over 45 seconds or >= 3 re-assert attempts without disengaging
+        if let start = establishingStartedAt, isCharging {
+            if now >= start.advanced(by: .seconds(45)) || reassertAttempts > 3 {
+                let msg = "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+                state = .abnormalChargingPastLimit(msg)
+                return state
+            }
+        }
+
+        state = .establishingHold
+        return .establishingHold
     }
 }
 

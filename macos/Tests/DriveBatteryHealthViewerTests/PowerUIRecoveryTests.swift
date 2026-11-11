@@ -134,4 +134,90 @@ struct PowerUIRecoveryTests {
         #expect(!shouldPresentPowerUIRecoveryStatusItem(configuration: config, status: report, now: now))
         #expect(agentState() == .systemTemporaryFullCharge)
     }
+
+    @Test func oneHundredPercentCheckpoint6DoesNotLoopAndRecoversAt99Percent() {
+        let schedule = PowerUIRequestSchedule()
+        // At 100%, schedule never requests recovery or renewal
+        #expect(schedule.request(adapterConnected: true, systemAdapterConnected: true, batteryPercentage: 100, managed: false) == nil)
+        #expect(schedule.request(adapterConnected: true, systemAdapterConnected: true, batteryPercentage: 100, managed: true) == nil)
+        #expect(!needsCheckpointRecovery(checkpoint: 6, engaged: false, batteryPercentage: 100))
+
+        // When discharged to 99%, recovery is immediately required
+        #expect(needsCheckpointRecovery(checkpoint: 6, engaged: false, batteryPercentage: 99))
+        #expect(schedule.request(adapterConnected: true, systemAdapterConnected: true, batteryPercentage: 99, managed: false) == .recover)
+    }
+
+    @Test func crossingFrom79To80InCheckpoint1TriggersImmediateRecovery() {
+        #expect(!needsCheckpointRecovery(checkpoint: 1, engaged: false, batteryPercentage: 79))
+        #expect(needsCheckpointRecovery(checkpoint: 1, engaged: false, batteryPercentage: 80))
+        let schedule = PowerUIRequestSchedule()
+        #expect(schedule.request(adapterConnected: true, systemAdapterConnected: true, batteryPercentage: 80, managed: false) == .recover)
+    }
+
+    @Test func overchargeMonitorDistinguishesEstablishingHoldingAndAbnormalCharging() {
+        var monitor = PowerUIOverchargeMonitor()
+        let t0 = ContinuousClock.now
+
+        // Below 80%
+        #expect(monitor.update(batteryPercentage: 75, isCharging: true, checkpoint: 1, engaged: false, managed: true, now: t0) == .belowLimitScheduled)
+
+        // At 80%, checkpoint 2 holding
+        #expect(monitor.update(batteryPercentage: 80, isCharging: false, checkpoint: 2, engaged: true, managed: true, now: t0) == .confirmedHolding)
+
+        // At 80%, checkpoint 1 still charging (establishing)
+        #expect(monitor.update(batteryPercentage: 80, isCharging: true, checkpoint: 1, engaged: false, managed: true, now: t0) == .establishingHold)
+
+        // After +2% net overcharge while still charging
+        let overcharge = monitor.update(batteryPercentage: 82, isCharging: true, checkpoint: 1, engaged: false, managed: true, now: t0.advanced(by: .seconds(10)))
+        if case .abnormalChargingPastLimit = overcharge {
+            #expect(true)
+        } else {
+            #expect(Bool(false), "Expected abnormalChargingPastLimit, got \(overcharge)")
+        }
+
+        // At 100% boundary
+        monitor.reset()
+        #expect(monitor.update(batteryPercentage: 100, isCharging: false, checkpoint: 1, engaged: false, managed: true, now: t0) == .armedAt100)
+        #expect(monitor.update(batteryPercentage: 100, isCharging: false, checkpoint: 2, engaged: true, managed: true, now: t0) == .confirmedHolding)
+    }
+
+    @Test func ownershipInspectionDistinguishesUnownedOwnedRestoredTopOffAndCorrupted() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("dbhv-test-owner-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let ownerURL = tempDir.appendingPathComponent("powerui-owner.json")
+
+        // Unowned when file does not exist
+        #expect(inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false) == .unowned)
+
+        // Owned activeEighty
+        let marker = PowerUIOwnershipMarker(leaseState: .activeEighty, lastKnownBatteryPercentage: 80)
+        let data = try JSONEncoder().encode(marker)
+        try data.write(to: ownerURL)
+        let inspection = inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false)
+        if case .owned(let readMarker) = inspection {
+            #expect(readMarker.leaseState == .activeEighty)
+            #expect(readMarker.lastKnownBatteryPercentage == 80)
+        } else {
+            #expect(Bool(false), "Expected owned, got \(inspection)")
+        }
+
+        // Owned restoredTopOff
+        let topOffMarker = PowerUIOwnershipMarker(leaseState: .restoredTopOff, lastKnownBatteryPercentage: 85)
+        try JSONEncoder().encode(topOffMarker).write(to: ownerURL)
+        if case .owned(let readMarker) = inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false) {
+            #expect(readMarker.leaseState == .restoredTopOff)
+            #expect(readMarker.lastKnownBatteryPercentage == 85)
+        } else {
+            #expect(Bool(false), "Expected owned restoredTopOff")
+        }
+
+        // Corrupted
+        try "invalid json".write(to: ownerURL, atomically: true, encoding: .utf8)
+        if case .corrupted = inspectPowerUIOwnershipFile(at: ownerURL, requireRoot: false) {
+            #expect(true)
+        } else {
+            #expect(Bool(false), "Expected corrupted")
+        }
+    }
 }

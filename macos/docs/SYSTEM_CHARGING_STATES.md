@@ -28,8 +28,13 @@ The existing battery silhouette gains circular arrows for calibration. The NSSta
 - On native-80-only systems, failure to open PowerUI produces unavailable control instead of falling back to SMC limiting.
 - Calibration or a user override arriving during engagement is checked before further checkpoint writes and before automatic failure cleanup.
 - Explicit disable/uninstall retains the established restoration/ownership cleanup path.
+- In-flight PowerUI waits abort immediately upon SIGTERM/SIGINT signal delivery via `DBHVPowerUIRequestAbort()`.
 - Old status JSON lacking the optional new fields remains decodable.
 - Status freshness and matching configuration are required for calibration/override presentation. Unknown states do not establish active protection.
+- When the battery reaches 100%, no engage or renew requests are issued to PowerUI to prevent knocking active holds down to Checkpoint 0. The helper enters an Armed Waiting state until discharge below 100% occurs.
+- When normal charging is restored and PowerUI enters Checkpoint 5, ownership marker is retained with `leaseState = .restoredTopOff` rather than unlinked, preventing future unowned deadlock.
+- Native PowerUI control is restricted strictly to verified macOS builds (`24H212`). Unverified builds fail closed without mutating system policies.
+- An overcharge monitor watches for >= 2% net charge increase or 45s/3-attempt failure past 80%, raising an explicit alert instead of misreporting an active hold.
 
 ## Validation
 

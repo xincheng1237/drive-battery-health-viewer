@@ -115,4 +115,35 @@ struct BatteryPowerNoticeTests {
             }
         }
     }
+
+    @Test func crossSource80And81PercentStillResolvesAboveLimit() {
+        let now = Date()
+        let configuration = ChargeProtectionConfiguration(enabled: true, fixedLimit: .eighty, updatedAt: now.addingTimeInterval(-10))
+        var status = ChargeProtectionStatus(
+            helperVersion: "test", timestamp: now, installed: true, enabled: true,
+            fixedLimit: .eighty, temporaryFullCharge: false,
+            configurationUpdatedAt: configuration.updatedAt, holding: true,
+            adapterConnected: true, batteryPercentage: 81, controlMethod: .powerUIOptimized80,
+            systemChargeOverride: .inactive, systemCalibration: .inactive
+        )
+
+        // UI reports 80%, helper reports 81%
+        #expect(BatteryPowerNoticeReason.resolve(
+            externalConnected: true, isCharging: false, batteryPercentage: 80,
+            configuration: configuration, status: status, now: now
+        ) == .aboveLimit)
+
+        // UI reports 81%, helper reports 80%
+        status.batteryPercentage = 80
+        #expect(BatteryPowerNoticeReason.resolve(
+            externalConnected: true, isCharging: false, batteryPercentage: 81,
+            configuration: configuration, status: status, now: now
+        ) == .aboveLimit)
+
+        // Both report 80%
+        #expect(BatteryPowerNoticeReason.resolve(
+            externalConnected: true, isCharging: false, batteryPercentage: 80,
+            configuration: configuration, status: status, now: now
+        ) == .chargeLimit)
+    }
 }

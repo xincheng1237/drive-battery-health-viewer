@@ -21,6 +21,9 @@ bool DBHVPowerUIOpen(void);
 /// Reads a snapshot without changing charging state.
 bool DBHVPowerUIReadStatus(DBHVPowerUIStatus *status);
 
+/// Returns true if system policy (temporarily disabled or calibration suspension) defers control.
+bool DBHVSystemDefersEighty(DBHVPowerUIStatus status);
+
 /// Read-only, independently of PowerUI engagement. Returns 1 when powerd
 /// reports SOC limiting suspended for gauging, 0 when not reported, or -1
 /// for an unverified OS build, unavailable notification or unknown value.
@@ -43,5 +46,12 @@ bool DBHVPowerUIRefreshEighty(int32_t battery_percentage, DBHVPowerUIExternalPow
 
 /// Clears this process's engagement override and restores normal charging.
 bool DBHVPowerUIDisable(void);
+
+/// Requests that any in-flight PowerUI wait loops abort immediately.
+/// Safe to call from a signal handler or termination queue.
+void DBHVPowerUIRequestAbort(void);
+
+/// Clears any prior abort request. Used between test iterations.
+void DBHVPowerUIClearAbortForTesting(void);
 
 #endif

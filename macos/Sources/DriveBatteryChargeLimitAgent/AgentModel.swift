@@ -326,11 +326,21 @@ final class ChargeLimitAgentModel: ObservableObject {
     }
 
     var shouldShowStatusItem: Bool {
-        availability.permitsSoftwareControls &&
-            configuration.showMenuBarStatus &&
-            (shouldPresentCalibrationStatusItem(configuration: configuration, status: status) ||
-             shouldPresentPowerUIRecoveryStatusItem(configuration: configuration, status: status) ||
-             shouldPresentChargeLimitStatusItem(configuration: configuration, status: status))
+        guard availability.permitsSoftwareControls,
+              configuration.enabled,
+              configuration.showMenuBarStatus else { return false }
+        switch presentationState {
+        case .systemCalibration, .systemCalibrationAwaitingConfirmation,
+             .systemTemporaryFullCharge, .systemFullChargeAwaitingConfirmation,
+             .attentionRequired:
+            return true
+        case .temporaryFullChargeRequested, .temporaryFullCharge:
+            return false
+        case .protectionActive, .limitReached, .aboveLimit, .protectionUnconfirmed:
+            return shouldPresentCalibrationStatusItem(configuration: configuration, status: status) ||
+                shouldPresentPowerUIRecoveryStatusItem(configuration: configuration, status: status) ||
+                shouldPresentChargeLimitStatusItem(configuration: configuration, status: status)
+        }
     }
 
     var shouldDismissPopoverForTemporaryFullCharge: Bool {

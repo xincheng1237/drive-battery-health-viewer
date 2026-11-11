@@ -1318,7 +1318,7 @@ struct DetailGrid: View {
     let items: [DetailItem]
 
     var body: some View {
-        DetailColumnsLayout(minimumColumnWidth: 165 * displaySize.scale,
+        DetailColumnsLayout(minimumColumnWidth: 155 * displaySize.scale,
                             horizontalSpacing: 30 * displaySize.scale,
                             verticalSpacing: 9 * displaySize.scale) {
             ForEach(items) { item in detail(item) }
