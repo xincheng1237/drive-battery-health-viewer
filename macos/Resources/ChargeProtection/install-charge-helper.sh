@@ -104,6 +104,12 @@ case "${1:-}" in
 
         # Validate both staged files before touching the installed helper.
         # Do not replace the executable while its old job remains registered.
+        owner_marker_path="${state_directory}/powerui-owner.json"
+        owner_marker_backup="${state_directory}/.powerui-owner.upgrade-backup.json"
+        if [ -f "${owner_marker_path}" ]; then
+            cp -p "${owner_marker_path}" "${owner_marker_backup}" 2>/dev/null || true
+        fi
+
         restore_charging
         launchctl bootout system/"${identifier}" >/dev/null 2>&1 || true
         # launchd can still list the job immediately after a successful
@@ -117,6 +123,19 @@ case "${1:-}" in
             stop_attempts=$((stop_attempts + 1))
             sleep 0.1
         done
+
+        # If an ownership marker existed before stopping the old helper, but the
+        # old helper (e.g. build 47) removed it during restore/SIGTERM leaving
+        # PowerUI in Checkpoint 5, restore the marker as schema 1 restoredTopOff
+        # so the new helper can safely re-engage without locking out.
+        if [ ! -f "${owner_marker_path}" ] && [ -f "${owner_marker_backup}" ]; then
+            cat <<EOF > "${owner_marker_path}"
+{"helperIdentifier":"com.chengxin.drivebatteryhealthviewer.chargehelper","leaseState":"restoredTopOff","schema":1,"targetPercentage":80}
+EOF
+            chown root:wheel "${owner_marker_path}" 2>/dev/null || true
+            chmod 600 "${owner_marker_path}" 2>/dev/null || true
+        fi
+        rm -f "${owner_marker_backup}" 2>/dev/null || true
         replacement_started=1
         mv -f "${helper_temporary}" "${helper_destination}"
         cmp -s "${helper_source}" "${helper_destination}" || {
@@ -145,6 +164,7 @@ case "${1:-}" in
             "${helper_destination}" \
             "${status_path}" \
             "${state_directory}/powerui-owner.json" \
+            "${state_directory}/.powerui-owner.upgrade-backup.json" \
             "${log_path}"
         if launchctl print system/"${identifier}" >/dev/null 2>&1; then
             echo "The charge helper launchd job is still registered." >&2

@@ -520,7 +520,7 @@ private final class ChargeActuator {
         // The selected adapter-preserving method is authoritative. Other
         // keys are cleaned up on a best-effort basis so a read-only legacy key
         // cannot make an otherwise working CHTE path fail closed.
-        let selectedOK: Bool
+        var selectedOK: Bool
         switch method {
         case .powerUIOptimized80:
             let inspection = inspectPowerUIOwnershipFile(at: powerUIOwnershipURL, requireRoot: true)
@@ -549,17 +549,25 @@ private final class ChargeActuator {
                     } else {
                         var rawStatus = DBHVPowerUIStatus()
                         if DBHVPowerUIReadStatus(&rawStatus), DBHVSystemDefersEighty(rawStatus) {
-                            _ = writePowerUIOwnership(batteryPercentage: marker.lastKnownBatteryPercentage ?? 80, leaseState: .deferredToSystem)
-                            selectedOK = true
+                            if !writePowerUIOwnership(batteryPercentage: marker.lastKnownBatteryPercentage ?? 80, leaseState: .deferredToSystem) {
+                                selectedOK = false
+                            } else {
+                                selectedOK = true
+                            }
                         } else {
                             selectedOK = DBHVPowerUIDisable()
                             var afterStatus = DBHVPowerUIStatus()
                             if DBHVPowerUIReadStatus(&afterStatus) {
                                 if afterStatus.enabled == 1 && afterStatus.current_state == 1 && afterStatus.checkpoint == 5 {
-                                    _ = writePowerUIOwnership(batteryPercentage: marker.lastKnownBatteryPercentage ?? 80, leaseState: .restoredTopOff)
+                                    if !writePowerUIOwnership(batteryPercentage: marker.lastKnownBatteryPercentage ?? 80, leaseState: .restoredTopOff) {
+                                        selectedOK = false
+                                    }
                                 } else if (afterStatus.enabled == 0 && afterStatus.current_state == 0 && afterStatus.checkpoint == 10) ||
                                           (afterStatus.enabled == 0 && afterStatus.current_state == 0 && afterStatus.checkpoint == 0) {
                                     removePowerUIOwnership()
+                                    if FileManager.default.fileExists(atPath: powerUIOwnershipURL.path) {
+                                        selectedOK = false
+                                    }
                                 }
                             }
                         }
@@ -595,10 +603,13 @@ private final class ChargeActuator {
         adapterConnected: Bool,
         systemAdapterConnected: Bool?,
         batteryPercentage: Int,
-        managed: Bool
+        managed: Bool,
+        checkpoint: Int32? = nil,
+        engaged: Bool? = nil
     ) -> PowerUIRequestSchedule.Request? {
         powerUISchedule.request(adapterConnected: adapterConnected, systemAdapterConnected: systemAdapterConnected,
-                                batteryPercentage: batteryPercentage, managed: managed)
+                                batteryPercentage: batteryPercentage, managed: managed,
+                                checkpoint: checkpoint, engaged: engaged)
     }
 
     var powerUIRequestFailed: Bool { powerUISchedule.hasFailed }
@@ -633,8 +644,12 @@ private final class ChargeActuator {
                 case .activeEighty, .preEngaging:
                     ownsPolicy = true
                 case .restoredTopOff, .deferredToSystem:
+                    guard writePowerUIOwnership(batteryPercentage: batteryPercentage, leaseState: .preEngaging) else {
+                        JSONLineLogger.write("error", category: "charge", event: "ownership_write_failed",
+                                             message: "Failed to persist preEngaging ownership state; aborting engagement.")
+                        return false
+                    }
                     ownsPolicy = true
-                    _ = writePowerUIOwnership(batteryPercentage: batteryPercentage, leaseState: .preEngaging)
                 }
             case .unowned:
                 var rawStatus = DBHVPowerUIStatus()
@@ -674,11 +689,25 @@ private final class ChargeActuator {
 
             let engageOK = DBHVPowerUIEngageEighty(Int32(batteryPercentage), ownsPolicy, powerUIExternalPowerConfirmed)
             if engageOK {
-                _ = writePowerUIOwnership(batteryPercentage: batteryPercentage, leaseState: .activeEighty)
+                if !writePowerUIOwnership(batteryPercentage: batteryPercentage, leaseState: .activeEighty) {
+                    JSONLineLogger.write("error", category: "charge", event: "active_marker_write_failed",
+                                         message: "Engaged 80% successfully, but failed to write activeEighty marker to disk.")
+                }
                 return true
             } else {
                 if !ownsPolicy {
-                    removePowerUIOwnership()
+                    var afterStatus = DBHVPowerUIStatus()
+                    if DBHVPowerUIReadStatus(&afterStatus) {
+                        let isClean = (afterStatus.enabled == 0 && afterStatus.current_state == 0 && afterStatus.checkpoint == 0) ||
+                                      (afterStatus.enabled == 0 && afterStatus.current_state == 0 && afterStatus.checkpoint == 10)
+                        if isClean {
+                            removePowerUIOwnership()
+                        } else {
+                            _ = writePowerUIOwnership(batteryPercentage: batteryPercentage, leaseState: .restoredTopOff)
+                        }
+                    } else {
+                        _ = writePowerUIOwnership(batteryPercentage: batteryPercentage, leaseState: .restoredTopOff)
+                    }
                 }
                 return false
             }
@@ -715,12 +744,25 @@ private final class ChargeActuator {
     }
 
     func isPowerUIManaged() -> Bool {
+        isPowerUIManaged(batteryPercentage: nil)
+    }
+
+    func isPowerUIManaged(batteryPercentage: Int?) -> Bool {
         guard method == .powerUIOptimized80, hasPowerUIOwnership() else { return false }
         var snapshot = DBHVPowerUIStatus()
         guard DBHVPowerUIReadStatus(&snapshot),
               snapshot.temporarily_disabled != 1, DBHVReadGaugingLimitSuspension() != 1,
               snapshot.enabled == 1,
               snapshot.current_state == 1 else { return false }
+        if let batteryPercentage {
+            if PowerUIRequestSchedule.needsCheckpointRecovery(
+                checkpoint: snapshot.checkpoint,
+                engaged: snapshot.engaged == 1,
+                batteryPercentage: batteryPercentage
+            ) {
+                return false
+            }
+        }
         return snapshot.checkpoint == 1 ||
             (snapshot.checkpoint == 2 && snapshot.engaged == 1)
     }
@@ -1248,6 +1290,7 @@ private func writePowerUIReport(
     battery: BatteryReading,
     managed: Bool,
     holding: Bool,
+    policyConfirmed: Bool? = nil,
     error: String? = nil
 ) {
     writeStatusIfChanged(ChargeProtectionStatus(
@@ -1265,7 +1308,7 @@ private func writePowerUIReport(
         lastError: error,
         systemChargeOverride: systemOverrideTracker.state,
         systemCalibration: systemCalibrationTracker.state,
-        powerUIPolicyConfirmed: managed
+        powerUIPolicyConfirmed: policyConfirmed ?? managed
     ), to: arguments.statusURL, previous: &previousStatus)
 }
 
@@ -1539,7 +1582,7 @@ while true {
         if battery.charge.percentage >= 100 {
             actuator.resetPowerUIRequests()
             overchargeMonitor.reset()
-            let managed = actuator.isPowerUIManaged()
+            let managed = actuator.isPowerUIManaged(batteryPercentage: battery.charge.percentage)
             let isHolding = actuator.isHoldApplied()
             let holding = battery.nativeAdapterConfirmed && managed && isHolding
             holdingLimit = holding ? .eighty : nil
@@ -1547,29 +1590,36 @@ while true {
                 configuration: configuration,
                 battery: battery,
                 managed: managed,
-                holding: holding
+                holding: holding,
+                policyConfirmed: false
             )
             Thread.sleep(forTimeInterval: 5)
             continue
         }
 
-        var managed = actuator.isPowerUIManaged()
+        var managed = actuator.isPowerUIManaged(batteryPercentage: battery.charge.percentage)
         let adapterConnected = battery.nativeAdapterConfirmed
+        var rawStatusForRequest = DBHVPowerUIStatus()
+        _ = DBHVPowerUIReadStatus(&rawStatusForRequest)
+        var didAttemptReassert = false
         if let request = actuator.powerUIRequest(
             adapterConnected: battery.charge.adapterConnected,
             systemAdapterConnected: battery.systemAdapterConnected,
             batteryPercentage: battery.charge.percentage,
-            managed: managed
+            managed: managed,
+            checkpoint: rawStatusForRequest.checkpoint,
+            engaged: rawStatusForRequest.engaged == 1
         ) {
             if request == .recover {
                 // Invalidate a previous hold and refresh timestamp before entering the bridge's bounded wait.
-                writePowerUIReport(configuration: configuration, battery: battery, managed: false, holding: false)
+                writePowerUIReport(configuration: configuration, battery: battery, managed: false, holding: false, policyConfirmed: false)
             } else {
                 // Heartbeat before bounded wait
-                writePowerUIReport(configuration: configuration, battery: battery, managed: managed, holding: holdingLimit != nil)
+                writePowerUIReport(configuration: configuration, battery: battery, managed: managed, holding: holdingLimit != nil, policyConfirmed: managed && holdingLimit != nil)
             }
+            didAttemptReassert = true
             _ = actuator.applyPowerUIRequest(request, at: battery.charge.percentage)
-            managed = actuator.isPowerUIManaged()
+            managed = actuator.isPowerUIManaged(batteryPercentage: battery.charge.percentage)
         }
 
         // Re-read battery after bridge execution: if adapter was unplugged during wait, do not record failure backoff
@@ -1581,7 +1631,7 @@ while true {
             actuator.resetPowerUIRequests()
             overchargeMonitor.reset()
             holdingLimit = nil
-            writePowerUIReport(configuration: configuration, battery: freshBattery, managed: false, holding: false)
+            writePowerUIReport(configuration: configuration, battery: freshBattery, managed: false, holding: false, policyConfirmed: false)
             Thread.sleep(forTimeInterval: 5)
             continue
         }
@@ -1599,11 +1649,13 @@ while true {
             isCharging: freshBattery.isCharging ?? false,
             checkpoint: rawStatus.checkpoint,
             engaged: rawStatus.engaged == 1,
-            managed: managed
+            managed: managed,
+            didAttemptReassert: didAttemptReassert
         )
 
         var lastError: String? = nil
         let holding: Bool
+        let isHoldingConfirmed = (rawStatus.checkpoint == 2 && rawStatus.engaged == 1)
         switch overchargeState {
         case .abnormalChargingPastLimit(let msg):
             holding = false
@@ -1632,12 +1684,20 @@ while true {
             }
         }
 
+        let policyConfirmed: Bool
+        if freshBattery.charge.percentage >= 80 {
+            policyConfirmed = managed && (holding || isHoldingConfirmed)
+        } else {
+            policyConfirmed = managed
+        }
+
         holdingLimit = holding ? .eighty : nil
         writePowerUIReport(
             configuration: configuration,
             battery: freshBattery,
             managed: managed,
             holding: holding,
+            policyConfirmed: policyConfirmed,
             error: lastError
         )
         Thread.sleep(forTimeInterval: 5)

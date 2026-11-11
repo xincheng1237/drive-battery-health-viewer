@@ -1,6 +1,6 @@
 /// Uses elapsed time that includes sleep, independent of wall-clock changes.
-public struct PowerUIRequestSchedule {
-    public enum Request: Equatable {
+public struct PowerUIRequestSchedule: Sendable {
+    public enum Request: Equatable, Sendable {
         case recover
         case renew
     }
@@ -18,11 +18,19 @@ public struct PowerUIRequestSchedule {
         systemAdapterConnected: Bool?,
         batteryPercentage: Int,
         managed: Bool,
+        checkpoint: Int32? = nil,
+        engaged: Bool? = nil,
         now: ContinuousClock.Instant = .now
     ) -> Request? {
         guard adapterConnected, systemAdapterConnected == true, (1..<100).contains(batteryPercentage),
               retryAfter.map({ now >= $0 }) ?? true else { return nil }
-        if !managed { return .recover }
+        let effectiveManaged: Bool
+        if let checkpoint, let engaged {
+            effectiveManaged = managed && !Self.needsCheckpointRecovery(checkpoint: checkpoint, engaged: engaged, batteryPercentage: batteryPercentage)
+        } else {
+            effectiveManaged = managed
+        }
+        if !effectiveManaged { return .recover }
         if let lastSuccess, lastSuccess.duration(to: now) < .seconds(4 * 60 * 60) { return nil }
         return .renew
     }

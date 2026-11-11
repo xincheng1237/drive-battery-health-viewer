@@ -534,13 +534,9 @@ public struct PowerUIOverchargeMonitor: Equatable, Sendable {
         checkpoint: Int32,
         engaged: Bool,
         managed: Bool,
+        didAttemptReassert: Bool = false,
         now: ContinuousClock.Instant = .now
     ) -> State {
-        guard managed else {
-            reset()
-            return .unmanaged
-        }
-
         // 100% Boundary
         if batteryPercentage >= 100 {
             establishingStartedAt = nil
@@ -567,6 +563,7 @@ public struct PowerUIOverchargeMonitor: Equatable, Sendable {
         }
 
         // Battery is >= 80% and < 100%
+        // Case A: Holding confirmed and current stopped
         if checkpoint == 2 && engaged && !isCharging {
             establishingStartedAt = nil
             baselinePercentageAtOrAbove80 = nil
@@ -576,8 +573,11 @@ public struct PowerUIOverchargeMonitor: Equatable, Sendable {
             return .confirmedHolding
         }
 
-        // Check if engaged is true but isCharging is still true (PMU current settling)
+        // Case B: PowerUI says engaged (checkpoint 2, engaged=1), but hardware reports isCharging == true
         if checkpoint == 2 && engaged && isCharging {
+            establishingStartedAt = nil
+            baselinePercentageAtOrAbove80 = nil
+            reassertAttempts = 0
             if let started = engagedChargingStartedAt {
                 if now >= started.advanced(by: .seconds(60)) {
                     let msg = "PowerUI accepted the 80% request, but the battery is still charging past 80%"
@@ -587,31 +587,49 @@ public struct PowerUIOverchargeMonitor: Equatable, Sendable {
             } else {
                 engagedChargingStartedAt = now
             }
+            state = .establishingHold
+            return .establishingHold
         } else {
             engagedChargingStartedAt = nil
         }
 
-        // If not engaged or still settling
+        // Case C: Battery is >= 80%, not yet holding
+        // If not charging (e.g. on AC but battery paused/idle), not actively overcharging
+        if !isCharging {
+            establishingStartedAt = nil
+            baselinePercentageAtOrAbove80 = nil
+            reassertAttempts = 0
+            state = managed ? .establishingHold : .unmanaged
+            return state
+        }
+
+        // Actively charging at >= 80% without confirmed hold
         if establishingStartedAt == nil {
             establishingStartedAt = now
             baselinePercentageAtOrAbove80 = batteryPercentage
-            reassertAttempts = 1
-        } else {
+            reassertAttempts = didAttemptReassert ? 1 : 0
+        } else if didAttemptReassert {
             reassertAttempts += 1
         }
 
         // Check overcharge conditions:
         // 1. Net battery percentage increased by >= 2% while charging past 80%
-        if let base = baselinePercentageAtOrAbove80, isCharging && (batteryPercentage - base) >= 2 {
-            let msg = "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+        if let base = baselinePercentageAtOrAbove80, (batteryPercentage - base) >= 2 {
+            let msg = managed
+                ? "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+                : "The 80% limit is not managed by PowerUI and the battery is actively charging past 80%"
             state = .abnormalChargingPastLimit(msg)
             return state
         }
 
-        // 2. Over 45 seconds or >= 3 re-assert attempts without disengaging
-        if let start = establishingStartedAt, isCharging {
-            if now >= start.advanced(by: .seconds(45)) || reassertAttempts > 3 {
-                let msg = "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+        // 2. Over 45 seconds AND >= 2 reassertion attempts without stopping charging
+        // (Or 75 seconds timeout if retry backoff prevented multiple attempts)
+        if let start = establishingStartedAt {
+            if (now >= start.advanced(by: .seconds(45)) && reassertAttempts >= 2) ||
+               now >= start.advanced(by: .seconds(75)) {
+                let msg = managed
+                    ? "PowerUI accepted the 80% request, but the battery is still charging past 80%"
+                    : "The 80% limit is not managed by PowerUI and the battery is actively charging past 80%"
                 state = .abnormalChargingPastLimit(msg)
                 return state
             }
@@ -619,6 +637,136 @@ public struct PowerUIOverchargeMonitor: Equatable, Sendable {
 
         state = .establishingHold
         return .establishingHold
+    }
+}
+
+public struct PowerUIProtectionCoordinator: Sendable {
+    public struct Input: Equatable, Sendable {
+        public var batteryPercentage: Int
+        public var isCharging: Bool
+        public var adapterConnected: Bool
+        public var systemAdapterConnected: Bool?
+        public var checkpoint: Int32
+        public var engaged: Bool
+        public var temporarilyDisabled: Bool
+        public var calibrationSuspended: Bool
+        public var hasOwnership: Bool
+        public var isHoldApplied: Bool
+
+        public init(
+            batteryPercentage: Int,
+            isCharging: Bool,
+            adapterConnected: Bool,
+            systemAdapterConnected: Bool?,
+            checkpoint: Int32,
+            engaged: Bool,
+            temporarilyDisabled: Bool = false,
+            calibrationSuspended: Bool = false,
+            hasOwnership: Bool = true,
+            isHoldApplied: Bool = false
+        ) {
+            self.batteryPercentage = batteryPercentage
+            self.isCharging = isCharging
+            self.adapterConnected = adapterConnected
+            self.systemAdapterConnected = systemAdapterConnected
+            self.checkpoint = checkpoint
+            self.engaged = engaged
+            self.temporarilyDisabled = temporarilyDisabled
+            self.calibrationSuspended = calibrationSuspended
+            self.hasOwnership = hasOwnership
+            self.isHoldApplied = isHoldApplied
+        }
+    }
+
+    public struct Decision: Equatable, Sendable {
+        public var request: PowerUIRequestSchedule.Request?
+        public var managed: Bool
+        public var holding: Bool
+        public var policyConfirmed: Bool
+        public var overchargeState: PowerUIOverchargeMonitor.State
+        public var errorMessage: String?
+    }
+
+    public var schedule = PowerUIRequestSchedule()
+    public var overchargeMonitor = PowerUIOverchargeMonitor()
+
+    public init() {}
+
+    public mutating func reset() {
+        schedule = PowerUIRequestSchedule()
+        overchargeMonitor.reset()
+    }
+
+    public func isManaged(input: Input) -> Bool {
+        guard input.hasOwnership,
+              !input.temporarilyDisabled,
+              !input.calibrationSuspended else { return false }
+        let needsRecovery = PowerUIRequestSchedule.needsCheckpointRecovery(
+            checkpoint: input.checkpoint,
+            engaged: input.engaged,
+            batteryPercentage: input.batteryPercentage
+        )
+        if needsRecovery { return false }
+        return input.checkpoint == 1 || (input.checkpoint == 2 && input.engaged)
+    }
+
+    public mutating func evaluate(
+        input: Input,
+        didAttemptReassert: Bool = false,
+        now: ContinuousClock.Instant = .now
+    ) -> Decision {
+        let managed = isManaged(input: input)
+        let request = schedule.request(
+            adapterConnected: input.adapterConnected,
+            systemAdapterConnected: input.systemAdapterConnected,
+            batteryPercentage: input.batteryPercentage,
+            managed: managed,
+            checkpoint: input.checkpoint,
+            engaged: input.engaged,
+            now: now
+        )
+
+        let overchargeState = overchargeMonitor.update(
+            batteryPercentage: input.batteryPercentage,
+            isCharging: input.isCharging,
+            checkpoint: input.checkpoint,
+            engaged: input.engaged,
+            managed: managed,
+            didAttemptReassert: didAttemptReassert,
+            now: now
+        )
+
+        var errorMessage: String? = nil
+        let holding: Bool
+        let isHoldingConfirmed = (input.checkpoint == 2 && input.engaged)
+
+        switch overchargeState {
+        case .abnormalChargingPastLimit(let msg):
+            holding = false
+            errorMessage = msg
+        default:
+            holding = input.adapterConnected && managed && !input.isCharging &&
+                input.batteryPercentage >= 80 && input.isHoldApplied
+            if input.adapterConnected && !managed && input.batteryPercentage < 100 && schedule.hasFailed {
+                errorMessage = "Native PowerUI 80% engagement failed"
+            }
+        }
+
+        let policyConfirmed: Bool
+        if input.batteryPercentage >= 80 {
+            policyConfirmed = managed && (holding || isHoldingConfirmed)
+        } else {
+            policyConfirmed = managed
+        }
+
+        return Decision(
+            request: request,
+            managed: managed,
+            holding: holding,
+            policyConfirmed: policyConfirmed,
+            overchargeState: overchargeState,
+            errorMessage: errorMessage
+        )
     }
 }
 
