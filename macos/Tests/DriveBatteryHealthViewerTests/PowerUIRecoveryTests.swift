@@ -481,6 +481,8 @@ struct PowerUIRecoveryTests {
         input.isHoldApplied = true
         input.isCharging = false
         coordinator.record(.recover, accepted: true, observed: input, now: now.advanced(by: .seconds(10)))
+        let transient = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(11)))
+        #expect(!transient.holding && !transient.policyConfirmed)
         let holding = coordinator.evaluate(input: input, now: now.advanced(by: .seconds(15)))
         #expect(holding.holding && holding.policyConfirmed)
         #expect(holding.request == nil)

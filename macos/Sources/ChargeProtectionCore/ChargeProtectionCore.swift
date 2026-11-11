@@ -799,12 +799,14 @@ public struct PowerUIProtectionCoordinator: Sendable {
 
     private var rejectedRequest = false
     private var attemptedRecovery = false
+    private var holdObservedAt: ContinuousClock.Instant?
 
     public init() {}
 
     public mutating func reset() {
         rejectedRequest = false
         attemptedRecovery = false
+        holdObservedAt = nil
         schedule = PowerUIRequestSchedule()
         overchargeMonitor.reset()
     }
@@ -828,10 +830,13 @@ public struct PowerUIProtectionCoordinator: Sendable {
         observed input: Input,
         now: ContinuousClock.Instant = .now
     ) {
-        guard input.adapterConnected, input.systemAdapterConnected == true, input.pauseSignalsKnown,
+        guard input.adapterConnected, input.systemAdapterConnected == true,
               !input.temporarilyDisabled, !input.calibrationSuspended else {
             reset()
             return
+        }
+        if (80..<100).contains(input.batteryPercentage), policyConfirmed(input) {
+            holdObservedAt = holdObservedAt ?? now
         }
         attemptedRecovery = request == .recover
         rejectedRequest = !accepted
@@ -855,7 +860,14 @@ public struct PowerUIProtectionCoordinator: Sendable {
     ) -> Decision {
         guard input.adapterConnected, input.systemAdapterConnected == true, input.pauseSignalsKnown,
               !input.temporarilyDisabled, !input.calibrationSuspended else {
-            reset()
+            if !input.adapterConnected || input.systemAdapterConnected == false ||
+                input.temporarilyDisabled || input.calibrationSuspended {
+                reset()
+            } else {
+                // An unreadable sample must not erase a retry already on backoff.
+                holdObservedAt = nil
+                overchargeMonitor.reset()
+            }
             return Decision(request: nil, managed: false, holding: false, policyConfirmed: false,
                             overchargeState: .unmanaged, errorMessage: nil)
         }
@@ -895,9 +907,17 @@ public struct PowerUIProtectionCoordinator: Sendable {
             engaged: input.engaged,
             now: now
         )
-        let confirmed = !abnormal && policyConfirmed(input)
+        let verified = !abnormal && policyConfirmed(input)
+        if verified && input.batteryPercentage >= 80 {
+            holdObservedAt = holdObservedAt ?? now
+        } else {
+            holdObservedAt = nil
+        }
+        // Require a second independent battery sample before reporting a hold.
+        let holding = holdObservedAt.map { $0.duration(to: now) >= .seconds(4) } ?? false
+        let confirmed = holding || (verified && input.batteryPercentage < 80)
         return Decision(request: request, managed: managed && !abnormal,
-                        holding: confirmed && input.batteryPercentage >= 80, policyConfirmed: confirmed,
+                        holding: holding, policyConfirmed: confirmed,
                         overchargeState: overchargeState, errorMessage: error)
     }
 }
