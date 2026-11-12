@@ -8,29 +8,27 @@
 
 ## 下载
 
-macOS：**1.2** · Windows：**1.0.6**
+macOS：**1.3** · Windows：**1.0.6**
 
 | 平台 | 下载 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.2/DriveBatteryHealthViewer_v1.2_macOS_Universal.dmg) | macOS 13 或更高版本，Apple 芯片与 Intel Mac |
+| macOS | [下载 DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.dmg) | macOS 13 或更高版本，Apple 芯片与 Intel Mac |
 | Windows | [下载安装程序](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | Windows 7 或更高版本，x64 |
 
-[查看 macOS 1.2 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.2) · [全部发行版](https://github.com/xincheng1237/drive-battery-health-viewer/releases)
+[查看 macOS 1.3 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3) · [全部发行版](https://github.com/xincheng1237/drive-battery-health-viewer/releases)
 
 ### 安装与更新
 
 - **macOS**：打开 DMG，将应用拖入“应用程序”后启动。首次打开如需系统确认，可在“系统设置 → 隐私与安全性”中选择打开。
-- **升级旧版 macOS 应用**：退出旧版后安装 1.2。此后可在“设置 → 检查更新”中查看新版内容、下载并安装重启。
+- **升级旧版 macOS 应用**：退出旧版后安装 1.3。此后可在“设置 → 检查更新”中查看新版内容、下载并安装重启。
 - **Windows**：运行安装程序，按照向导完成安装。安装包提供兼容界面与现代界面；构建说明见 [BUILDING_WINDOWS.md](BUILDING_WINDOWS.md)。
 
-## macOS 1.2
+## macOS 1.3
 
-- **新的界面设计**：概览、历史、设置采用紧凑的浮岛导航，常用报告操作集中在工具栏。
-- **四档显示大小**：在设置中选择小、标准、大或特大，文字与信息布局同步调整。
-- **历史报告阅读**：切换报告时平滑过渡，使用 − / ＋ 独立调整报告字号。
-- **设置与应用信息**：更新日志、检查更新及关于信息都可在设置中找到。
-- **应用内更新**：直接查看新版说明，下载完成后确认安装并重新启动。
-- **充电状态提示**：区分实际限充、系统临时满充与校准状态，并保留设定的充电上限。
+- **新增** 自动检查更新，在概览中显示可用版本，可在设置中关闭。
+- **提升** 减少重复的充电状态采样、组件检查和界面刷新。
+- **优化** 概览、历史和设置的浮岛导航适应更窄的窗口，方便分屏使用。
+- **修复** 充电保护设置变更、系统校准或临时满充时的状态显示；改进重新接电后恢复 80% 限充的流程。
 
 ## 界面预览
 
@@ -63,6 +61,8 @@ macOS：**1.2** · Windows：**1.0.6**
 - 支持简体中文、英语、俄语、法语、德语、韩语和日语。
 
 ## macOS 充电保护
+
+主程序为 Universal 2。充电保护 Helper 和菜单栏 Agent 适用于 Apple 芯片 Mac。Intel Mac 支持健康信息、历史与报告，电池充电由 macOS 管理。
 
 | 设备与系统 | 可用方式 |
 | --- | --- |

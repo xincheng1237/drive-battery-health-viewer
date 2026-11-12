@@ -8,29 +8,27 @@ View drive and battery health, manage charge protection, and browse saved report
 
 ## Download
 
-macOS: **1.2** · Windows: **1.0.6**
+macOS: **1.3** · Windows: **1.0.6**
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| macOS | [Download DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.2/DriveBatteryHealthViewer_v1.2_macOS_Universal.dmg) | macOS 13 or later, Apple silicon and Intel Macs |
+| macOS | [Download DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.dmg) | macOS 13 or later, Apple silicon and Intel Macs |
 | Windows | [Download installer](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | Windows 7 or later, x64 |
 
-[macOS 1.2 release notes](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.2) · [All releases](https://github.com/xincheng1237/drive-battery-health-viewer/releases)
+[macOS 1.3 release notes](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3) · [All releases](https://github.com/xincheng1237/drive-battery-health-viewer/releases)
 
 ### Installation and updates
 
 - **macOS:** Open the DMG, drag the app into Applications, and launch it. For first-launch approval, choose Open in System Settings → Privacy & Security.
-- **Upgrading an older macOS app:** Quit the old app and install 1.2. Future updates are available in Settings → Check for Updates, with release notes, download, installation, and relaunch.
+- **Upgrading an older macOS app:** Quit the old app and install 1.3. Future updates are available in Settings → Check for Updates, with release notes, download, installation, and relaunch.
 - **Windows:** Run the installer and follow the setup wizard. Both compatibility and modern interfaces are included. See [BUILDING_WINDOWS.md](BUILDING_WINDOWS.md) for build information.
 
-## macOS 1.2
+## macOS 1.3
 
-- **A new interface:** A compact navigation capsule connects Overview, History, and Settings, with report actions in the toolbar.
-- **Four display sizes:** Small, Standard, Large, and Extra Large adjust interface text and information layout together.
-- **History reading:** Smooth report transitions and independent text sizing with − / ＋ controls.
-- **Settings and app information:** Release notes, update checks, and About are accessible from Settings.
-- **In-app updates:** Read what's new, download the update, then confirm installation and relaunch.
-- **Charging status:** Separate active limiting, temporary full charging, and calibration states while retaining the saved limit.
+- **New** Automatic update checks with an optional reminder in Overview.
+- **Performance** Reduced redundant charging observations, component checks, and interface refreshes.
+- **Improved** The navigation capsule and page layouts adapt to narrower windows for split-screen use.
+- **Fixed** Charge protection status when settings change or macOS calibrates or temporarily allows a full charge. Improved recovery of the 80% limit after reconnecting power.
 
 ## Screenshots
 
@@ -63,6 +61,8 @@ macOS: **1.2** · Windows: **1.0.6**
 - Use Simplified Chinese, English, Russian, French, German, Korean, or Japanese.
 
 ## macOS charge protection
+
+The main app is Universal 2. The charge protection Helper and menu bar Agent are available on Apple silicon. Intel Macs support health information, history, and reports, with charging managed by macOS.
 
 | Device and system | Available control |
 | --- | --- |

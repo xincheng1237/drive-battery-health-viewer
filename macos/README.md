@@ -1,8 +1,8 @@
 # macOS 版硬盘与电池健康查看器
 
-当前版本 **1.2**，适用于 macOS 13 及以上，支持 Apple 芯片与 Intel Mac。
+当前版本 **1.3**，适用于 macOS 13 及以上，支持 Apple 芯片与 Intel Mac。
 
-[下载安装包](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.2/DriveBatteryHealthViewer_v1.2_macOS_Universal.dmg) · [1.2 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.2)
+[下载安装包](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.dmg) · [1.3 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3)
 
 ## 界面与操作
 
@@ -22,6 +22,8 @@
 序列号默认隐藏，并同步用于界面、新保存的历史记录、复制和导出报告。报告使用 UTF-8 文本格式。
 
 ## 充电保护
+
+主程序为 Universal 2。充电保护 Helper 与菜单栏 Agent 为 arm64。Intel Mac 可查看设备健康与报告，电池充电由 macOS 管理。
 
 | 设备与系统 | 操作 |
 | --- | --- |
@@ -60,11 +62,11 @@ swift test --disable-sandbox
 
 产物在 `macos/dist/`：
 
-- `DriveBatteryHealthViewer_v1.2_macOS_Universal.dmg`
-- `DriveBatteryHealthViewer_v1.2_macOS_Universal.zip`
+- `DriveBatteryHealthViewer_v1.3_macOS_Universal.dmg`
+- `DriveBatteryHealthViewer_v1.3_macOS_Universal.zip`
 - 对应 SHA-256 校验文件
 
-主程序、smartctl 与 Sparkle 为 Universal 2，充电 Helper/Agent 为 arm64。打包脚本检查版本、架构、资源、嵌套签名与 DMG 内容。当前分发采用 ad-hoc 代码签名；应用内更新使用独立 Ed25519 签名。签名与发布步骤见 [应用内更新](docs/IN_APP_UPDATES.md)，本版验证见 [1.2 发布记录](docs/releases/1.2.md)。
+主程序、smartctl 与 Sparkle 为 Universal 2，充电 Helper/Agent 为 arm64。打包脚本检查版本、架构、资源、嵌套签名与 DMG 内容。当前分发采用 ad-hoc 代码签名；应用内更新使用独立 Ed25519 签名。签名与发布步骤见 [应用内更新](docs/IN_APP_UPDATES.md)，历史验证见 [1.2 发布记录](docs/releases/1.2.md)。
 
 ## 开源组件
 
