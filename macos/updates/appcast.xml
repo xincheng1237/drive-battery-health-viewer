@@ -2,6 +2,123 @@
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
 <channel><title>Drive &amp; Battery Health Viewer for macOS</title>
+<item><title>Version 1.3</title><pubDate>Thu, 12 Nov 2026 04:44:34 +0000</pubDate>
+<sparkle:version>53</sparkle:version><sparkle:shortVersionString>1.3</sparkle:shortVersionString>
+<sparkle:minimumSystemVersion>13.0.0</sparkle:minimumSystemVersion>
+<description xml:lang="en" sparkle:format="plain-text">Performance
+• Refined charge monitoring to reduce redundant data updates in the background.
+• Reduced interface refreshes when charging status stays the same for smoother operation over time.
+• Optimized how charge protection components are checked to reduce unnecessary refreshes.
+
+Improvements
+• Automatically checks for updates and shows a reminder in Overview. Dismiss the reminder or turn automatic checks off in Settings.
+• The app and menu bar consistently show “Awaiting confirmation” until the charging setting is confirmed.
+• The app window can be made narrower for easier use in split-screen and multi-window layouts.
+
+Fixes
+• Fixed a false charge limit confirmation based on the previous setting after changing the limit.
+• Fixed an incorrect “Charge limit reached” status when battery calibration or temporary full charging was unclear.
+• Fixed the menu bar showing Charge to Full This Time as active before it was confirmed.
+• Fixed a menu bar issue that could hide other charge protection errors while macOS temporarily paused protection.
+• Fixed inaccurate power connection status that could make Overview, History and exported reports disagree with macOS.</description>
+<description xml:lang="zh-Hans" sparkle:format="plain-text">性能提升
+• 优化充电状态监测机制，减少后台监测过程中不必要的重复数据更新。
+• 减少充电状态未发生变化时的界面重复刷新，提升应用持续运行时的流畅度。
+• 优化充电保护组件的状态检查机制，降低不必要的刷新开销。
+
+优化改进
+• 新增支持自动检查更新，发现新版本时在概览页面显示提醒，支持关闭提醒或在设置中禁用自动检查。
+• 完善充电保护状态提示，尚未确认充电设置是否生效时，应用与菜单栏将统一显示“待确认”状态。
+• 优化窗口尺寸适配，支持将应用窗口调整至更窄的宽度，提升分屏与多窗口使用效率。
+
+问题修复
+• 修复修改充电上限后，应用仍可能根据上一次设置错误判断已达到充电上限的问题。
+• 修复系统电池校准或临时充满电状态不明确时，错误显示“已到达充电上限”的问题。
+• 修复“本次充满”尚未确认生效时，菜单栏可能提前显示已开启的问题。
+• 修复系统临时暂停充电保护时，菜单栏可能未能正确显示其他充电保护故障的问题。
+• 修复部分情况下电源连接状态显示不准确，导致概览、历史及导出报告与 macOS 系统信息不一致的问题。</description>
+<description xml:lang="ru" sparkle:format="plain-text">Производительность
+• Оптимизирован мониторинг зарядки и сокращены повторные обновления данных в фоновом режиме.
+• Сокращены повторные обновления интерфейса при неизменном состоянии зарядки для более плавной работы приложения.
+• Проверка компонентов защиты зарядки требует меньше лишних обновлений.
+
+Улучшения
+• Добавлена автоматическая проверка обновлений с уведомлением в обзоре. Его можно закрыть, а проверку отключить в настройках.
+• Пока применение настройки зарядки не подтверждено, приложение и строка меню показывают «Ожидает подтверждения».
+• Окно можно сделать уже для удобной работы в режиме разделённого экрана и с несколькими окнами.
+
+Исправления
+• Устранено ошибочное подтверждение лимита по предыдущей настройке после изменения предела зарядки.
+• Устранено ошибочное сообщение о достижении лимита при неизвестном состоянии калибровки или временной полной зарядки.
+• Устранено преждевременное отображение разовой полной зарядки в строке меню до подтверждения.
+• Устранена ошибка, скрывавшая другие сбои защиты зарядки в строке меню при временной приостановке защиты системой.
+• Исправлено неточное состояние питания, из-за которого обзор, история и экспорт могли расходиться с данными macOS.</description>
+<description xml:lang="fr" sparkle:format="plain-text">Performances
+• La surveillance de la charge évite davantage de mises à jour répétées en arrière-plan.
+• L’interface se rafraîchit moins souvent lorsque l’état de charge ne change pas, pour rester plus fluide au fil du temps.
+• La vérification des composants de protection de charge entraîne moins d’actualisations inutiles.
+
+Améliorations
+• La recherche automatique affiche un rappel dans Aperçu. Le rappel peut être fermé et la recherche désactivée dans Réglages.
+• L’application et la barre des menus affichent « À confirmer » tant que le réglage de charge n’a pas été confirmé.
+• La fenêtre peut être réduite en largeur pour faciliter l’utilisation en écran partagé ou avec plusieurs fenêtres.
+
+Correctifs
+• Correction d’une confirmation erronée de la limite fondée sur l’ancien réglage après sa modification.
+• Correction du message « Limite de charge atteinte » lorsque l’état de l’étalonnage ou de la charge complète temporaire était incertain.
+• Correction d’un affichage prématuré de la charge complète ponctuelle dans la barre des menus avant sa confirmation.
+• Correction d’un problème pouvant masquer d’autres erreurs de protection de charge dans la barre des menus lorsque macOS suspendait la protection.
+• Correction de l’état de l’alimentation lorsque les données d’Aperçu, de l’historique et des exports différaient de celles de macOS.</description>
+<description xml:lang="de" sparkle:format="plain-text">Leistung
+• Die Ladeüberwachung vermeidet überflüssige Datenaktualisierungen im Hintergrund.
+• Bei unverändertem Ladestatus wird die Oberfläche seltener aktualisiert, damit die App länger flüssig bleibt.
+• Die Statusprüfung der Ladeschutzkomponenten vermeidet unnötige Aktualisierungen.
+
+Verbesserungen
+• Automatische Updateprüfungen zeigen neue Versionen in der Übersicht an. Der Hinweis lässt sich schließen und die Prüfung in den Einstellungen deaktivieren.
+• App und Menüleiste zeigen „Bestätigung ausstehend“, solange die Ladeeinstellung noch nicht bestätigt wurde.
+• Das App-Fenster lässt sich schmaler einstellen, um geteilte Bildschirme und mehrere Fenster besser zu nutzen.
+
+Fehlerbehebungen
+• Eine falsche Bestätigung des Ladelimits anhand der vorherigen Einstellung nach einer Änderung wurde behoben.
+• Die falsche Anzeige „Ladelimit erreicht“ bei unklarem Kalibrierungs- oder Vollladestatus wurde behoben.
+• Die Menüleiste zeigt „Diesmal vollständig laden“ erst nach der Bestätigung als aktiv an.
+• Ein Fehler wurde behoben, durch den andere Ladeschutzfehler in der Menüleiste während einer Systempause ausgeblendet werden konnten.
+• Eine ungenaue Stromversorgungsanzeige, durch die Übersicht, Verlauf und Exporte von macOS abweichen konnten, wurde behoben.</description>
+<description xml:lang="ko" sparkle:format="plain-text">성능 개선
+• 충전 상태 감시를 개선해 백그라운드에서 불필요하게 데이터를 갱신하는 횟수를 줄였습니다.
+• 충전 상태가 그대로일 때 화면 갱신을 줄여 앱을 오래 실행해도 더 부드럽게 동작합니다.
+• 충전 보호 구성 요소의 상태 확인을 개선해 불필요한 갱신 부담을 줄였습니다.
+
+개선 사항
+• 업데이트를 자동으로 확인하고 새 버전이 있으면 개요에 알림을 표시합니다. 알림을 닫거나 설정에서 자동 확인을 끌 수 있습니다.
+• 충전 설정이 적용되었는지 확인되기 전에는 앱과 메뉴 막대에 모두 ‘확인 대기’를 표시합니다.
+• 앱 창을 더 좁게 조절할 수 있어 분할 화면과 여러 창을 함께 사용하기 편리합니다.
+
+문제 수정
+• 충전 한도 변경 후 이전 설정을 기준으로 한도 도달을 잘못 판단하던 문제를 수정했습니다.
+• 배터리 보정 또는 일시 완충 상태가 불명확할 때 ‘충전 한도 도달’을 잘못 표시하던 문제를 수정했습니다.
+• ‘이번에 완전히 충전’이 확인되기 전에 메뉴 막대에 활성 상태가 표시되던 문제를 수정했습니다.
+• 시스템이 충전 보호를 일시 중지할 때 다른 충전 보호 오류가 메뉴 막대에 표시되지 않던 문제를 수정했습니다.
+• 전원 연결 상태가 부정확해 개요, 기록, 내보낸 보고서가 macOS 정보와 다르던 문제를 수정했습니다.</description>
+<description xml:lang="ja" sparkle:format="plain-text">パフォーマンス
+• 充電状態の監視を改善し、バックグラウンドでの重複したデータ更新を減らしました。
+• 充電状態が変わらないときの表示更新を減らし、アプリを起動したままでも滑らかに動作するようにしました。
+• 充電保護コンポーネントの状態確認を改善し、不要な表示更新を減らしました。
+
+改善
+• 更新を自動で確認し、新しいバージョンが見つかると概要にお知らせを表示します。お知らせを閉じたり、設定で自動確認をオフにしたりできます。
+• 充電設定が有効か確認できるまで、アプリとメニューバーの両方に「確認待ち」と表示します。
+• ウインドウをより狭くできるようにし、分割表示や複数ウインドウでの操作性を高めました。
+
+修正
+• 充電上限を変更した後、以前の設定に基づいて上限到達と誤判定する問題を修正しました。
+• バッテリー校正や一時的な満充電の状態が不明なときに「充電上限に到達」と誤表示する問題を修正しました。
+• 「今回だけ満充電」が確認される前に、メニューバーで有効と表示される問題を修正しました。
+• システムが充電保護を一時停止したときに、メニューバーで別の充電保護エラーが表示されないことがある問題を修正しました。
+• 電源接続状態が不正確で、概要・履歴・書き出したレポートが macOS の情報と一致しないことがある問題を修正しました。</description>
+<enclosure url="https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.zip" sparkle:edSignature="fLAyw8JsLVMZp3tA9eJa30ytN0zWg+1jwWyzKKj3lJgjIzfcmQqi8SEkshWPu+zpjOkNMCHv6kDC0WLGWJFXCw==" length="6578002" type="application/octet-stream"/>
+</item>
 <item><title>Version 1.2</title><pubDate>Fri, 06 Nov 2026 18:13:07 +0000</pubDate>
 <sparkle:version>35</sparkle:version><sparkle:shortVersionString>1.2</sparkle:shortVersionString>
 <sparkle:minimumSystemVersion>13.0.0</sparkle:minimumSystemVersion>
@@ -84,6 +201,6 @@ Fehlerbehebungen
 • 更新履歴を開いているとアプリを正常に終了できない問題を修正しました。</description>
 <enclosure url="https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.2/DriveBatteryHealthViewer_v1.2_build35_macOS_Universal.zip" sparkle:edSignature="s59yoc1xqriUkT63vykjdreMZF1DFx3k3I9qSnNwY0ChBhtfMCSLxC5zQ0mkuCQ7PiCdboEXCQM3OCFsl8eyDA==" length="6281935" type="application/octet-stream"></enclosure>
 </item></channel></rss><!-- sparkle-signatures:
-edSignature: +d2cO/8pVGzea99Tc9g8lfZPHy2iiZOw40q9G5owAdWjpYSp0zg3/s9PIATPMY2YKyvgN/OCiY0DQ84ml1SsAA==
-length: 8344
+edSignature: UxmnbfprgLfGfGdCk+ohvxs1eHiMznfjvA4srBkCAsbS6jbL+9R6/aBMUBj7JdQw+vXKAP0Iee8lJKBbEjBHAg==
+length: 20154
 -->
