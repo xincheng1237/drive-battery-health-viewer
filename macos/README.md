@@ -2,7 +2,7 @@
 
 当前版本 **1.3**，适用于 macOS 13 及以上，支持 Apple 芯片与 Intel Mac。
 
-[下载安装包](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.dmg) · [1.3 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3)
+[下载安装包](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3_macOS_Universal.dmg) · [1.3 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3)
 
 ## 界面与操作
 

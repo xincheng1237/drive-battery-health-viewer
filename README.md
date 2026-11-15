@@ -12,7 +12,7 @@ macOS：**1.3** · Windows：**1.0.6**
 
 | 平台 | 下载 | 系统要求 |
 | --- | --- | --- |
-| macOS | [下载 DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.dmg) | macOS 13 或更高版本，Apple 芯片与 Intel Mac |
+| macOS | [下载 DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3_macOS_Universal.dmg) | macOS 13 或更高版本，Apple 芯片与 Intel Mac |
 | Windows | [下载安装程序](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | Windows 7 或更高版本，x64 |
 
 [查看 macOS 1.3 更新内容](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3) · [全部发行版](https://github.com/xincheng1237/drive-battery-health-viewer/releases)

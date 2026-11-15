@@ -12,7 +12,7 @@ macOS: **1.3** · Windows: **1.0.6**
 
 | Platform | Download | Requirements |
 | --- | --- | --- |
-| macOS | [Download DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3-build53_macOS_Universal.dmg) | macOS 13 or later, Apple silicon and Intel Macs |
+| macOS | [Download DMG](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.3/DriveBatteryHealthViewer_v1.3_macOS_Universal.dmg) | macOS 13 or later, Apple silicon and Intel Macs |
 | Windows | [Download installer](https://github.com/xincheng1237/drive-battery-health-viewer/releases/download/v1.0.6/DriveBatteryHealthViewer_v1.0.6_Windows_x64_Setup.exe) | Windows 7 or later, x64 |
 
 [macOS 1.3 release notes](https://github.com/xincheng1237/drive-battery-health-viewer/releases/tag/v1.3) · [All releases](https://github.com/xincheng1237/drive-battery-health-viewer/releases)

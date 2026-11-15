@@ -24,6 +24,8 @@ The publisher's signing key is stored in the login Keychain under account `com.c
 
 ## Publish
 
+For GitHub Releases, name macOS assets `DriveBatteryHealthViewer_v<version>_macOS_Universal.dmg` and `DriveBatteryHealthViewer_v<version>_macOS_Universal.zip`. Use the same names for their `.sha256` companions and reserve build-number suffixes for local candidates. Keep existing Sparkle enclosure URLs available until clients can use the signed feed with the replacement URLs.
+
 Export the actual changelog by running the opt-in test with `DBHV_EXPORT_CHANGELOG=/absolute/path/notes.json`. Use the approved ZIP's original bytes with its immutable filename, then generate the feed:
 
 ```sh
